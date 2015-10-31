@@ -74,7 +74,7 @@ class PairValue: Value { // note: `A:B:C` is right-associative // TO DO: probabl
         self.name = name
         self.data = data
         super.init()
-        print("Created \(self.dynamicType): \(self)")
+   //     print("Created \(self.dynamicType): \(self)")
     }
     override var description: String {
         return (self.data.dynamicType == PairValue.self) ? "\(self.name): (\(self.data))" : "\(self.name): \(self.data)" // clarify right-association by parenthesizing; TO DO: formatter should probably make all these decisions

@@ -17,6 +17,9 @@
 // note: `-100` and `-foo` are both valid uses of prefix `-`; however, it would be better that first is matched as number before trying to match it as symbol operator, so perhaps it's just a question of doing keyword op parse first, then pattern-based value detection, then in-word symbol operator detection? Or maybe we should even just say whitespace or other delimiter char is always required around symbol ops? (FWIW, this should happen anyway: e.g. `- 1` will be parsed as prefix op, while `-1` will be parsed as word, with longest-match rule automatically ensuring it's read as a number)
 
 
+// TO DO: should `nothing`, `did nothing` be defined as Atom ops or commands? (the first would be safer in that `nothing` &co _never_ takes an arg)
+
+
 enum AutoDelimit { // e.g. Given word sequence `red is blue`, should it be parsed as a single name, or as an `is` operator with `red` and `blue` operands?
     case Left
     case Right
@@ -62,6 +65,12 @@ func parsePostfixOperator(parser: Parser, leftExpr: Value!, operatorName: String
 }
 
 
+func parseGeneralComparisonOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+    // TO DO: if next token is UnquotedWord "as", parse that as type to which both operands should be cast before comparing (i.e. append it to RecordValue `as:typespec` item)
+    let rightOperand = try parser.parseExpression(precedence)
+    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [leftExpr, rightOperand]))
+}
+
 
 func parseAtomDoBlock(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
     // TO DO: need to parse expression group up to `done` UnquotedWord, returning ExpressionGroup (possibly tagged to indicate display preference)
@@ -75,8 +84,33 @@ func parsePostfixDoBlock(parser: Parser, leftExpr: Value!, operatorName: String,
 
 
 
+
+/*
+// TO DO: when parsing param record, `to` operator should check result itself to ensure all items are name and/or name:typespec pair literals [with or without annotations attached] (or should typed params be written as `name AS typespec` ops? The `to` [define procedure] command could accept either, so it's basically a question of which users find easier; suspect colon-pairs, but need to decide.)
+
+    func parseProcedureDefinition(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value { // returns CommandValue
+        switch token.type {
+        case .QuotedName: // '...' // an explicitly delimited name literal
+            // if next significant token is another expr, treat it as an RH operand (i.e. argument) and emit CommandValue, else return NameValue
+            return try parseArgument(NameValue(data: token.value))
+        case .UnquotedWord: // everything else that is not one of the above hardcoded token types; parseWord will deal with this
+            return try parseArgument(try self.parseUnquotedWord(), precedence: precedence)
+        default:
+            throw SyntaxError("Malformed command signature.")
+        }
+        if self.lookahead(1) == Lexer.TokenType.RecordLiteral {
+            arg = self.parseAtom()
+            // need to check record is correctly structured: each item must be a name, optionally wrapped in coercion (don't forget optional annotations too - these will be treated as arg descriptions) // TO DO: is this right/optimal?... actually, no, it's the command's record that needs to be checked, as if it has pairs then LH must be name
+        }
+
+    }
+*/
+
+
+
+
 func throwMisplacedToken(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    throw SyntaxError(description: "Found misplaced \(parser.token?.type) token: \(parser.token?.value)")
+    throw SyntaxError(description: "Found misplaced \(parser.currentToken?.type) token: \(parser.currentToken?.value)") // TO DO: should probably throw sub-error here, and leave parser to construct full error message and throw as SyntaxError
 }
 
 
@@ -91,17 +125,17 @@ let StandardSymbolOperators: [OperatorDefinition] = [ // these will be detected 
     // TO DO: disambiguating `-` (neg op/sub op/in-word hyphen) is going to be problematic
     
     // arithmetic
-    ("^", [],    500, .Infix,  .Full, parseRightInfixOperator), // TO DO: what to use as exponent operator? (`^`, `exp`?)
-    ("+", [],    490, .Prefix, .Full, parsePrefixOperator),
+    ("^", [   ], 500, .Infix,  .Full, parseRightInfixOperator), // TO DO: what to use as exponent operator? (`^`, `exp`?)
+    ("+", [   ], 490, .Prefix, .Full, parsePrefixOperator),
     ("-", ["–"], 490, .Prefix, .None, parsePrefixOperator),     // note: also accepts n-dash as synonym
-    ("*", [],    480, .Infix,  .Full, parseInfixOperator),
-    ("/", [],    480, .Infix,  .Full, parseInfixOperator),
-    ("+", [],    470, .Infix,  .Full, parseInfixOperator),
+    ("*", [   ], 480, .Infix,  .Full, parseInfixOperator),
+    ("/", [   ], 480, .Infix,  .Full, parseInfixOperator),
+    ("+", [   ], 470, .Infix,  .Full, parseInfixOperator),
     ("-", ["–"], 470, .Infix,  .None, parseInfixOperator),      // note: also accepts n-dash as synonym // TO DO: subtraction and hyphenation symbol is same, so adjoinng whitespace is required to distinguish the two
     
     // numeric comparisons (non-ASCII symbols have ASCII aliases for alternative input)
-    (">", [],     400, .Infix, .Full, parseInfixOperator),
-    ("<", [],     400, .Infix, .Full, parseInfixOperator),
+    (">", [    ], 400, .Infix, .Full, parseInfixOperator),
+    ("<", [    ], 400, .Infix, .Full, parseInfixOperator),
     ("=", ["=="], 400, .Infix, .Full, parseInfixOperator),
     ("≠", ["!="], 400, .Infix, .Full, parseInfixOperator),
     ("≤", ["<="], 400, .Infix, .Full, parseInfixOperator),
@@ -121,12 +155,12 @@ let StandardKeywordOperators: [OperatorDefinition] = [
     // non-numeric comparisons (e.g. text); note that parsefunc overrides standard precedence to allow `COMP as TYPE` to specify comparison type, e.g. `A is B as C` is shorthand for `(A as C) is (B as C)` (currently, `as` operator binds lowest, so would apply to comparison's result, but since these ops always return boolean that isn't really useful, whereas applying cast to both operands prior to comparison is, and allows things like case-insensitive text comparisons and list of X comparisons to be done as well) -- note that a failed cast will throw error (not sure if catching this should be done by typespec, and if it is then what's to prevent `A is not B as C` returning true when both A and B fail to cast causing typespec to supply identical default value for each)
     // TO DO: what about `eq`, `lt`, etc. shorthand aliases for these? should `is [same [as]]` be accepted? (toss-up between keeping it forgiving and learnable, though bear in mind that all aliases should automatically convert to canonical form when pretty-printed - they are purely for input convenience, not to riddle users' scripts with synonyms); would `is same or after`, etc. work better than `is equal or after` (in which case change them all to use 'same', not 'equal')?
     // TO DO: these operators need custom parsefunc that looks for trailing `as` operator and grabs that too as the type (if any) to which both operands should be cast _before_ comparing them to each other (basically these non-numeric comparison ops are a multifix op where the last operand is optional, allowing complex comparisons - text, date, lists of <whatever>, case-insensitive text [since typespecs can also supply normalized values/comparator funcs for use in comparisons and sorting], and so on)
-    ("is before",          [],                                                                 400, .Infix, .Full, parseInfixOperator),
-    ("is equal or before", ["is equal to or before", "is before or equal to", "is not after"], 400, .Infix, .Full, parseInfixOperator),
-    ("is after",           [],                                                                 400, .Infix, .Full, parseInfixOperator),
-    ("is equal or after",  ["is equal to or after", "is after or equal to", "is not before"],  400, .Infix, .Full, parseInfixOperator),
-    ("is not",             ["is not equal to"],                                                400, .Infix, .Full, parseInfixOperator),
-    ("is",                 ["is equal to"],                                                    400, .Infix, .Full, parseInfixOperator),
+    ("is before",          ["lt",                                                                  ], 400, .Infix, .Full, parseGeneralComparisonOperator),
+    ("is equal or before", ["le", "is equal to or before", "is before or equal to", "is not after" ], 400, .Infix, .Full, parseGeneralComparisonOperator),
+    ("is after",           ["gt",                                                                  ], 400, .Infix, .Full, parseGeneralComparisonOperator),
+    ("is equal or after",  ["ge", "is equal to or after",  "is after or equal to",  "is not before"], 400, .Infix, .Full, parseGeneralComparisonOperator),
+    ("is not",             ["ne", "is not equal to",                                               ], 400, .Infix, .Full, parseGeneralComparisonOperator),
+    ("is",                 ["eq", "is equal to",                                                   ], 400, .Infix, .Full, parseGeneralComparisonOperator),
     
     // Boolean
     // TO DO: should AND, OR, and NOT be pretty-printed in [small]caps? If so, how/where best to define custom formatting hints? (Note: while the quick answer would be here in ops table, this is really part of a much larger, more general question as to how formatting should be applied to ALL code, e.g. according to high-level semantics such as categories of procedures and data relationships rather than superficial syntactic structure. For example, given an obvious list literal, is it not more useful for highlighting to indicate where it came from or what it is used for, rather than just reiterate 'bracket,string,comma,string,comma,...,bracket'? This suggests presentation metadata should be attached to command definitions, via standard annotations mechanism, and introspectable by parser as it reads the code. One implication of this: all module dependencies would need to be declared - and readable+resolvable - at parse-time, not runtime; or, at least, all those that wish to define metadata, or supply additional presentation recommendations for commands used in user's code; ditto for providing auto-assist - auto-suggest, auto-complete, auto-disambiguate - to user.)
@@ -138,16 +172,16 @@ let StandardKeywordOperators: [OperatorDefinition] = [
     ("as", [], 80, .Infix, .Full, parseInfixOperator),
     
     // reference
-    ("of",    [],         800, .Infix, .Full, parseInfixOperator), // TO DO: what precedence?
-    ("thru",  ["through"], 50, .Infix, .Full, parseInfixOperator), // range constructor
-    ("where", ["whose"],   50, .Infix, .Full, parseInfixOperator),  // filter clause
+    ("of",    [         ], 800, .Infix, .Full, parseInfixOperator), // TO DO: what precedence?
+    ("thru",  ["through"],  50, .Infix, .Full, parseInfixOperator), // range constructor
+    ("where", ["whose"  ],  50, .Infix, .Full, parseInfixOperator),  // filter clause
     
     // eval clauses
     ("catching", [], 50, .Infix,   .Full, parseInfixOperator),
     ("else",     [], 50, .Infix,   .Full, parseInfixOperator),
     ("do",       [], 50, .Atom,    .Full, parseAtomDoBlock),
     ("do",       [], 50, .Postfix, .Full, parsePostfixDoBlock),
-    ("done",     [],  0, .Atom,    .Full, throwMisplacedToken),
+    ("done",     [],  0, .Atom,    .Full, throwMisplacedToken), // `do` block parsefuncs use `done` as terminator; anywhere else is a syntax error
 ]
 
 // TO DO: what about blocks, e.g. `do...done`?

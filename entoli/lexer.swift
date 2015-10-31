@@ -22,7 +22,7 @@ enum OperatorForm {
 }
 
 
-class Lexer : GeneratorType {
+class Lexer {
         
     enum TokenType { // TO DO: implement human-readable names for use in error messages
         case WhiteSpace
@@ -112,7 +112,7 @@ class Lexer : GeneratorType {
     }
         
     // read and return next token; returns nil once all tokens have been read
-    func next() -> Element? {
+    private func _next() -> Element? {
         if self.cursor >= length { return nil }
         let start = self.cursor
         let firstChar = self.code[self.cursor] // TO DO: prob make this `char` var and rejig stages into a single switch
@@ -188,6 +188,55 @@ class Lexer : GeneratorType {
         }
         print("UH-OH") // TO DO: should never get this far
         return nil
+    }
+    
+    private var currentTokensCache: [Lexer.Token?] = [nil]
+    
+    //
+    
+    private(set) var currentTokenIndex = 0 // parser can get this value and use it to backtrack to that token later on if required; caution: flush() invalidates any previously obtained indexes
+    
+    var currentToken: Lexer.Token? { return self.currentTokensCache[self.currentTokenIndex] } // current token
+    
+    func advance(ignoreWhiteSpace: Bool = true) {
+        repeat {
+            self.currentTokenIndex += 1
+            if self.currentTokenIndex == self.currentTokensCache.count { self.currentTokensCache.append(self._next()) }
+        } while ignoreWhiteSpace && self.currentToken?.type == .WhiteSpace
+    }
+    
+    func retreat() { // TO DO: currently unused; delete? (in practice, it's probably better to use backtrackTo to return to an earlier known token)
+        self.currentTokenIndex -= 1
+    }
+    
+    func skip(tokenType: Lexer.TokenType, ignoreWhiteSpace: Bool = true) throws { // advance to next token, throwing SyntaxError if it's not the specified type
+        self.advance(ignoreWhiteSpace)
+        if self.currentToken?.type != tokenType {
+            throw SyntaxError(description: "[0] Expected \(tokenType) but found \(self.currentToken?.type)")
+        }
+    }
+    
+    func backtrackTo(tokenIndex: Int) { // note: technically this doesn't backtrack but rather moves to a previously read token (thus it could also be used to advance over previously parsed tokens for which cached Values have already been generated); might be an idea to rename it, or else replace with [safe] setter for currentTokenIndex
+        self.currentTokenIndex = tokenIndex
+    }
+    
+    // caution: lookahead doesn't know about operators/data detectors; it can only look for punctuation, whitespace, quoted name/text, and unquoted word
+    func lookaheadBy(offset: UInt, ignoreWhiteSpace: Bool = true) -> Lexer.Token? { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
+        if offset == 0 { return self.currentToken }
+        var count: UInt = 0
+        var lookaheadTokenIndex: Int = self.currentTokenIndex
+        while count < offset {
+            lookaheadTokenIndex += 1
+            while lookaheadTokenIndex >= self.currentTokensCache.count { self.currentTokensCache.append(self._next()) }
+            guard let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex] else { return nil }
+            if lookaheadToken.type != .WhiteSpace || !ignoreWhiteSpace { count += 1 }
+        }
+        return self.currentTokensCache[lookaheadTokenIndex]
+    }
+    
+    func flush() { // clear cache of fully-parsed tokens
+        self.currentTokensCache.removeRange(0..<self.currentTokenIndex)
+        self.currentTokenIndex = 0
     }
 }
 
