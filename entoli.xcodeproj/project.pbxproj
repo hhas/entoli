@@ -1,0 +1,259 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4F4754D71BDA5AD000E07F5D /* parser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4754D61BDA5AD000E07F5D /* parser.swift */; settings = {ASSET_TAGS = (); }; };
+		4F4754D91BE1214200E07F5D /* datatypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4754D81BE1214200E07F5D /* datatypes.swift */; settings = {ASSET_TAGS = (); }; };
+		4FFD82B11BD2D57C00677DC4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFD82B01BD2D57C00677DC4 /* main.swift */; };
+		4FFD82B81BD6D96100677DC4 /* lexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFD82B71BD6D96100677DC4 /* lexer.swift */; settings = {ASSET_TAGS = (); }; };
+		4FFD82BC1BD9120100677DC4 /* operator-tables.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFD82BB1BD9120100677DC4 /* operator-tables.swift */; settings = {ASSET_TAGS = (); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4FFD82AB1BD2D57C00677DC4 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		4F4754D61BDA5AD000E07F5D /* parser.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = parser.swift; sourceTree = "<group>"; };
+		4F4754D81BE1214200E07F5D /* datatypes.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = datatypes.swift; sourceTree = "<group>"; };
+		4FFD82AD1BD2D57C00677DC4 /* entoli */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = entoli; sourceTree = BUILT_PRODUCTS_DIR; };
+		4FFD82B01BD2D57C00677DC4 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		4FFD82B71BD6D96100677DC4 /* lexer.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = lexer.swift; sourceTree = "<group>"; };
+		4FFD82BB1BD9120100677DC4 /* operator-tables.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = "operator-tables.swift"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4FFD82AA1BD2D57C00677DC4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4FFD82A41BD2D57B00677DC4 = {
+			isa = PBXGroup;
+			children = (
+				4FFD82AF1BD2D57C00677DC4 /* entoli */,
+				4FFD82AE1BD2D57C00677DC4 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4FFD82AE1BD2D57C00677DC4 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4FFD82AD1BD2D57C00677DC4 /* entoli */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4FFD82AF1BD2D57C00677DC4 /* entoli */ = {
+			isa = PBXGroup;
+			children = (
+				4FFD82B01BD2D57C00677DC4 /* main.swift */,
+				4FFD82B71BD6D96100677DC4 /* lexer.swift */,
+				4FFD82BB1BD9120100677DC4 /* operator-tables.swift */,
+				4F4754D61BDA5AD000E07F5D /* parser.swift */,
+				4F4754D81BE1214200E07F5D /* datatypes.swift */,
+			);
+			path = entoli;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4FFD82AC1BD2D57C00677DC4 /* entoli */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4FFD82B41BD2D57C00677DC4 /* Build configuration list for PBXNativeTarget "entoli" */;
+			buildPhases = (
+				4FFD82A91BD2D57C00677DC4 /* Sources */,
+				4FFD82AA1BD2D57C00677DC4 /* Frameworks */,
+				4FFD82AB1BD2D57C00677DC4 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = entoli;
+			productName = entoli;
+			productReference = 4FFD82AD1BD2D57C00677DC4 /* entoli */;
+			productType = "com.apple.product-type.tool";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4FFD82A51BD2D57B00677DC4 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 0700;
+				TargetAttributes = {
+					4FFD82AC1BD2D57C00677DC4 = {
+						CreatedOnToolsVersion = 7.0;
+					};
+				};
+			};
+			buildConfigurationList = 4FFD82A81BD2D57C00677DC4 /* Build configuration list for PBXProject "entoli" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = 4FFD82A41BD2D57B00677DC4;
+			productRefGroup = 4FFD82AE1BD2D57C00677DC4 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4FFD82AC1BD2D57C00677DC4 /* entoli */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4FFD82A91BD2D57C00677DC4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4F4754D91BE1214200E07F5D /* datatypes.swift in Sources */,
+				4F4754D71BDA5AD000E07F5D /* parser.swift in Sources */,
+				4FFD82BC1BD9120100677DC4 /* operator-tables.swift in Sources */,
+				4FFD82B81BD6D96100677DC4 /* lexer.swift in Sources */,
+				4FFD82B11BD2D57C00677DC4 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		4FFD82B21BD2D57C00677DC4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		4FFD82B31BD2D57C00677DC4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		4FFD82B51BD2D57C00677DC4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		4FFD82B61BD2D57C00677DC4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4FFD82A81BD2D57C00677DC4 /* Build configuration list for PBXProject "entoli" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4FFD82B21BD2D57C00677DC4 /* Debug */,
+				4FFD82B31BD2D57C00677DC4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4FFD82B41BD2D57C00677DC4 /* Build configuration list for PBXNativeTarget "entoli" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4FFD82B51BD2D57C00677DC4 /* Debug */,
+				4FFD82B61BD2D57C00677DC4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4FFD82A51BD2D57B00677DC4 /* Project object */;
+}
