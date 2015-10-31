@@ -63,14 +63,28 @@ func parsePostfixOperator(parser: Parser, leftExpr: Value!, operatorName: String
 
 
 
+func parseAtomDoBlock(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+    // TO DO: need to parse expression group up to `done` UnquotedWord, returning ExpressionGroup (possibly tagged to indicate display preference)
+    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [try parser.parseExpression(precedence)]))
+}
 
+func parsePostfixDoBlock(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+    // TO DO: ditto, then attach it to leftExpr (how best to do this? and should it only apply to commands [including names], or would the be uses in attaching it to other things as well?)
+    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [leftExpr]))
+}
+
+
+
+func throwMisplacedToken(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+    throw SyntaxError(description: "Found misplaced \(parser.token?.type) token: \(parser.token?.value)")
+}
 
 
 
 
 // Standard operators
 
-let StandardSymbolOperators: [OperatorDefinition] = [ // these will be detected using both whole-word and in-word (by-char) matching
+let StandardSymbolOperators: [OperatorDefinition] = [ // these will be detected using both whole-word AND in-word (by-char) matching
     
     // TO DO: is it worth including user-viewable metadata (e.g. short descriptions) here, or is it best to leave all such metadata for commands to provide? (i.e. is there any metadata that a command wouldn't have but an operator should?)
     
@@ -129,8 +143,11 @@ let StandardKeywordOperators: [OperatorDefinition] = [
     ("where", ["whose"],   50, .Infix, .Full, parseInfixOperator),  // filter clause
     
     // eval clauses
-    ("catching", [], 50, .Infix, .Full, parseInfixOperator),
-    ("else",     [], 50, .Infix, .Full, parseInfixOperator),
+    ("catching", [], 50, .Infix,   .Full, parseInfixOperator),
+    ("else",     [], 50, .Infix,   .Full, parseInfixOperator),
+    ("do",       [], 50, .Atom,    .Full, parseAtomDoBlock),
+    ("do",       [], 50, .Postfix, .Full, parsePostfixDoBlock),
+    ("done",     [],  0, .Atom,    .Full, throwMisplacedToken),
 ]
 
 // TO DO: what about blocks, e.g. `do...done`?

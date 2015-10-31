@@ -4,7 +4,8 @@
 
 
 
-let source = "(hello is  equal to \tthat  {user name :1, 'smith', to:A and B, 99:nope} \n run script \"yes\" foo: bar: baz)"
+// TO DO: following isn't working quite right yet: the `run script{"yes"}` command isn't appearing in parsed result
+let source = "hello is  equal to \tthat  {user name :1, 'smith', to:A and B, 99:nope} \n run script \"yes\" foo: bar: baz"
 
 //let source = " 'one' 'two' 'three' "
 

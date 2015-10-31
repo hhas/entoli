@@ -24,7 +24,7 @@ enum OperatorForm {
 
 class Lexer : GeneratorType {
         
-    enum TokenType {
+    enum TokenType { // TO DO: implement human-readable names for use in error messages
         case WhiteSpace
         case QuotedText
         case QuotedName

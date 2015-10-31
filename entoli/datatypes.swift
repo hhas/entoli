@@ -6,6 +6,8 @@
 
 // TO DO: need to implement full annotation support
 
+// TO DO: need to start thinking about lexical scoping and closures
+
 
 class Value: CustomStringConvertible { // being homoiconic, there is no difference between a data value and an AST node; even commands and operators are values
     var annotations = [String]() // TO DO: structure, API, literalRepresentation
@@ -71,6 +73,8 @@ class PairValue: Value { // note: `A:B:C` is right-associative // TO DO: probabl
     init(name: Value, data: Value) {
         self.name = name
         self.data = data
+        super.init()
+        print("Created \(self.dynamicType): \(self)")
     }
     override var description: String {
         return (self.data.dynamicType == PairValue.self) ? "\(self.name): (\(self.data))" : "\(self.name): \(self.data)" // clarify right-association by parenthesizing; TO DO: formatter should probably make all these decisions

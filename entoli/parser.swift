@@ -4,6 +4,11 @@
 //
 //
 
+
+// note: on balance, I think making commands' bind infinitely tightly is probably best, as it's an easy rule for users to remember
+
+
+
 // TO KEEP SYNTAX RULES SIMPLE: numbers and units must start with optional `-`/`+` prefix followed by one of `0123456789`, and cannot contain whitespace, and they ALWAYS self-delimit.
 // (this leaves currency to be decided, probably by allowing currency symbols as additional prefixes)
 
@@ -12,6 +17,9 @@
 // Q. what is relationship between type specifiers (run-time coercions, specifically those that coerce from text to Swift primitives) and data detectors (parse-time readers)? bear in mind that if a DD can read a string, it can read either code or Text, so there's probably a lot of commonality in their core behavior
 
 // Q. are there any use-cases where DDs wouldn't start with number (specifically, one of `-+0-9`)? (e.g. 42, 3.5kg, -123e4, +0.9, 0x1A2, 0u000A, 2015-06-12, 12:22:45 +0100)? Currency ($9.99) is one, any others?
+
+// Q. should numbers be detected in lexer? or can/should they be handled as part of unquoted word parsing (after all, it analyzes each word as it goes, and will be doing so in detail once in-word symbol operator matching is also implemented)? -- still think numbers might be matchable using symbols approach, though might require a little more flexibility as it does need ability to reach out and lookahead/parse additional tokens, e.g. periods with no surrounding whitespace and one or more digits thereafter (i.e. decimal number) -- TBH, it's a bit like per-char parsing needs ability to specify scanning fixed or open-ended ranges of digits, with additional parsefuncbeing called at end depending on what's next
+
 
 
 
@@ -28,6 +36,8 @@
 // (note: currently, there aren't any keyword ops defined as atoms; the only reason to do so would be if defining a word or phrase that must always self-delimit itself, no matter where it appears, otherwise an arg-less command should be sufficient)
 
 
+
+// TO DO: when parsing ListLiteral, if all items are pairs, make this an associative list (note: need to decide rules by which ordered lists [Array], associative lists [Dict], and unique lists [Set] are tagged and/or coercion-locked as that type; this will largely be determined by usage, e.g. once an array operation is performed, the list should thereafter act as array and refuse to coerce to dict or set - though explicit casting should still be allowed; of course, a lot depends on whether lists are mutable or immutable, and that policy/mechanism has yet to be decided)
 
 
 
@@ -78,19 +88,19 @@ class Parser {
     
     // caches
     
-    private var currentTokens: [Lexer.Token?] = [nil] // TO DO: need to watch when flushing cache in parse(): only delete up to currentTokenIndex, in case lookahead has already pulled tokens for next expression
+    private var currentTokens: [Lexer.Token?] = [nil]
     private var currentTokenIndex = 0
     
-//    private var previousTokens: [Lexer.Token] = [] // TO DO: use single array [or linked list?] for backtracking and lookahead (note: would be cleaner in lexer, allowing it to be fully tested)
-//    private var nextTokens: [Lexer.Token] = [] // used by lookahead() to cache tokens that have yet to be parsed
     
-    
-    let keywordOperators = StandardKeywordOperatorTable // TO DO: how to parameterize this?
-    
+    let keywordOperators = StandardKeywordOperatorTable // TO DO: how to parameterize this? (e.g. should there be standard ops tables that are cloned by init each time a new Parser instance is created; this still leaves question of how to add/remove opdefs, which is probably something that needs to be done in top-level parse() loop as it has limited ability to analyze/execute completed top-level expressions)
     
     init(lexer: Lexer) {
         self.lexer = lexer
     }
+    
+    
+    /**********************************************************************/
+    // TOKENS
     
     private func next(ignoreWhiteSpace: Bool) {
         repeat {
@@ -130,18 +140,6 @@ class Parser {
         return self.currentTokens[lookaheadTokenIndex]
     }
     
-    // utility funcs; used to clean up collection items
-    
-    private func stripComma(value: Value) -> Value { // used to tidy list items after parsing; TO DO: should this strip _all_ commas? or treat adjoining commas as syntax error/warning (e.g. [1,2,,4] is legal but suggests a typo)? or just leave as-is and leave user to clean up surplus commas in code if it bothers them
-        if let v = value as? ItemSeparator { return v.data }
-        return value
-    }
-    
-    private func stripPeriod(value: Value) -> Value { // TO DO: ditto
-        if let v = value as? ExpressionSeparator { return v.data }
-        return value
-    }
-    
     //
     
     private struct Precedence { // standard punctuation tokens // TO DO: put this and switch on TokenType enum?
@@ -163,6 +161,20 @@ class Parser {
         case .PipeSeparator:        return Precedence.PipeSeparator
         default:                    return 0
         }
+    }
+    
+    
+    /**********************************************************************/
+    // utility funcs; used to clean up collection items
+    
+    private func stripComma(value: Value) -> Value { // used to tidy list items after parsing; TO DO: should this strip _all_ commas? or treat adjoining commas as syntax error/warning (e.g. [1,2,,4] is legal but suggests a typo)? or just leave as-is and leave user to clean up surplus commas in code if it bothers them
+        if let v = value as? ItemSeparator { return v.data }
+        return value
+    }
+    
+    private func stripPeriod(value: Value) -> Value { // TO DO: ditto
+        if let v = value as? ExpressionSeparator { return v.data }
+        return value
     }
     
     
@@ -200,13 +212,52 @@ class Parser {
     }
     
     
+    private func parseRecord() throws -> Value {
+        var result = [Value]()
+        while self.lookaheadBy(1)?.type != .RecordLiteralEnd {
+            //     guard let nextTokenType = self.lookaheadBy(1)?.type else { throw EndOfCodeError(description: "[1a] End of code.") }
+            guard let nextToken = self.lookaheadBy(1) else { throw EndOfCodeError(description: "[1a] End of code.") }
+            let isLegalPair: Bool
+            let value: Value
+            switch nextToken.type { // note: if item looks like a valid `name:value pair`, need to check pairs' precedence to make sure infix/postfix operators never bind entire pair where they're really intended to bind RH operand only (if they do bind entire pair, it shouldn't break following logic, but it will confuse users since what looks like a named arg is actually a positional one; possibly the safest option is for all operators to have higher precedence than punctuation, and enforce this in OperatorTable; though we will need to watch for 'stray' punctuation getting sucked up in LH operand when it's supposed to delimit it)
+            case .QuotedName: // check for `'NAME' :`
+                isLegalPair = self.lookaheadBy(2)?.type == .PairSeparator // literal pairs in records MUST have literal name as LH operand (note: this looks ahead 2, since currentToken is `{` and next token is QuotedName)
+                value = self.stripComma(try self.parseExpression())
+            case .UnquotedWord: // check for [e.g.] `WORD WORD WORD :`
+                let backtrackIndex = self.currentTokenIndex
+                var words = [String]()
+                repeat {
+                    self.next(true)
+                    words.append(self.token!.value)
+                } while self.hasNextWord
+                isLegalPair = self.lookaheadBy(1)?.type == .PairSeparator
+                if isLegalPair { // it's a pair with only words on left side, so treat those words as pair's name (i.e. no data detection or operator name matching is performed; even numbers are legal), and parse the rest of the pair
+                    value = self.stripComma(try self.parseOperation(NameValue(data: words.joinWithSeparator(" "))))
+                } else {
+                    self.backtrackTo(backtrackIndex)
+                    value = self.stripComma(try self.parseExpression())
+                }
+            default:
+                isLegalPair = false
+                value = self.stripComma(try self.parseExpression())
+            }
+            if value is PairValue && !isLegalPair || isLegalPair && !(value is PairValue) { // note: this also disallows `name:value` pair if it's subsequently parsed as LH operand to a lower-precedence operator (technically, this would be a legal positional value, but visually it would be confusing so we disallow it; if users want to apply a low-precedence operator to pair's RH value, they'll need to explicitly parenthesize it)
+                throw SyntaxError(description: "Bad record item (pairs within records must have a literal name): \(value)")
+            }
+            result.append(value)
+            //            print("CURR: \(self.token)\n")
+        }
+        try self.skip(.RecordLiteralEnd) // TO DO: skip is only really needed to throw error if code terminates without closing `]`
+        return RecordValue(data: result)
+    }
+    
     /**********************************************************************/
     // PARSE EXPRESSION
     // TO DO: parseExpression() is currently split into two sub-functions: parseAtom() and parseOperation(); currently, parseArgument() calls parseAtom() directly, so implicitly always binds more tightly to its argument than the argument binds to any subsequent operator; need to decide if this is appropriate (as opposed to parseArgument calling parseExpression with very high precedence). Mostly it's about determining if a name expr is followed by a new expr (since commands don't have an explicit infix operator symbol to join name and arg, we have to do special-case pattern matching): if it does (which parseAtom can tell us: any non-nil result means a new expr was found), then it's a name-arg pair, i.e. a command with a single arg. Main question then is whether we should pass that arg to parseOperation along with the command's [high] precedence, in case there are any operators that might justfiably want to bind even tighter to that arg than the command does. For now though, all infix/postfix ops following the command (name-arg pair) will receive the entire command as their LH operand. (Plus, don't forget commands are implicitly right-associative, so `'foo' 'bar' 'baz' and 'fub'` will parse as `and{foo{bar{baz}},fub}`).
     
     private func parseAtom(precedence: Int = 0) throws -> Value? { // parse atom or prefix op (i.e. no left operand)
         self.next(true)
-//        print("\nPARSE_PREFIX: \(self.token)")
+        print("\nPARSE_PREFIX: \(self.token)")
         guard let token = self.token else { throw EndOfCodeError(description: "[1] End of code.") } // outta tokens
         switch token.type {
         case .AnnotationLiteral: // «...» // attaches arbitrary contents to subsequent node as metadata
@@ -217,7 +268,6 @@ class Parser {
             // note: rest of these are atoms (no ops/precedence)
         case .ListLiteral: // [...];  an ordered collection (array) or key-value collection (dictionary)
             var result = [Value]()
-            // TO DO: if all items are pairs, make this an associative list (note: need to decide rules by which ordered lists [Array], associative lists [Dict], and unique lists [Set] are tagged and/or coercion-locked as that type; this will largely be determined by usage, e.g. once an array operation is performed, the list should thereafter act as array and refuse to coerce to dict or set - though explicit casting should still be allowed; of course, a lot depends on whether lists are mutable or immutable, and that policy/mechanism has yet to be decided)
             while self.lookaheadBy(1)?.type != .ListLiteralEnd {
                 let value = self.stripComma(try self.parseExpression()) // parser treats comma separator as postfix op to preserve it, but collections are self-delimiting so don't need it
                 result.append(value)
@@ -226,42 +276,7 @@ class Parser {
             return ListValue(data: result)
         case .RecordLiteral: // {...}; a sequence of values and/or name-value pairs; mostly used to pass proc args
             //       print("")
-            var result = [Value]()
-            while self.lookaheadBy(1)?.type != .RecordLiteralEnd {
-           //     guard let nextTokenType = self.lookaheadBy(1)?.type else { throw EndOfCodeError(description: "[1a] End of code.") }
-                guard let nextToken = self.lookaheadBy(1) else { throw EndOfCodeError(description: "[1a] End of code.") }
-                let isLegalPair: Bool
-                let value: Value
-                switch nextToken.type { // note: if item looks like a valid `name:value pair`, need to check pairs' precedence to make sure infix/postfix operators never bind entire pair where they're really intended to bind RH operand only (if they do bind entire pair, it shouldn't break following logic, but it will confuse users since what looks like a named arg is actually a positional one; possibly the safest option is for all operators to have higher precedence than punctuation, and enforce this in OperatorTable; though we will need to watch for 'stray' punctuation getting sucked up in LH operand when it's supposed to delimit it)
-                case .QuotedName: // check for `'NAME' :`
-                    isLegalPair = self.lookaheadBy(2)?.type == .PairSeparator // literal pairs in records MUST have literal name as LH operand (note: this looks ahead 2, since currentToken is `{` and next token is QuotedName)
-                    value = self.stripComma(try self.parseExpression())
-                case .UnquotedWord: // check for [e.g.] `WORD WORD WORD :`
-                    let backtrackIndex = self.currentTokenIndex
-                    var words = [String]()
-                    repeat {
-                        self.next(true)
-                        words.append(self.token!.value)
-                    } while self.hasNextWord
-                    isLegalPair = self.lookaheadBy(1)?.type == .PairSeparator
-                    if isLegalPair { // it's a pair with only words on left side, so treat those words as pair's name (i.e. no data detection or operator name matching is performed; even numbers are legal), and parse the rest of the pair
-                        value = self.stripComma(try self.parseOperation(NameValue(data: words.joinWithSeparator(" "))))
-                    } else {
-                        self.backtrackTo(backtrackIndex)
-                        value = self.stripComma(try self.parseExpression())
-                    }
-                default:
-                    isLegalPair = false
-                    value = self.stripComma(try self.parseExpression())
-                }
-                if value is PairValue && !isLegalPair || isLegalPair && !(value is PairValue) { // note: this also disallows `name:value` pair if it's subsequently parsed as LH operand to a lower-precedence operator (technically, this would be a legal positional value, but visually it would be confusing so we disallow it; if users want to apply a low-precedence operator to pair's RH value, they'll need to explicitly parenthesize it)
-                    throw SyntaxError(description: "Bad record item (pairs within records must have a literal name): \(value)")
-                }
-                result.append(value)
-                //            print("CURR: \(self.token)\n")
-            }
-            try self.skip(.RecordLiteralEnd) // TO DO: skip is only really needed to throw error if code terminates without closing `]`
-            return RecordValue(data: result)
+            return try self.parseRecord()
         case .ExpressionGroupLiteral: // (...)
             var result = [Value]()
             while self.lookaheadBy(1)?.type != .ExpressionGroupLiteralEnd {
@@ -284,6 +299,7 @@ class Parser {
  //           print("parseAtom.UnquotedWord got Name/Command \(result)...")
             let res = result is NameValue ? try parseArgument(result as! NameValue, precedence: precedence) : result // TO DO: actually need to check why precedence is passed here, and what affect it has (it _should_ only be used to prevent overshoot _if_ parseArgument also calls parseOperation [which it currently doesn't do, ensuring arg always binds tightest to command], so is currently unused here, and if parseArgument doesn't change then it probably makes most sense to take it out)
 //            print("... and returned it as \(res)")
+            print("PARSED UQW: \(res)")
             return res
         default:
             // TO DO: AnnotationLiteralEnd, RecordLiteralEnd, ListLiteralEnd, ExpressionGroupLiteralEnd will only appear if opening '«', '{', '[', or '(' token is missing, in which case parser should treat as syntax error [current behavior] or as an incomplete structure in chunk of code whose remainder is in a previous chunk [depending how incremental parsing is done]; any other token types are infix/postfix ops which are missing their left operand
@@ -293,7 +309,7 @@ class Parser {
     
     private func parseOperation(var leftExpr: Value, precedence: Int = 0) throws -> Value { // parse infix/postfix
         while precedence < self.precedence(1) || self.lookaheadBy(1)?.type == .UnquotedWord { // TO DO: precedence(1) will return 0 if next token is unquoted word, but until word seq has been parsed we can't know its actual precedence
-//                        print("\nPARSE_INFIX:  \(self.token)")
+                        print("\nPARSE_INFIX:  \(self.token)")
             let startID = self.currentTokenIndex
             self.next(true)
             guard let token = self.token else { throw EndOfCodeError(description: "[2] End of code.") } // outta tokens
@@ -328,7 +344,7 @@ class Parser {
     }
     
     func parseExpression(precedence: Int = 0) throws -> Value { // parse atom or prefix op, followed by any infix/postfix ops
-  //      print("\nSTART parseExpression: #\(self.currentTokenIndex) \(self.token)")
+        print("\nSTART parseExpression: #\(self.currentTokenIndex) \(self.token)")
         guard let leftExpr = try self.parseAtom(precedence) else {
             throw SyntaxError(description: "[1] Unexpected \"\(self.token ?? nil)\"")
         }
@@ -344,6 +360,7 @@ class Parser {
     
     private var hasNextWord: Bool { return self.lookaheadBy(1, ignoreWhiteSpace: false)?.type == Lexer.TokenType.WhiteSpace
                                                                  && self.lookaheadBy(1)?.type == Lexer.TokenType.UnquotedWord }
+    
     
     private func parseUnquotedWord(var leftExpr: Value? = nil, precedence: Int = 0, backtrackIndex: Int? = nil) throws -> Value { // called by parseAtom(), parseOperator() for current (non-nil) token
         // TO DO: this currently parses sequence of words and returns canonical name, but needs to apply operators and data detectors as well; in addition, also needs to return CommandValue if name is followed by another expression (i.e. arg) - although that might be better done from parseExpr using precedence [hmmm... not sure about that, usually it's parsefuncs that continue consuming till they've made their match, though here we would need to match RH to determine if it's a value (including another command)/separator (in which case return)/operator (in which case this word is either its LH operand, in which case proceed to build operator, or - if op is prefix - then this is implicitly end of expr)]; given that pairs require different parsing of LH operand depending on context (struct or code vs list, might be good to have separate `parseName` and `parseKeywordExpr` methods)
@@ -407,6 +424,16 @@ class Parser {
             // caution: leftExpr is ImplicitlyUnwrappedOptional<Value>, so never pass nil to infix/postfix parsfuncs or they'll crash
             return try operatorDefinition.parseFunc(self, leftExpr: leftExpr, operatorName: operatorDefinition.name, precedence: operatorDefinition.precedence)
         } else {
+            // TO DO: suspect previous() is nudging this back when it shouldn't; prob. should move that call out of parseOperator and into here; add next() as temp hack
+            
+            
+            // TO DO: good news is: adding the nudge got the command read; bad news is, it ate the next word... I think we're forgetting to backtrack in this function everywhere we're supposed to (esp. here)
+            
+            // ugh, backtracking goes too far by looks of things - need to determine why we're [still] passing backtrack into this func, as rest of func doesn't use it
+            
+            // still, getting close...
+            
+            if leftExpr != nil { self.backtrackTo(backtrackIndex!); return leftExpr! } // if leftExpr was given, we have to return that first before we can process this new expression; new expr will be parsed on next pass
             return NameValue(data: words.joinWithSeparator(" ")) // no operators were found, so return entire phrase as NameValue (caller will decide what to do with it, e.g. check for a RH argument and convert to CommandValue if one is found)
         }
     }
