@@ -31,13 +31,12 @@
 
 // note: another possibility for matching ops defined as both prefix and infix/postfix (e.g. `-`) is to rely on proc overloading, and have record arg with explicit keys (this'd avoid defining disambiguated names, e.g. `neg`, that aren't already visible, though arguably is a misuse of overloading in that behaviors are not simply variations on each other but quite different, e.g. negation vs subtraction)
 
-// (note: currently, there aren't any keyword ops defined as atoms; the only reason to do so would be if defining a word or phrase that must always self-delimit itself, no matter where it appears, otherwise an arg-less command should be sufficient)
-
-
 
 // TO DO: when parsing ListLiteral, if all items are pairs, make this an associative list (note: need to decide rules by which ordered lists [Array], associative lists [Dict], and unique lists [Set] are tagged and/or coercion-locked as that type; this will largely be determined by usage, e.g. once an array operation is performed, the list should thereafter act as array and refuse to coerce to dict or set - though explicit casting should still be allowed; of course, a lot depends on whether lists are mutable or immutable, and that policy/mechanism has yet to be decided)
 
 
+
+let DEBUG = true
 
 
 
@@ -45,7 +44,7 @@ class SyntaxError: ErrorType, CustomStringConvertible {
 
     let description: String
     
-    init(description: String = "Syntax error.") {
+    init(description: String = "Syntax error.") { // TO DO: also needs range + source
         self.description = description
     }
 
@@ -89,7 +88,11 @@ class Parser {
         
         // TO DO: will need to call parseUnquotedWord if token is .UnquotedWord (caveat: we only want the matched operator, not to construct the command, so will have to split that function); for now, the result will be thrown away, but should eventually be cached for reuse
         
-        switch token.type { 
+        print("precedence(\(lookahead))... \(token)")
+        switch token.type {
+        case .UnquotedWord:
+            print("TO DO: precedence for op \(token)")
+            return 0
         case .AnnotationLiteral:    return Precedence.AnnotationLiteral
         case .ExpressionSeparator:  return Precedence.ExpressionSeparator
         case .ItemSeparator:        return Precedence.ItemSeparator
@@ -150,7 +153,7 @@ class Parser {
                 throw SyntaxError(description: "Bad record item (pairs within records must have a literal name): \(value)")
             }
             result.append(value)
-            //            print("CURR: \(self.token)\n")
+            //print("CURR: \(self.currentToken)\n")
         }
         try self.lexer.skip(.RecordLiteralEnd) // TO DO: skip is only really needed to throw error if code terminates without closing `]`
         return RecordValue(data: result)
@@ -174,7 +177,7 @@ class Parser {
         }
         if argument == nil { // name is not followed by a new expression, so it is either just a name or an argument-less command; in either case, return it unchanged as NameValue
             self.lexer.backtrackTo(backtrackIndex)
-            //            print("parseArgument backtracked to \(self.token)")
+            //print("parseArgument backtracked to \(self.currentToken)")
             return name // TO DO: if next token is `do...done` block (a postfix structure), confirm that this gets attached to command correctly (note that its parsefunc will need to cast name to command first)
         } else {
             if !(argument is RecordValue) { argument = RecordValue(data: [argument!]) } // non-record values are treated as first item in a record arg
@@ -194,8 +197,8 @@ class Parser {
     /**********************************************************************/
     // PARSE WORD [SEQUENCE]
     
-    private typealias PartialKeywordOperatorMatch = (words: [String], startID: Int, matchInfo: KeywordOperatorTable.WordInfoType)
-    private typealias FullKeywordOperatorMatch = (words: [String], startID: Int, endID: Int, operatorDefinition: OperatorDefinition)
+    private typealias PartialKeywordOperatorMatch = (words: [String], startIndex: Int, matchInfo: KeywordOperatorTable.WordInfoType)
+    private typealias FullKeywordOperatorMatch = (words: [String], startIndex: Int, endID: Int, operatorDefinition: OperatorDefinition)
     
     private var hasNextWord: Bool { return self.lexer.lookaheadBy(1, ignoreWhiteSpace: false)?.type == Lexer.TokenType.WhiteSpace
         && self.lexer.lookaheadBy(1)?.type == Lexer.TokenType.UnquotedWord }
@@ -206,8 +209,7 @@ class Parser {
         
         // TO DO: this currently parses sequence of words and returns canonical name, but needs to apply operators and data detectors as well; in addition, also needs to return CommandValue if name is followed by another expression (i.e. arg) - although that might be better done from parseExpr using precedence [hmmm... not sure about that, usually it's parsefuncs that continue consuming till they've made their match, though here we would need to match RH to determine if it's a value (including another command)/separator (in which case return)/operator (in which case this word is either its LH operand, in which case proceed to build operator, or - if op is prefix - then this is implicitly end of expr)]; given that pairs require different parsing of LH operand depending on context (struct or code vs list, might be good to have separate `parseName` and `parseKeywordExpr` methods)
         
-        
-        //       print("    ParseUnquotedWord: leftExpr=\(leftExpr) token=\(self.token?.type) \(self.token?.value)")
+        //print("    ParseUnquotedWord: leftExpr=\(leftExpr) token=\(self.currentToken?.type) \(self.currentToken?.value)")
         var words = [String]()
         // match keyword operators
         var partialKeywordOperatorMatches = [PartialKeywordOperatorMatch]()
@@ -217,16 +219,16 @@ class Parser {
         while self.lexer.currentToken != nil { // TO DO: as soon as that match is made, loop should exit (no point reading any further as without caching it'll all get tossed anyway, plus parsefuncs have their own ideas about what to look for, especially when reading more complex structures such as `do...done` blocks)
             words.append(self.lexer.currentToken!.value) // note: words always contains current token, including first word of a keyword op (this will be removed again before constructing the left NameValue to an operator)
             var i = 0
-            for (precedingWords, startID, match) in partialKeywordOperatorMatches {
+            for (precedingWords, startIndex, match) in partialKeywordOperatorMatches {
                 if let operatorDefinition = match.definition {
                     // note: if the matched "operator" is NOT left-self-delimiting, it must be first in word sequence; conversely, if it is NOT right-self-delimiting, it must be last. If these conditions are not met then it is not an operator, just normal word[s] within a longer phrase. e.g. The `to` prefix operator is not left-self-delimiting, so `to foo` is a valid `to` op with 'foo' as its RH operand, but `go to` is just an ordinary name (i.e. the 'to' is not special as it is not the first word in the expression).
-                    if (operatorDefinition.autoDelimit.left || startID == firstWordID) && (operatorDefinition.autoDelimit.right || !self.hasNextWord) {
-                        //                        print(" FOUND A FULL MATCH: \((precedingWords, startID, self.lexer.currentTokenIndex, operatorDefinition))")
-                        fullKeywordOperatorMatches.append((precedingWords, startID, self.lexer.currentTokenIndex-1, operatorDefinition)) // note: lexer.currentTokenIndex is next word, so nudge back one so that next pass puts us back on it
+                    if (operatorDefinition.autoDelimit.left || startIndex == firstWordID) && (operatorDefinition.autoDelimit.right || !self.hasNextWord) {
+                        //print(" FOUND A FULL MATCH: \((precedingWords, startIndex, self.lexer.currentTokenIndex, operatorDefinition))")
+                        fullKeywordOperatorMatches.append((precedingWords, startIndex, self.lexer.currentTokenIndex-1, operatorDefinition)) // note: lexer.currentTokenIndex is next word, so nudge back one so that next pass puts us back on it
                     }
                 }
                 if let nextMatch = match.nextWords[self.lexer.currentToken!.value] {
-                    partialKeywordOperatorMatches[i] = (precedingWords, startID, nextMatch)
+                    partialKeywordOperatorMatches[i] = (precedingWords, startIndex, nextMatch)
                     i += 1
                 } else {
                     partialKeywordOperatorMatches.removeAtIndex(i)
@@ -241,17 +243,38 @@ class Parser {
             self.lexer.advance()
         }
         if fullKeywordOperatorMatches.count > 0 {
-            fullKeywordOperatorMatches.sortInPlace{ ($0.startID < $1.startID) || ($0.startID == $1.startID && $0.endID > $1.endID) }
-            let foundOp = fullKeywordOperatorMatches[0]
-            //           print("\nCURRENT TOKEN: \(self.token)")
+            // TO DO: we only need the prefix and/or infix op[s] with the lowest startIndex and highest endID, so sort is overkill and could be made O(n)
+            fullKeywordOperatorMatches.sortInPlace{ ($0.startIndex < $1.startIndex) || ($0.startIndex == $1.startIndex && $0.endID > $1.endID) }
+            // if leftExpr is nil, this is new expression and an infix/postfix op at start is not legal; if one is found at start, it is a syntax error
+            // if leftExpr is nil and an infix/postfix op is found after first word, use its preceding word(s) as its LH operand
+            // if leftExpr is Value, an infix/postfix op at start should be applied to that (precedence willing); anything else,  treat these words as new expr, so backtrack then return leftExpr
+            var foundOp = fullKeywordOperatorMatches[0]
+            if fullKeywordOperatorMatches.count > 1 { // check to see if there's a second match with same start and end indexes
+                let altOp = fullKeywordOperatorMatches[1]
+                if altOp.startIndex == foundOp.startIndex  && altOp.endID == foundOp.endID { // found both atom/prefix and infix/postfix definitions, so need to decide which to use
+                    //print("ALT: \(altOp)")
+                    if foundOp.startIndex == firstWordID { // if op is at start, use leftExpr to decide whether to use prefix or infix/postfix op
+                        if leftExpr == nil && foundOp.operatorDefinition.form.hasLeftOperand // no leftExpr, so use the prefix op
+                                || leftExpr != nil && altOp.operatorDefinition.form.hasLeftOperand {// found leftExpr, so use the infix/postfix op
+                            foundOp = altOp
+                        }
+                    } else {// found preceding words (these will be new leftExpr on next pass), so use the infix/postfix op
+                        if altOp.operatorDefinition.form.hasLeftOperand {
+                        foundOp = altOp // TO DO: currently this is discarded, but eventually subsequent code should cache this work before returning leftExpr
+                        }
+                    }
+                }
+            }
+            //print("MATCHES:" + (fullKeywordOperatorMatches.map{"\($0)"}.joinWithSeparator("\n\t\t")))
+            //print("\nCURRENT TOKEN: \(self.currentToken)")
             self.lexer.backtrackTo(foundOp.endID)
-            //            print("...IDENTIFIED BEST-MATCH OPERATOR: \(foundOp); \n\tbacktrack to \(self.token)")
+            //print("...IDENTIFIED BEST-MATCH OPERATOR: \(foundOp); \n\tbacktrack to \(self.currentToken)")
             let operatorDefinition = foundOp.operatorDefinition
-            if foundOp.startID == firstWordID {
+            if foundOp.startIndex == firstWordID {
                 //print("MATCHED OP AT START OF WORDS; \(leftExpr) \(operatorDefinition.form) \(operatorDefinition.form.hasLeftOperand)")
                 if operatorDefinition.form.hasLeftOperand { // it's an infix/postfix op (i.e. leftExpr is required) so do checks before proceeding
                     if leftExpr == nil { // can't have infix/postfix op without an LH operand, so throw SyntaxError
-                        throw SyntaxError(description: "'" + words.joinWithSeparator(" ") + "' operator requires left-hand operand.")
+                        throw SyntaxError(description: "'" + foundOp.words.joinWithSeparator(" ") + "' operator requires left-hand operand.")
                     } else if !(precedence < operatorDefinition.precedence) { // now we know the op, we can check whether leftExpr binds more tightly to this op than whatever preceded it; if not, return now, and the same test will be performed on all of that LH expr, and so on
                         return nil
                     }
@@ -259,8 +282,21 @@ class Parser {
                     if leftExpr != nil { return nil } // parseOperator needs to return leftExpr first; new expr will be parsed on next pass
                 }
             } else { // it's a new expression consisting of one or more non-operator words (i.e. a name), followed by some sort of operator
+                //print("MATCHED OP IN WORDS; \(leftExpr)")
                 if leftExpr != nil { return nil } // ditto
                 leftExpr = NameValue(data: foundOp.words[0..<(foundOp.words.count-1)].joinWithSeparator(" "))
+                //print("....... OP IN WORDS; \(leftExpr)")
+                print("CHECK PREC: \(leftExpr) prevOp=\(precedence) op=\(operatorDefinition.precedence)")
+                if !(precedence < operatorDefinition.precedence) { // now we know the op, we can check whether leftExpr binds more tightly to this op than whatever preceded it; if not, return now, and the same test will be performed on all of that LH expr, and so on
+                    self.lexer.backtrackTo(foundOp.startIndex)
+                    print("RETURN \(leftExpr) next=\(self.currentToken)")
+                    self.lexer.retreat()
+                    return leftExpr
+                }
+            }
+            // sanity check
+            if leftExpr != nil && !operatorDefinition.form.hasLeftOperand || leftExpr == nil && operatorDefinition.form.hasLeftOperand {
+                throw SyntaxError(description: "PARSER BUG: mismatched operator: leftExpr=\(leftExpr) opDef=\(operatorDefinition)") // BUG
             }
             // lexer is now positioned to start reading RH operand (if any), so call the operator's parsefunc to read that (plus any additional operands if it's a multifix op, keyword-based block, etc.) and return the finished command expression
             // caution: parsefuncs treat leftExpr as an ImplicitlyUnwrappedOptional<Value>, so never pass nil to infix/postfix parsfuncs unless they're already expecting this (e.g. a parsefunc that handles both prefix and infix/postfix cases), or they'll crash if they try to use it
@@ -277,7 +313,7 @@ class Parser {
     
     private func parseAtom(precedence: Int = 0) throws -> Value? { // parse atom or prefix op (i.e. no left operand)
         self.lexer.advance()
-//        print("\nPARSE_PREFIX: \(self.lexer.currentToken)")
+        if DEBUG {print("\nPARSE_PREFIX: \(self.lexer.currentToken)")}
         guard let token = self.lexer.currentToken else { throw EndOfCodeError(description: "[1] End of code.") } // outta tokens
         switch token.type {
         case .AnnotationLiteral: // «...» // attaches arbitrary contents to subsequent node as metadata
@@ -295,7 +331,6 @@ class Parser {
             try self.lexer.skip(.ListLiteralEnd) // TO DO: skip is only really needed to throw error if code terminates without closing `]`
             return ListValue(data: result)
         case .RecordLiteral: // {...}; a sequence of values and/or name-value pairs; mostly used to pass proc args
-            //       print("")
             return try self.parseRecord()
         case .ExpressionGroupLiteral: // (...)
             var result = [Value]()
@@ -316,10 +351,10 @@ class Parser {
         case .UnquotedWord: // everything else that is not one of the above hardcoded token types; parseWord will deal with this
             // TO DO: confirm this never needs to backtrack, i.e. always returns Name/Command or error, and does any backtracking itself
             let result = try self.parseUnquotedWord() // may be NameValue (if it's a simple sequence of unquoted words with no special meaning), TextValue (if a data detector matched it), or CommandValue (if some or all of it was matched against operators table)
- //           print("parseAtom.UnquotedWord got Name/Command \(result)...")
+            //print("parseAtom.UnquotedWord got Name/Command \(result)...")
             let res = result is NameValue ? try self.parseArgument(result as! NameValue, precedence: precedence) : result // TO DO: actually need to check why precedence is passed here, and what affect it has (it _should_ only be used to prevent overshoot _if_ parseArgument also calls parseOperation [which it currently doesn't do, ensuring arg always binds tightest to command], so is currently unused here, and if parseArgument doesn't change then it probably makes most sense to take it out)
-//            print("... and returned it as \(res)")
-//            print("PARSED UQW: \(res)")
+            //print("... and returned it as \(res)")
+            //print("PARSED UQW: \(res)")
             return res // TO DO: what if parseUnquotedWord returns nil here for some reason; what will that do, and should it be guarded against as error?
         default:
             // TO DO: AnnotationLiteralEnd, RecordLiteralEnd, ListLiteralEnd, ExpressionGroupLiteralEnd will only appear if opening '«', '{', '[', or '(' token is missing, in which case parser should treat as syntax error [current behavior] or as an incomplete structure in chunk of code whose remainder is in a previous chunk [depending how incremental parsing is done]; any other token types are infix/postfix ops which are missing their left operand
@@ -328,9 +363,10 @@ class Parser {
     }
     
     private func parseOperation(var leftExpr: Value, precedence: Int = 0) throws -> Value { // parse infix/postfix
+        if DEBUG {print("parseOperation(\(leftExpr), \(precedence)) \n\t\ttoken=\(self.currentToken)\n\t\tnext=\(self.lexer.lookaheadBy(1))")}
         while precedence < self.precedence(1) || self.lexer.lookaheadBy(1)?.type == .UnquotedWord { // TO DO: precedence(1) will return 0 if next token is unquoted word, but until word seq has been parsed we can't know its actual precedence
- //                       print("\nPARSE_INFIX:  \(self.lexer.currentToken)")
-            let startID = self.lexer.currentTokenIndex
+            if DEBUG {print("\nPARSE_INFIX:  \(self.lexer.currentToken)")}
+            let previousIndex = self.lexer.currentTokenIndex
             self.lexer.advance()
             guard let token = self.lexer.currentToken else { throw EndOfCodeError(description: "[2] End of code.") } // outta tokens
             switch token.type {
@@ -353,7 +389,7 @@ class Parser {
                 if let result = try self.parseUnquotedWord(leftExpr, precedence: precedence) {
                     leftExpr = result
                 } else { // parseQuotedWord detected start of new expression (or doesn't bind tightly enough to leftExpr(?)), so return leftExpr as-is and process UnquotedWord token on next pass
-                    self.lexer.backtrackTo(startID)
+                    self.lexer.backtrackTo(previousIndex)
                     return leftExpr
                 }
             default:
@@ -366,11 +402,13 @@ class Parser {
     // TO DO: should parseExpression be public? what use-cases does it offer vs parse()?
     
     func parseExpression(precedence: Int = 0) throws -> Value { // parse atom or prefix op, followed by any infix/postfix ops
- //       print("\nSTART parseExpression: #\(self.lexer.currentTokenIndex) \(self.lexer.currentToken)")
+        if DEBUG {print("\nSTART parseExpression: #\(self.lexer.currentTokenIndex) \(self.lexer.lookaheadBy(1))")}
         guard let leftExpr = try self.parseAtom(precedence) else {
             throw SyntaxError(description: "[1] Unexpected \"\(self.lexer.currentToken ?? nil)\"")
         }
-        return try self.parseOperation(leftExpr, precedence: precedence)
+        let result = try self.parseOperation(leftExpr, precedence: precedence)
+        if DEBUG {print("DONE  parseExpression: \(result)\n")}
+        return result
     }
     
     
@@ -381,7 +419,8 @@ class Parser {
     func parse() throws -> EntoliScript { // parse full script
         var result = [Value]()
         while self.lexer.lookaheadBy(1) != nil {
-            result.append(try self.parseExpression())
+            result.append(self.stripPeriod(try self.parseExpression()))
+            if DEBUG {print("TOP-LEVEL EXPR: \(result.last)")}
             self.lexer.flush()
         }
         return EntoliScript(data: result)

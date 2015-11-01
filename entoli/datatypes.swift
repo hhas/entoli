@@ -14,7 +14,7 @@ class Value: CustomStringConvertible { // being homoiconic, there is no differen
     var description: String {return "<VALUE>"} // TO DO: make this an up-call, and implement `literalRepresentation` methods that take additional options (e.g. always/never quote names); also implement debugDescription that returns Swift-style representation
 }
 
-class ListValue: Value {
+class ListValue: Value { // TO DO: how best to constrain as array/dictionary/set? (parser can provide array-vs-dict hint when creating from literal; otherwise it's down to usage)
     let data: [Value]
     
     init(data: [Value]) {
@@ -25,7 +25,7 @@ class ListValue: Value {
     }
 }
 
-class TextValue: Value { // TO DO: how to annotate with numerics, units, dates, etc? (data detectors might output primitive [Swift] values automatically, in which case they should prob. be cached in TextValue for efficient reuse, avoiding need to coerce Text to primitives each time)
+class TextValue: Value { // TO DO: how to annotate with numerics, units, dates, etc? (data detectors might output primitive [Swift] values automatically, in which case they should prob. be cached in TextValue for efficient reuse, avoiding need to coerce Text to primitives each time); alternatively, TextValue _might_ be subclassed as NumberValue (which in turn might be subclassed as NumericUnitsValue), DateValue, etc., at least for built-ins
     let data: String
     
     init(data: String) {

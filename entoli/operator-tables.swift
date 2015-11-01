@@ -7,6 +7,8 @@
 // TO DO: auto-delimiting rules are different for whole-word vs in-word ops (for symbol ops, whitespace is also a delimiter, so should always fully self-delimit when found in keyword table, which currently they won't do; one option is to make OperatorDefinition a class with KeywordOperatorDefinition and SymbolOperatorDefinition subclasses, or add a .Keyword/.Symbol flag and maybe group type:form:delimit: into a sub-tuple for convenience; alternatively, use separate keywordDelimit: and symbolDelimit:)
 
 
+// TO DO: think we need a hard rule for devs: never implement new types using command- or prefixop-based constructors (e.g. `file "/"`), as the same name can't then be used for typespec (e.g. `"/" as file`) [technically, through proc overloading and optional args `file` probably _could_ do both, but it'd likely get nasty; avoiding it also provides clear distinction between object specifiers and datatypes, e.g. `document "foo" of ...` vs `document`, although that still requires thought]
+
 
 // TO DO: how to disambiguate overloaded op/command names? e.g. `'-'{1}` (neg) might be distinguished from `'-'{2,1}` (sub) by counting args, but that won't work where a prefix op overloads a postfix op; also, in the `-` case, `'-'{1,2}` would be a more correct representation (`-1` and `2-1` both negate the RH operand, not the left, but record items count left to right so the required value wants to be first, followed by the optional one), but then that causes more confusion (plus, of course, there's also `2;'-'1` to take into account, and even `1;'-'`)
 
@@ -17,7 +19,18 @@
 // note: `-100` and `-foo` are both valid uses of prefix `-`; however, it would be better that first is matched as number before trying to match it as symbol operator, so perhaps it's just a question of doing keyword op parse first, then pattern-based value detection, then in-word symbol operator detection? Or maybe we should even just say whitespace or other delimiter char is always required around symbol ops? (FWIW, this should happen anyway: e.g. `- 1` will be parsed as prefix op, while `-1` will be parsed as word, with longest-match rule automatically ensuring it's read as a number)
 
 
-// TO DO: should `nothing`, `did nothing` be defined as Atom ops or commands? (the first would be safer in that `nothing` &co _never_ takes an arg)
+// TO DO: should `no value`, `did nothing` be defined as Atom ops or commands? (Atoms would be safer in that these _never_ take an arg; not sure if they should self-delimit though, and given they're really only intended as return values it's not very useful if they did, so probably best use .None)
+
+
+enum OperatorForm { // TO DO: distinguish keyword from symbol
+    case Atom
+    case Prefix
+    case Infix
+    case Postfix
+    
+    var hasLeftOperand: Bool { return (self == .Infix || self == .Postfix) }
+    var isSymbol: Bool { return false } // TO DO
+}
 
 
 enum AutoDelimit { // e.g. Given word sequence `red is blue`, should it be parsed as a single name, or as an `is` operator with `red` and `blue` operands?
@@ -114,7 +127,7 @@ func throwMisplacedToken(parser: Parser, leftExpr: Value!, operatorName: String,
 }
 
 
-
+// TO DO: might be cleanest to use operator form (.Infix, etc) to distinguish symbol from keyword; this also eliminates need for separate tables, and allows op tables to be combined (symboltable.add would be called by keywordtable.add)
 
 // Standard operators
 
@@ -182,9 +195,10 @@ let StandardKeywordOperators: [OperatorDefinition] = [
     ("do",       [], 50, .Atom,    .Full, parseAtomDoBlock),
     ("do",       [], 50, .Postfix, .Full, parsePostfixDoBlock),
     ("done",     [],  0, .Atom,    .Full, throwMisplacedToken), // `do` block parsefuncs use `done` as terminator; anywhere else is a syntax error
+    
+    // TO DO: `to` operator for defining new procs
 ]
 
-// TO DO: what about blocks, e.g. `do...done`?
 
 
 struct OperatorWordInfo<WordT: Hashable>: CustomStringConvertible { // WordT is String or Character
@@ -194,7 +208,9 @@ struct OperatorWordInfo<WordT: Hashable>: CustomStringConvertible { // WordT is 
     
     // note: if definition != nil, a valid match has been made; however, if isLongest is false, 
     // there might still be a longer match to be made, in which case keep looking // TO DO: a recursive algorithm can capture the valid match in the current call frame, then check isLongest to determine if it should recurse further; it will also need a way to start the next match on whatever words were left in subframes after the longest match is made - simplest way to do that may just be for subframes to call Lexer.skip(-n) to backtrack (where n is typically 2, i.e. word+interstitial whitespace tokens)
-    var definition: OperatorDefinition? = nil
+    
+    var definition: OperatorDefinition? = nil // TO DO: separate prefix and infix defs
+    
     var nextWords: [WordT:OperatorWordInfo<WordT>] = [:]
     var isLongest: Bool { return self.nextWords.count == 0 }
     
@@ -231,6 +247,11 @@ class OperatorTable<WordT: Hashable> { // Keyword/Symbol table (only real differ
         return []
     }
     
+    
+    // TO DO: merge prefix/infix defs into single table
+    
+    
+    // TO DO: move this to keyword subclass; it should then call symbol subclass as needed (it should prob. also check that symbols don't contain ws)
     func add(definitions: [OperatorDefinition]) -> Self {
         for definition in definitions {
             // given a multi-word operator name, split it into words, then store as a series of nested dicts, 
@@ -262,7 +283,6 @@ class SymbolOperatorTable: OperatorTable<Character> {
 
 class KeywordOperatorTable: OperatorTable<String> { // whole-word matching
     
-
     override func splitWords(name: String) -> [String] {// TO DO: what about normalizing name? (trim, lowercase, etc), or is it reasonable to expect tables to be correctly formatted before reading?
         return name.characters.split{$0 == " "}.map(String.init)
     }

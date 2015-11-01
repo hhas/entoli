@@ -12,15 +12,6 @@
 // note: quoted text literals support escaping of quotes only; for other escapes (e.g. tabs, linefeed, codepoints, etc), use `format "..."` command (this should use tags, e.g. `{tab}`, `{0u1234 0uABCD}`, `{some name}`; if not parameterized, result can also be memoized for efficiency; note that allowing commands in tags, they should be sandboxed to prevent side-effects - though this is technically 'honesty method' since there's no way to enforce this restriction on primitive procs if they choose to lie about it)
 
 
-enum OperatorForm {
-    case Atom
-    case Prefix
-    case Infix
-    case Postfix
-    
-    var hasLeftOperand: Bool { return (self == .Infix || self == .Postfix) }
-}
-
 
 class Lexer {
         
@@ -225,12 +216,14 @@ class Lexer {
         if offset == 0 { return self.currentToken }
         var count: UInt = 0
         var lookaheadTokenIndex: Int = self.currentTokenIndex
+        print("LOOKING AHEAD from \(self.currentToken) by \(offset)")
         while count < offset {
             lookaheadTokenIndex += 1
             while lookaheadTokenIndex >= self.currentTokensCache.count { self.currentTokensCache.append(self._next()) }
-            guard let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex] else { return nil }
+            guard let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex] else { print("NIL LOOKAHEAD");print(self.currentTokensCache.map{$0?.value}); return nil }
             if lookaheadToken.type != .WhiteSpace || !ignoreWhiteSpace { count += 1 }
         }
+        print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")
         return self.currentTokensCache[lookaheadTokenIndex]
     }
     
