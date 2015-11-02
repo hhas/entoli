@@ -16,9 +16,7 @@ let source = " 1 / 2 + 4 " //. 2*2. 3 - 3. 4-4. "
 
 
 
-var lexer = Lexer(code: source)
-
-
+let lexer = Lexer(code: source)
 let p = Parser(lexer: lexer)
 
 

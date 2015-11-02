@@ -198,7 +198,7 @@ class Parser {
     // PARSE WORD [SEQUENCE]
     
     private typealias PartialKeywordOperatorMatch = (words: [String], startIndex: Int, matchInfo: KeywordOperatorTable.WordInfoType)
-    private typealias FullKeywordOperatorMatch = (words: [String], startIndex: Int, endID: Int, operatorDefinition: OperatorDefinition)
+    private typealias FullKeywordOperatorMatch = (words: [String], startIndex: Int, endIndex: Int, operatorDefinition: OperatorDefinition)
     
     private var hasNextWord: Bool { return self.lexer.lookaheadBy(1, ignoreWhiteSpace: false)?.type == Lexer.TokenType.WhiteSpace
         && self.lexer.lookaheadBy(1)?.type == Lexer.TokenType.UnquotedWord }
@@ -214,17 +214,18 @@ class Parser {
         // match keyword operators
         var partialKeywordOperatorMatches = [PartialKeywordOperatorMatch]()
         var fullKeywordOperatorMatches = [FullKeywordOperatorMatch]()
-        let firstWordID = self.lexer.currentTokenIndex
+        let firstWordIndex = self.lexer.currentTokenIndex
         // scan all words until the first full [and longest] operator match is made (caveat: if it's not left and right auto-delimiting, need to discard if there are adjoining words)
         while self.lexer.currentToken != nil { // TO DO: as soon as that match is made, loop should exit (no point reading any further as without caching it'll all get tossed anyway, plus parsefuncs have their own ideas about what to look for, especially when reading more complex structures such as `do...done` blocks)
             words.append(self.lexer.currentToken!.value) // note: words always contains current token, including first word of a keyword op (this will be removed again before constructing the left NameValue to an operator)
             var i = 0
             for (precedingWords, startIndex, match) in partialKeywordOperatorMatches {
-                if let operatorDefinition = match.definition {
+                for operatorDefinition in match.definitions {
+                    let autoDelimit = operatorDefinition.name.type == .Symbol ? .Full : operatorDefinition.name.autoDelimit // whitespace always delimits symbol-based operators
                     // note: if the matched "operator" is NOT left-self-delimiting, it must be first in word sequence; conversely, if it is NOT right-self-delimiting, it must be last. If these conditions are not met then it is not an operator, just normal word[s] within a longer phrase. e.g. The `to` prefix operator is not left-self-delimiting, so `to foo` is a valid `to` op with 'foo' as its RH operand, but `go to` is just an ordinary name (i.e. the 'to' is not special as it is not the first word in the expression).
-                    if (operatorDefinition.autoDelimit.left || startIndex == firstWordID) && (operatorDefinition.autoDelimit.right || !self.hasNextWord) {
+                    if (autoDelimit.left || startIndex == firstWordIndex) && (autoDelimit.right || !self.hasNextWord) {
                         //print(" FOUND A FULL MATCH: \((precedingWords, startIndex, self.lexer.currentTokenIndex, operatorDefinition))")
-                        fullKeywordOperatorMatches.append((precedingWords, startIndex, self.lexer.currentTokenIndex-1, operatorDefinition)) // note: lexer.currentTokenIndex is next word, so nudge back one so that next pass puts us back on it
+                        fullKeywordOperatorMatches.append((precedingWords, startIndex, self.lexer.currentTokenIndex-1, operatorDefinition)) // note: lexer.currentTokenIndex is next word, so nudge endIndex back one so that next pass puts us back on it
                     }
                 }
                 if let nextMatch = match.nextWords[self.lexer.currentToken!.value] {
@@ -234,26 +235,24 @@ class Parser {
                     partialKeywordOperatorMatches.removeAtIndex(i)
                 }
             }
-            for definitions in [self.keywordOperators.prefixDefinitions, self.keywordOperators.infixDefinitions] {
-                if let foundOp = definitions[self.lexer.currentToken!.value] {
-                    partialKeywordOperatorMatches.append((words, self.lexer.currentTokenIndex, foundOp))
-                }
+            if let foundOp = self.keywordOperators.definitionsByWord[self.lexer.currentToken!.value] {
+                partialKeywordOperatorMatches.append((words, self.lexer.currentTokenIndex, foundOp))
             }
             if !self.hasNextWord { break }
             self.lexer.advance()
         }
         if fullKeywordOperatorMatches.count > 0 {
-            // TO DO: we only need the prefix and/or infix op[s] with the lowest startIndex and highest endID, so sort is overkill and could be made O(n)
-            fullKeywordOperatorMatches.sortInPlace{ ($0.startIndex < $1.startIndex) || ($0.startIndex == $1.startIndex && $0.endID > $1.endID) }
+            // TO DO: we only need the prefix and/or infix op[s] with the lowest startIndex and highest endIndex, so sort is overkill and could be made O(n)
+            fullKeywordOperatorMatches.sortInPlace{ ($0.startIndex < $1.startIndex) || ($0.startIndex == $1.startIndex && $0.endIndex > $1.endIndex) }
             // if leftExpr is nil, this is new expression and an infix/postfix op at start is not legal; if one is found at start, it is a syntax error
             // if leftExpr is nil and an infix/postfix op is found after first word, use its preceding word(s) as its LH operand
             // if leftExpr is Value, an infix/postfix op at start should be applied to that (precedence willing); anything else,  treat these words as new expr, so backtrack then return leftExpr
             var foundOp = fullKeywordOperatorMatches[0]
             if fullKeywordOperatorMatches.count > 1 { // check to see if there's a second match with same start and end indexes
                 let altOp = fullKeywordOperatorMatches[1]
-                if altOp.startIndex == foundOp.startIndex  && altOp.endID == foundOp.endID { // found both atom/prefix and infix/postfix definitions, so need to decide which to use
+                if altOp.startIndex == foundOp.startIndex  && altOp.endIndex == foundOp.endIndex { // found both atom/prefix and infix/postfix definitions, so need to decide which to use
                     //print("ALT: \(altOp)")
-                    if foundOp.startIndex == firstWordID { // if op is at start, use leftExpr to decide whether to use prefix or infix/postfix op
+                    if foundOp.startIndex == firstWordIndex { // if op is at start, use leftExpr to decide whether to use prefix or infix/postfix op
                         if leftExpr == nil && foundOp.operatorDefinition.form.hasLeftOperand // no leftExpr, so use the prefix op
                                 || leftExpr != nil && altOp.operatorDefinition.form.hasLeftOperand {// found leftExpr, so use the infix/postfix op
                             foundOp = altOp
@@ -267,10 +266,10 @@ class Parser {
             }
             //print("MATCHES:" + (fullKeywordOperatorMatches.map{"\($0)"}.joinWithSeparator("\n\t\t")))
             //print("\nCURRENT TOKEN: \(self.currentToken)")
-            self.lexer.backtrackTo(foundOp.endID)
+            self.lexer.backtrackTo(foundOp.endIndex)
             //print("...IDENTIFIED BEST-MATCH OPERATOR: \(foundOp); \n\tbacktrack to \(self.currentToken)")
             let operatorDefinition = foundOp.operatorDefinition
-            if foundOp.startIndex == firstWordID {
+            if foundOp.startIndex == firstWordIndex {
                 //print("MATCHED OP AT START OF WORDS; \(leftExpr) \(operatorDefinition.form) \(operatorDefinition.form.hasLeftOperand)")
                 if operatorDefinition.form.hasLeftOperand { // it's an infix/postfix op (i.e. leftExpr is required) so do checks before proceeding
                     if leftExpr == nil { // can't have infix/postfix op without an LH operand, so throw SyntaxError
@@ -282,7 +281,7 @@ class Parser {
                     if leftExpr != nil { return nil } // parseOperator needs to return leftExpr first; new expr will be parsed on next pass
                 }
             } else { // it's a new expression consisting of one or more non-operator words (i.e. a name), followed by some sort of operator
-                //print("MATCHED OP IN WORDS; \(leftExpr)")
+                print("MATCHED OP IN WORDS; \(leftExpr)")
                 if leftExpr != nil { return nil } // ditto
                 leftExpr = NameValue(data: foundOp.words[0..<(foundOp.words.count-1)].joinWithSeparator(" "))
                 //print("....... OP IN WORDS; \(leftExpr)")
@@ -300,7 +299,7 @@ class Parser {
             }
             // lexer is now positioned to start reading RH operand (if any), so call the operator's parsefunc to read that (plus any additional operands if it's a multifix op, keyword-based block, etc.) and return the finished command expression
             // caution: parsefuncs treat leftExpr as an ImplicitlyUnwrappedOptional<Value>, so never pass nil to infix/postfix parsfuncs unless they're already expecting this (e.g. a parsefunc that handles both prefix and infix/postfix cases), or they'll crash if they try to use it
-            return try operatorDefinition.parseFunc(self, leftExpr: leftExpr, operatorName: operatorDefinition.name, precedence: operatorDefinition.precedence)
+            return try operatorDefinition.parseFunc(self, leftExpr: leftExpr, operatorName: operatorDefinition.name.name, precedence: operatorDefinition.precedence)
         } else { // no operators were found, so return entire phrase as NameValue (caller will decide what to do with it, e.g. check for a RH argument and convert to CommandValue if one is found)
             if leftExpr != nil { return nil } // ditto
             return NameValue(data: words.joinWithSeparator(" "))

@@ -49,8 +49,6 @@ class Lexer {
         }
     }
     
-    typealias Element = Token
-    
     
     // quoted text/name literals
     static let quoteDelimiters: [Character:TokenType] = [
@@ -103,7 +101,7 @@ class Lexer {
     }
         
     // read and return next token; returns nil once all tokens have been read
-    private func _next() -> Element? {
+    private func _next() -> Token? {
         if self.cursor >= length { return nil }
         let start = self.cursor
         let firstChar = self.code[self.cursor] // TO DO: prob make this `char` var and rejig stages into a single switch
@@ -216,14 +214,17 @@ class Lexer {
         if offset == 0 { return self.currentToken }
         var count: UInt = 0
         var lookaheadTokenIndex: Int = self.currentTokenIndex
-        print("LOOKING AHEAD from \(self.currentToken) by \(offset)")
+  //      print("LOOKING AHEAD from \(self.currentToken) by \(offset)")
         while count < offset {
             lookaheadTokenIndex += 1
             while lookaheadTokenIndex >= self.currentTokensCache.count { self.currentTokensCache.append(self._next()) }
-            guard let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex] else { print("NIL LOOKAHEAD");print(self.currentTokensCache.map{$0?.value}); return nil }
+            guard let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex] else {
+                print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{$0?.value as String!})")
+                return nil
+            }
             if lookaheadToken.type != .WhiteSpace || !ignoreWhiteSpace { count += 1 }
         }
-        print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")
+ //       print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")
         return self.currentTokensCache[lookaheadTokenIndex]
     }
     
