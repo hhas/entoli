@@ -109,7 +109,7 @@ func parsePostfixDoBlock(parser: Parser, leftExpr: Value!, operatorName: String,
         default:
             throw SyntaxError("Malformed command signature.")
         }
-        if self.lookahead(1) == Lexer.TokenType.RecordLiteral {
+        if self.lookahead(1) == PunctuationLexer.TokenType.RecordLiteral {
             arg = self.parseAtom()
             // need to check record is correctly structured: each item must be a name, optionally wrapped in coercion (don't forget optional annotations too - these will be treated as arg descriptions) // TO DO: is this right/optimal?... actually, no, it's the command's record that needs to be checked, as if it has pairs then LH must be name
         }
@@ -131,6 +131,8 @@ typealias OperatorName = (name: String, type: OperatorType, autoDelimit: AutoDel
 typealias OperatorDefinition = (name: OperatorName, precedence: Int, form: OperatorForm, parseFunc: ParseFuncType, aliases: [OperatorName])
 
 // Standard operators
+
+// TO DO: should operators be grouped by category (math, etc) where practical, allowing them to be selectively loaded/unloaded? (that alternative would be to define each operator on corresponding proc, but don't think that level of granularity will make code any easier to follow); or is it enough just to define operator table within library, and leave library client to indicate whether or not it wants to import library's operator definitions in addition to its procs
 
 let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be detected using both whole-word AND in-word (by-char) matching; .Keyword operators by whole-word only
     
@@ -187,15 +189,17 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     
     // reference
     (("of",       .Phrase, .Full), 800, .Infix,   parseInfixOperator,  []), // TO DO: what precedence?
-    (("thru",     .Phrase, .Full),  50, .Infix,   parseInfixOperator,  [("through", .Phrase, .Full)]), // range constructor
+    (("thru",     .Phrase, .Full),  50, .Infix,   parseInfixOperator,  [("through", .Phrase, .Full)]), // range constructor // TO DO: optional `by` clause?
     (("where",    .Phrase, .Full),  50, .Infix,   parseInfixOperator,  [("whose", .Phrase, .Full)]),  // filter clause
     
     // eval clauses
-    (("catching", .Phrase, .Full),  50, .Infix,   parseInfixOperator,  []),
-    (("else",     .Phrase, .Full),  50, .Infix,   parseInfixOperator,  []),
+    (("catching", .Phrase, .Full),  50, .Infix,   parseInfixOperator,  []), // evaluate LH operand; on error, evaluate RH operand
+    (("else",     .Phrase, .Full),  50, .Infix,   parseInfixOperator,  []), // evaluate LH operand; if it returns 'did nothing', evaluate RH operand
+    
+    // expression blocks
     (("do",       .Phrase, .Full),  50, .Atom,    parseAtomDoBlock,    []),
     (("do",       .Phrase, .Full),  50, .Postfix, parsePostfixDoBlock, []),
-    (("done",     .Phrase, .Full),   0, .Atom,    throwMisplacedToken, []), // `do` block parsefuncs use `done` as terminator; anywhere else is a syntax error
+    (("done",     .Phrase, .Full),   0, .Atom,    throwMisplacedToken, []), // `do` block parsefuncs use `done` as terminator; anywhere else is a syntax error (note: this won't work if parsing per-line; TO DO: would be better to use same approach as for punctuation-based blocks where imbalances are counted [note: the latter currently don't do this either, but there's a TODO for that too])
     
     // TO DO: `to` operator for defining new procs
 ]
@@ -203,19 +207,19 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
 
 
 struct OperatorWordInfo<WordT: Hashable>: CustomStringConvertible { // WordT is String or Character
-    // An operator name is composed of one or more 'words'. In a keyword-based operator, e.g. "is not same as", each word is a String, created by splitting the full name on interstitial whitespace. (In a symbol-based operator, e.g. "!=", the full name should always be a single String-based word.) The Lexer outputs single String-based words, e.g. ["is", "not", "same", "as"], so to match an entire operator, each defined operator name is first broken down into nested dictionaries, each of whose keys are a single 'word' to match, and whose values are the next matchable word[s] (if any) and/or an operator definition (if a full match has been made).
-    // In addition, any 'words' not identified as operator names defined in the KeywordOperatorTable need to be examined character-by-character to see if they contain any symbol-based operators, e.g. "foo<bar". (Ideally, users would always surround symbol operators with whitespace, making them trivial to identify, but this is not an ideal world so we must check for cases where a user might accidentally/deliberately enter symbol operators without explicitly separating them from adjoining characters; a task further complicated by the fact that some characters take on different meanings according to immediate context, e.g. `-` might be a negation or subtraction operator, or an in-word hyphen.)
+    // An operator name is composed of one or more 'words'. In a keyword-based operator, e.g. "is not same as", each word is a String, created by splitting the full name on interstitial whitespace. (In a symbol-based operator, e.g. "!=", the full name should always be a single String-based word.) The PunctuationLexer outputs single String-based words, e.g. ["is", "not", "same", "as"], so to match an entire operator, each defined operator name is first broken down into nested dictionaries, each of whose keys are a single 'word' to match, and whose values are the next matchable word[s] (if any) and/or an operator definition (if a full match has been made).
+    // In addition, any 'words' not identified as operator names defined in the PhraseOperatorTable need to be examined character-by-character to see if they contain any symbol-based operators, e.g. "foo<bar". (Ideally, users would always surround symbol operators with whitespace, making them trivial to identify, but this is not an ideal world so we must check for cases where a user might accidentally/deliberately enter symbol operators without explicitly separating them from adjoining characters; a task further complicated by the fact that some characters take on different meanings according to immediate context, e.g. `-` might be a negation or subtraction operator, or an in-word hyphen.)
     typealias WordsDictionary = [WordT:OperatorWordInfo<WordT>]
     
-    // note: if prefix/infix definition != nil, a valid match has been made; however, if isLongest is false, there might still be a longer match to be made, in which case keep looking // TO DO: a recursive algorithm can capture the valid match in the current call frame, then check isLongest to determine if it should recurse further; it will also need a way to start the next match on whatever words were left in subframes after the longest match is made - simplest way to do that may just be for subframes to call Lexer.skip(-n) to backtrack (where n is typically 2, i.e. word+interstitial whitespace tokens)
+    // note: if prefix/infix definition != nil, a valid match has been made; however, if isLongest is false, there might still be a longer match to be made, in which case keep looking
     
-    private var prefixDefinition: OperatorDefinition? = nil
-    private var infixDefinition:  OperatorDefinition? = nil
-    
-    var definitions: [OperatorDefinition!] { return [prefixDefinition, infixDefinition].filter{$0 != nil} }
+    var prefixDefinition: OperatorDefinition? = nil
+    var infixDefinition:  OperatorDefinition? = nil
     
     var nextWords: [WordT:OperatorWordInfo<WordT>] = [:]
     var isLongest: Bool { return self.nextWords.count == 0 }
+    
+    var name: String? { return self.prefixDefinition?.name.name ?? self.infixDefinition?.name.name }
     
     var description: String {return "<OperatorWordInfo prefixOp=\(self.prefixDefinition?.name) infixOp=\(self.infixDefinition?.name) next=\(Array(self.nextWords.keys))>"}
     
@@ -295,7 +299,7 @@ class SymbolOperatorTable: OperatorTable<Character> {
 
 
 
-class KeywordOperatorTable: OperatorTable<String> { // whole-word matching
+class PhraseOperatorTable: OperatorTable<String> { // whole-word matching
     
     
     //let StandardSymbolOperatorTable = SymbolOperatorTable().add(...)
@@ -309,7 +313,7 @@ class KeywordOperatorTable: OperatorTable<String> { // whole-word matching
 
 
 
-let StandardKeywordOperatorTable = KeywordOperatorTable().add(StandardOperators)
+let StandardPhraseOperatorTable = PhraseOperatorTable().add(StandardOperators)
 
 
 

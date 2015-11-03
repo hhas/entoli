@@ -9,18 +9,19 @@
 
 // note: an entoli script can contain three things: code, user docs (annotations) and developer docs (comments) // TO DO: in implementation terms, can comments safely be treated as a particular type of annotation, with different code delimiters but same the syntax rules and internal storage mechanism? Or do they need more flexibility/hygene, e.g. since they're often also used temporarily to block out broken/unfinished code during development and testing? (note: the same 3-prong approach - user+dev+trace info - should apply to error reporting)
 
-// note: quoted text literals support escaping of quotes only; for other escapes (e.g. tabs, linefeed, codepoints, etc), use `format "..."` command (this should use tags, e.g. `{tab}`, `{0u1234 0uABCD}`, `{some name}`; if not parameterized, result can also be memoized for efficiency; note that allowing commands in tags, they should be sandboxed to prevent side-effects - though this is technically 'honesty method' since there's no way to enforce this restriction on primitive procs if they choose to lie about it)
 
 
+typealias ScriptIndex = String.CharacterView.Index
+typealias ScriptRange = Range<ScriptIndex> // position of this token within the original source code (note: this may be different size to Token.value due to whitespace and operator name normalization)
 
-class Lexer {
+class PunctuationLexer {
         
     enum TokenType { // TO DO: implement human-readable names for use in error messages
         case WhiteSpace
-        case QuotedText
-        case QuotedName
-        case AnnotationLiteral
-        case AnnotationLiteralEnd
+        case QuotedText // atomic; the lexer automatically reads everything between `"` and corresponding `"`, including `""` escapes
+        case QuotedName // atomic; the lexer automatically reads everything between `'` and corresponding `'`, including `''` escapes
+        case AnnotationLiteral // atomic; the lexer automatically reads everything between `«` and corresponding `»`, including nested annotations
+        case AnnotationLiteralEnd // this will only appear in token stream if not balanced by an earlier .AnnotationLiteral
         case ListLiteral // an ordered collection (array) or key-value collection (dictionary)
         case ListLiteralEnd
         case RecordLiteral // a sequence of values and/or name-value pairs; primarily used to represent complex procedure arguments
@@ -32,16 +33,16 @@ class Lexer {
         case PairSeparator
         case PipeSeparator
         case LineBreak
-        case UnquotedWord // everything else that is not one of the above hardcoded token types; second-stage lexer/parser will deal with this
+        case UnquotedWord // everything else that is not one of the above predefined token types
     }
     
     struct Token {
         let type: TokenType
         let value: String
-        let range: Range<String.CharacterView.Index>
+        let range: ScriptRange
         let partial: Int // >0 = missing N close tokens; <0 = missing N open tokens
         
-        init(type: TokenType, value: String, range: Range<String.CharacterView.Index>, partial: Int = 0) {
+        init(type: TokenType, value: String, range: ScriptRange, partial: Int = 0) {
             self.type = type
             self.value = value
             self.range = range
@@ -87,11 +88,11 @@ class Lexer {
     static let nonBreakingWhiteSpace: Set<Character> = [" ", "\t"]
     
     static let reservedCharacters = Set(quoteDelimiters.keys).union(Set(annotationDelimiters.keys))
-        .union(Set(punctuation.keys)).union(Set(nonBreakingWhiteSpace)) // note: command/operator tokenizer should  never overload these tokens; e.g. to read an unquoted decimal number, look for digit[s]/Lexer.ExpressionSeparator/digit[s]
+        .union(Set(punctuation.keys)).union(Set(nonBreakingWhiteSpace)) // note: VocabularyTokenizer should never overload or redefine these tokens; e.g. to read an unquoted decimal number, it should look for digit[s]+ExpressionSeparator+digit[s]
     
     let code: String.CharacterView
-    var cursor: String.CharacterView.Index
-    let length: String.CharacterView.Index
+    var cursor: ScriptIndex
+    let length: ScriptIndex
     
     // TO DO: how would/should lexer tie into incremental parsing support? would the editor, given knowledge of the AST (which in turn lets it determine which token user is currently modifying), simply re-lex after each edit? also, bear in mind the need to lex as code is edited (which means lexer needs to be able to suspend and resume on input stream, which this implementation - which uses String, not stream - currently doesn't allow)
     init(code: String) { // TO DO: option to indicate already inside quoted text/name [1] or annotation
@@ -130,7 +131,7 @@ class Lexer {
             return Token(type: token, value: String(chars), range: start..<self.cursor)
         }
         //
-        // unquoted word (i.e. anything that isn't quoted, punctuation or white space); TO DO: would there be any value in parser supplying a function to perform second-stage lexing/parsing of this text as it arrives? (debatable: it'd need to know a bit much about lexing process here, as this lexer only reads single 'words' and isn't smart enough to deal with [e.g.] numbers containing decimal points; for now, it's simplest to kick everything to parser and let it decide at its leisure, and worry about shaving extravagant CPU cycles if/when/once it all works)
+        // unquoted word (i.e. anything that isn't quoted, punctuation or white space)
         while self.cursor < length && !self.dynamicType.reservedCharacters.contains(self.code[self.cursor]) {
             self.cursor = self.cursor.successor()
         }
@@ -179,13 +180,17 @@ class Lexer {
         return nil
     }
     
-    private var currentTokensCache: [Lexer.Token?] = [nil]
+    
+    //
+    
+    
+    private var currentTokensCache: [Token?] = [nil]
     
     //
     
     private(set) var currentTokenIndex = 0 // parser can get this value and use it to backtrack to that token later on if required; caution: flush() invalidates any previously obtained indexes
     
-    var currentToken: Lexer.Token? { return self.currentTokensCache[self.currentTokenIndex] } // current token
+    var currentToken: Token? { return self.currentTokensCache[self.currentTokenIndex] } // current token
     
     func advance(ignoreWhiteSpace: Bool = true) {
         repeat {
@@ -198,10 +203,12 @@ class Lexer {
         self.currentTokenIndex -= 1
     }
     
-    func skip(tokenType: Lexer.TokenType, ignoreWhiteSpace: Bool = true) throws { // advance to next token, throwing SyntaxError if it's not the specified type
+    func skip(tokenType: TokenType, ignoreWhiteSpace: Bool = true) throws { // advance to next token, throwing SyntaxError if it's not the specified type
         self.advance(ignoreWhiteSpace)
-        if self.currentToken?.type != tokenType {
-            throw SyntaxError(description: "[0] Expected \(tokenType) but found \(self.currentToken?.type)")
+        if let token = self.currentToken {
+            if token.type != tokenType {
+                throw SyntaxError(description: "[0] Expected \(tokenType) but found \(token.type)")
+            }
         }
     }
     
@@ -210,11 +217,11 @@ class Lexer {
     }
     
     // caution: lookahead doesn't know about operators/data detectors; it can only look for punctuation, whitespace, quoted name/text, and unquoted word
-    func lookaheadBy(offset: UInt, ignoreWhiteSpace: Bool = true) -> Lexer.Token? { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
+    func lookaheadBy(offset: UInt, ignoreWhiteSpace: Bool = true) -> Token? { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
         if offset == 0 { return self.currentToken }
         var count: UInt = 0
         var lookaheadTokenIndex: Int = self.currentTokenIndex
-  //      print("LOOKING AHEAD from \(self.currentToken) by \(offset)")
+        //      print("LOOKING AHEAD from \(self.currentToken) by \(offset)")
         while count < offset {
             lookaheadTokenIndex += 1
             while lookaheadTokenIndex >= self.currentTokensCache.count { self.currentTokensCache.append(self._next()) }
@@ -224,7 +231,7 @@ class Lexer {
             }
             if lookaheadToken.type != .WhiteSpace || !ignoreWhiteSpace { count += 1 }
         }
- //       print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")
+        //       print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")
         return self.currentTokensCache[lookaheadTokenIndex]
     }
     

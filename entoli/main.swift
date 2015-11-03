@@ -12,11 +12,11 @@
 
 //let source = " (FOO) is not equal. to BAR " // TO DO: this period is causing double period to show when displayed, presumably because it remains attached to first expr as postfix op; the group/script then inserts its own period delimiter when displaying
 
-let source = " 1 / 2 + 4 " //. 2*2. 3 - 3. 4-4. "
+let source = "   !=  bob  1   /   2   +   4   " //. 2*2. 3 - 3. 4-4. "
 
 
 
-let lexer = Lexer(code: source)
+let lexer = PunctuationLexer(code: source)
 let p = Parser(lexer: lexer)
 
 

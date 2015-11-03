@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4F1F3A271BE82434005A9B0E /* vocabulary-lexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F1F3A261BE82434005A9B0E /* vocabulary-lexer.swift */; settings = {ASSET_TAGS = (); }; };
 		4F4754D71BDA5AD000E07F5D /* parser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4754D61BDA5AD000E07F5D /* parser.swift */; settings = {ASSET_TAGS = (); }; };
 		4F4754D91BE1214200E07F5D /* datatypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4754D81BE1214200E07F5D /* datatypes.swift */; settings = {ASSET_TAGS = (); }; };
 		4FFD82B11BD2D57C00677DC4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFD82B01BD2D57C00677DC4 /* main.swift */; };
@@ -27,6 +28,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		4F1F3A261BE82434005A9B0E /* vocabulary-lexer.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = "vocabulary-lexer.swift"; sourceTree = "<group>"; };
 		4F4754D61BDA5AD000E07F5D /* parser.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = parser.swift; sourceTree = "<group>"; };
 		4F4754D81BE1214200E07F5D /* datatypes.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = datatypes.swift; sourceTree = "<group>"; };
 		4FFD82AD1BD2D57C00677DC4 /* entoli */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = entoli; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -67,6 +69,7 @@
 			children = (
 				4FFD82B01BD2D57C00677DC4 /* main.swift */,
 				4FFD82B71BD6D96100677DC4 /* lexer.swift */,
+				4F1F3A261BE82434005A9B0E /* vocabulary-lexer.swift */,
 				4FFD82BB1BD9120100677DC4 /* operator-tables.swift */,
 				4F4754D61BDA5AD000E07F5D /* parser.swift */,
 				4F4754D81BE1214200E07F5D /* datatypes.swift */,
@@ -131,6 +134,7 @@
 			files = (
 				4F4754D91BE1214200E07F5D /* datatypes.swift in Sources */,
 				4F4754D71BDA5AD000E07F5D /* parser.swift in Sources */,
+				4F1F3A271BE82434005A9B0E /* vocabulary-lexer.swift in Sources */,
 				4FFD82BC1BD9120100677DC4 /* operator-tables.swift in Sources */,
 				4FFD82B81BD6D96100677DC4 /* lexer.swift in Sources */,
 				4FFD82B11BD2D57C00677DC4 /* main.swift in Sources */,
