@@ -4,6 +4,9 @@
 //
 //
 
+// TO DO: split NumericWord into Number and Quantity? (Q. how to validate quantities?) // bear in mind that any numeric info will be attached to TextValue; it's not necessary to generate that info here as typespecs will add full info if not already present; all we _really_ need to do here is determine it's some sort of numeric value, which means it starts with a digit, with optional `-` or `+` prefix, plus any additional optional prefixes (which will have to be specified some way, either as hardcoded unicode ranges for e.g. currency, or by NumericUnit typespecs that know how to read those values - in which case they will also declare which prefixes and suffixes they recognize, allowing fast identification and categorization [currency, weight, length, temperature, etc])
+
+
 // someone (lexer/parser) needs to hand off to this whenever an UnquotedWord is encountered; this will check the entire sequence of unquoted words, including related tokens such as ExpressionSeparator (`.`) when it's being used as a decimal separator in decimal numeric
 
 
@@ -12,22 +15,26 @@
 // actually, simplest (if not most efficient) is to read unquoted names as both simple NameValue and as vocab code (oh, except that's problematic too, since period seps get consumed by latter)
 
 
+private let DEBUG = false
+
 
 class VocabularyLexer {
     
-    enum Token { // TO DO: these should all include ``
-        case SymbolOperator(prefixDefinition: OperatorDefinition?, infixDefinition: OperatorDefinition?, range: ScriptRange)
-        case PhraseOperator(prefixDefinition: OperatorDefinition?, infixDefinition: OperatorDefinition?, range: ScriptRange)
+    // TO DO: use same structure as punc lexer, with struct value being enum? (unconvinced: mostly that just adds complexity, and it's reasonable to assume parser will deal with vocab tokens by passing them to a switch that returns corresponding Value)
+    
+    enum Token { // unlike PunctuationLexer, where there are many types of tokens all with the same structure, vocab tokens have different structures depending on token type
+        case OperatorSymbol(prefixDefinition: OperatorDefinition?, infixDefinition: OperatorDefinition?, range: ScriptRange)
+        case OperatorPhrase(prefixDefinition: OperatorDefinition?, infixDefinition: OperatorDefinition?, range: ScriptRange)
         case UnquotedName(value: String, range: ScriptRange)
-        case NumericWord(value: String, range: ScriptRange) // TO DO: split into Number and Quantity? (Q. how to validate quantities?) // bear in mind that any numeric info will be attached to TextValue; it's not necessary to generate that info here as typespecs will add full info if not already present; all we _really_ need to do here is determine it's some sort of numeric value, which means it starts with a digit, with optional `-` or `+` prefix, plus any additional optional prefixes (which will have to be specified some way, either as hardcoded unicode ranges for e.g. currency, or by NumericUnit typespecs that know how to read those values - in which case they will also declare which prefixes and suffixes they recognize, allowing fast identification and categorization [currency, weight, length, temperature, etc])
+        case NumericWord(value: String, range: ScriptRange)
     }
     
     /**********************************************************************/
     
     private let lexer: PunctuationLexer
-    private let keywordOperators: PhraseOperatorTable
+    private let keywordOperators: OperatorPhrasesTable
     
-    init(lexer: PunctuationLexer, keywordOperators: PhraseOperatorTable) {
+    init(lexer: PunctuationLexer, keywordOperators: OperatorPhrasesTable) {
         self.lexer = lexer
         self.keywordOperators = keywordOperators
     }
@@ -36,7 +43,7 @@ class VocabularyLexer {
     // PARSE WORD [SEQUENCE]
     
     private typealias WordType = PunctuationLexer.Token
-    private typealias PartialPhraseOperatorMatch = (words: [WordType], startIndex: ScriptIndex, match: PhraseOperatorTable.WordInfoType)
+    private typealias PartialOperatorPhraseMatch = (words: [WordType], startIndex: ScriptIndex, match: OperatorPhrasesTable.WordInfoType)
 
     // support
     
@@ -52,7 +59,7 @@ class VocabularyLexer {
     }
     
     private func addName(words: [WordType]) {
-        print("FOUND NAME: <\(self.joinWords(words))> \(self.wordsRange(words))")
+        if DEBUG {if words.count == 0 {print("BUG: can't addName (zero-length)")}; print("FOUND NAME: <\(self.joinWords(words))>     range=\(self.wordsRange(words))")}
         self.currentTokensCache.append(.UnquotedName(value: self.joinWords(words), range: self.wordsRange(words)))
     }
     
@@ -93,7 +100,7 @@ class VocabularyLexer {
         }
         // scan all words until the first full [and longest] operator match is made (caveat: if it's not left and right auto-delimiting, need to discard if there are adjoining words)
         var words = [WordType]() // used to construct command name, if first word[s] are not numeric word or operator name
-        var partialPhraseOperatorMatches = [PartialPhraseOperatorMatch]()
+        var partialOperatorPhraseMatches = [PartialOperatorPhraseMatch]()
         while self.lexer.currentToken?.type == .UnquotedWord {
             let token = self.lexer.currentToken!
             let word = token.value
@@ -101,15 +108,15 @@ class VocabularyLexer {
             // pattern match current word for numbers, units, currency, etc. (note: this comes before operator checks, ensuring operators cannot redefine numeric words)
             if let result = readNumericWord(word, prefixChars: VocabularyLexer.numericPrefixes) {
                 
-                self.addName(words)
-                print("FOUND NUMBER: \(result) \(token.range.startIndex..<self.lexer.currentToken!.range.endIndex)")
+                if words.count > 0 { self.addName(words) }
+                if DEBUG {print("FOUND NUMBER: \(result)     range=\(token.range.startIndex..<self.lexer.currentToken!.range.endIndex)")}
                 self.currentTokensCache.append(.NumericWord(value: result, range: token.range.startIndex..<self.lexer.currentToken!.range.endIndex))
                 return
             }
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
             // check for the start of a new keyword operator
             if let foundOp = self.keywordOperators.definitionsByWord[token.value] { // matched the first word of a possible keyword operator
-                partialPhraseOperatorMatches.append((words, self.lexer.currentToken!.range.startIndex, foundOp)) // TO DO: this should capture (precedingWords:words,literalOperatorNameStart:token.range.start,...)
+                partialOperatorPhraseMatches.append((words, self.lexer.currentToken!.range.startIndex, foundOp)) // TO DO: this should capture (precedingWords:words,literalOperatorNameStart:token.range.start,...)
             } else {
                 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 // TO DO: pattern match current word for symbol operators (also, check this should definitely come after keyword op check; note that keyword op check will pick up all space-delimited symbol ops too)
@@ -118,8 +125,8 @@ class VocabularyLexer {
             }
             // check each current partial operator match; if a full valid operator name is matched, proceed to next stage; otherwise update or discard each partial match depending on whether or not it continues to match on current word
             var partialMatchIndex = 0
-            while partialMatchIndex < partialPhraseOperatorMatches.count { // partial matches are ordered from earliest to latest; goal is to find the earliest, longest full match
-                let (precedingWords, startIndex, match) = partialPhraseOperatorMatches[partialMatchIndex]
+            while partialMatchIndex < partialOperatorPhraseMatches.count { // partial matches are ordered from earliest to latest; goal is to find the earliest, longest full match
+                let (precedingWords, startIndex, match) = partialOperatorPhraseMatches[partialMatchIndex]
                 // check if we've found a complete, valid (i.e. correctly delimited) operator name
                 let isFirstWord = precedingWords.count == 0
                 if self.isValidOperatorName(match.prefixDefinition, isFirstWord: isFirstWord)
@@ -127,18 +134,18 @@ class VocabularyLexer {
                     if !isFirstWord {
                         self.addName(precedingWords)
                     }
-                    print("FOUND OPERATOR: <\(match.name)> \(startIndex..<self.lexer.currentToken!.range.endIndex)")
-                    self.currentTokensCache.append(.PhraseOperator(prefixDefinition: match.prefixDefinition,
+                    if DEBUG {print("FOUND OPERATOR: <\(match.name)>     range=\(startIndex..<self.lexer.currentToken!.range.endIndex)")}
+                    self.currentTokensCache.append(.OperatorPhrase(prefixDefinition: match.prefixDefinition,
                                                                    infixDefinition: match.infixDefinition,
                                                                    range: startIndex..<self.lexer.currentToken!.range.endIndex))
                     return
                 }
                 // update current partial matches
                 if let nextMatch = match.nextWords[token.value] {
-                    partialPhraseOperatorMatches[partialMatchIndex] = (precedingWords, startIndex, nextMatch)
+                    partialOperatorPhraseMatches[partialMatchIndex] = (precedingWords, startIndex, nextMatch)
                     partialMatchIndex += 1
                 } else {
-                    partialPhraseOperatorMatches.removeAtIndex(partialMatchIndex)
+                    partialOperatorPhraseMatches.removeAtIndex(partialMatchIndex)
                 }
             }
             words.append(token)
@@ -149,47 +156,50 @@ class VocabularyLexer {
             }
             self.lexer.advance() // advance to next word
         }
+        self.currentTokensCache.append(nil)
     }
 
     
     // parse a sequence of unquoted words (name/number/operation)
     
-    private(set) var isDone: Bool = false // set when end of word sequence is reached; must be reset before next word sequence can start
     private var currentTokensCache: [Token?] = [nil]
     private(set) var currentTokenIndex = 0
+    private(set) var isDone = false // internal flag set when end of word sequence is reached; must be reset before next word sequence can start
     
     var currentToken: Token? { return self.currentTokensCache[self.currentTokenIndex] } // current token (or nil once end of word sequence is reached)
     
     func advance() {
         self.currentTokenIndex += 1
         if self.currentTokenIndex == self.currentTokensCache.count { self._next() }
+        if DEBUG {if self.currentTokenIndex >= self.currentTokensCache.count {print("\nBUG: vocab lexer advanced to \(self.currentTokenIndex), but has read only:"); for (i,t) in self.currentTokensCache.enumerate() { print("\t\(i).\t", t) }; print("")}}
     }
     
     func lookaheadBy(offset: UInt) -> Token? { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
         if offset == 0 { return self.currentToken }
         let lookaheadTokenIndex = self.currentTokenIndex + Int(offset)
-        //      print("LOOKING AHEAD from \(self.currentToken) by \(offset)")
+        //if DEBUG {print("LOOKING AHEAD from \(self.currentToken) by \(offset)")}
         while lookaheadTokenIndex >= self.currentTokensCache.count { self._next() }
         if self.currentTokensCache[lookaheadTokenIndex] == nil {
-            print("LOOKAHEAD REACHED END: \(self.currentTokensCache)")
+            if DEBUG {print("LOOKAHEAD REACHED END: \(self.currentTokensCache)")}
             return nil
         }
-        //       print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")
+        //if DEBUG {print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")}
         return self.currentTokensCache[lookaheadTokenIndex]
     }
     
     // note: flush must be called before vocab lexer can be reused
     
+    func flush() { // clear cache of fully-parsed tokens
+        self.currentTokensCache = [nil]
+        self.currentTokenIndex = 0
+        self.isDone = false
+    }
     
     
     
     
     
     /*
-    
-    func retreat() { // TO DO: currently unused; delete? (in practice, it's probably better to use backtrackTo to return to an earlier known token)
-        self.currentTokenIndex -= 1
-    }
     
     func skip(tokenType: TokenType, ignoreWhiteSpace: Bool = true) throws { // advance to next token, throwing SyntaxError if it's not the specified type
         self.advance(ignoreWhiteSpace)
@@ -204,29 +214,6 @@ class VocabularyLexer {
         self.currentTokenIndex = tokenIndex
     }
     
-    // caution: lookahead doesn't know about operators/data detectors; it can only look for punctuation, whitespace, quoted name/text, and unquoted word
-    func lookaheadBy(offset: UInt, ignoreWhiteSpace: Bool = true) -> Token? { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
-        if offset == 0 { return self.currentToken }
-        var count: UInt = 0
-        var lookaheadTokenIndex: Int = self.currentTokenIndex
-        //      print("LOOKING AHEAD from \(self.currentToken) by \(offset)")
-        while count < offset {
-            lookaheadTokenIndex += 1
-            while lookaheadTokenIndex >= self.currentTokensCache.count { self.currentTokensCache.append(self._next()) }
-            guard let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex] else {
-                print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{$0?.value as String!})")
-                return nil
-            }
-            if lookaheadToken.type != .Punctuation(.WhiteSpace) || !ignoreWhiteSpace { count += 1 }
-        }
-        //       print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")
-        return self.currentTokensCache[lookaheadTokenIndex]
-    }
-    
-    func flush() { // clear cache of fully-parsed tokens
-        self.currentTokensCache.removeRange(0..<self.currentTokenIndex)
-        self.currentTokenIndex = 0
-    }
     */
 }
 

@@ -38,7 +38,7 @@
 
 
 
-let DEBUG = true
+private let DEBUG = true
 
 
 
@@ -64,7 +64,7 @@ class Parser {
     let punctuationLexer: PunctuationLexer // hardcoded tokens
     let vocabularyLexer: VocabularyLexer // numeric literals, operators, command names
     
-    init(lexer: PunctuationLexer, keywordOperators: PhraseOperatorTable = StandardPhraseOperatorTable) {
+    init(lexer: PunctuationLexer, keywordOperators: OperatorPhrasesTable = StandardOperatorPhrasesTable) {
         self.punctuationLexer = lexer
         self.vocabularyLexer = VocabularyLexer(lexer: lexer, keywordOperators: keywordOperators)
     }
@@ -85,17 +85,16 @@ class Parser {
         static let PipeSeparator       = 50
     }
     
-    private func precedence(lookahead: UInt) -> Int { // TO DO: this gets a bit thorny with non-breaking whitespace tokens (Q. what about linebreaks/comments/annotations?); lookahead should always skip those // TO DO: what to return on EOF (currently -1; nil? Error?)
-        guard let token = lookahead == 0 ? self.punctuationLexer.currentToken : self.punctuationLexer.lookaheadBy(lookahead) else { return -1 }
+    private var precedenceForNextToken: Int { // TO DO: this gets a bit thorny with non-breaking whitespace tokens (that said, linebreaks should always delimit exprs; the only ones to worry about are in groups) (Q. what about linebreaks/comments/annotations?); lookahead should always skip those // TO DO: what to return on EOF (currently -1; nil? Error?)
+        guard let token = self.punctuationLexer.lookaheadBy(1) else { return -1 } // TO DO: this isn't reliable if vocab lexer has moved punc lexer on further; nor for that matter is it reliable (since tokens take on different meaning while parsing vocab, e.g. periods as decimal separator)
         
         // TO DO: check for table-defined operator precedence before looking up built-ins (Q. how? this can only check a word; we need to parseUnquotedWord to determine what a word sequence actually represents, and what, if any, operators it contains - one option is to parse the unquoted word to yield new set of pseudo-tokens which carry their own precedence, and thus can be checked; these would, presumably be Atom/PrefixOp/InfixOp/PostfixOp enumerations, and would be parameterized with already-parsed values and op-info)
         
         // TO DO: will need to call parseUnquotedWord if token is .UnquotedWord (caveat: we only want the matched operator, not to construct the command, so will have to split that function); for now, the result will be thrown away, but should eventually be cached for reuse
         
-        print("precedence(\(lookahead))... \(token)")
         switch token.type {
         case .UnquotedWord:
-            print("TO DO: precedence for op \(token)") // TO DO: this presents a problem; if parser looks ahead far enough, it could encounter another words range, which can't be processed until current range is done; this is another reason why punctuation lexer should prob. control vocab lexer, since it can rewrite its own cache, moving vocab tokens there
+            print("TO DO: precedence for op \(token)") // TO DO: this presents a problem; if parser looks ahead far enough, it could encounter another words range, which can't be processed until current range is done (this is another reason why punctuation lexer should prob. control vocab lexer, since it can rewrite its own cache, moving vocab tokens into that); for now, we can probably assume lookahead will never
             return 0
         case .AnnotationLiteral:    return Precedence.AnnotationLiteral
         case .ExpressionSeparator:  return Precedence.ExpressionSeparator
@@ -228,7 +227,7 @@ class Parser {
         
         // foundOp is prefix/infix, depending on what's available and which is more suitable (e.g. infix is preferred if something's on its left)
         
-        //print("MATCHES:" + (fullPhraseOperatorMatches.map{"\($0)"}.joinWithSeparator("\n\t\t")))
+        //print("MATCHES:" + (fullOperatorPhraseMatches.map{"\($0)"}.joinWithSeparator("\n\t\t")))
         //print("\nCURRENT TOKEN: \(self.currentToken)")
         self.backtrackTo(foundOp.endIndex)
         //print("...IDENTIFIED BEST-MATCH OPERATOR: \(foundOp); \n\tbacktrack to \(self.currentToken)")
@@ -269,7 +268,7 @@ class Parser {
 */
 
 
-    private func processPhraseOperator(match: PhraseOperatorTable.WordInfoType, isFirstWord: Bool, startIndex: Int, leftExpr: Value?) throws -> Value? {
+    private func processOperatorPhrase(match: OperatorPhrasesTable.WordInfoType, isFirstWord: Bool, startIndex: Int, leftExpr: Value?) throws -> Value? {
         
         // note: we only need to collect partial matches until we have our first full match, and have verified isValidOperatorName; once we have that, we only need to scan for additional full matches deriving from that first match (e.g. given `A is not same as B`, once ` we match `is`, we keep going until we've got `is not`, `is not same as`, at which point we hit isLongest); as long as we verify isValidOperatorName each time and only add those that are to `fullMatches`, we're good. Once we hit isLongest, we use the last match in that list as our operator definition.
         // now find longest valid match
@@ -370,7 +369,7 @@ class Parser {
     
     private func parseOperation(var leftExpr: Value, precedence: Int = 0) throws -> Value { // parse infix/postfix
         if DEBUG {print("parseOperation(\(leftExpr), \(precedence)) \n\t\ttoken=\(self.currentToken)\n\t\tnext=\(self.punctuationLexer.lookaheadBy(1))")}
-        while precedence < self.precedence(1) {
+        while precedence < self.precedenceForNextToken {
             if DEBUG {print("\nPARSE_INFIX:  \(self.punctuationLexer.currentToken)")}
             let previousIndex = self.punctuationLexer.currentTokenIndex
             self.punctuationLexer.advance()

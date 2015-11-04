@@ -164,6 +164,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
 
     
     // non-numeric comparisons (e.g. text); note that parsefunc overrides standard precedence to allow `COMP as TYPE` to specify comparison type, e.g. `A is B as C` is shorthand for `(A as C) is (B as C)` (currently, `as` operator binds lowest, so would apply to comparison's result, but since these ops always return boolean that isn't really useful, whereas applying cast to both operands prior to comparison is, and allows things like case-insensitive text comparisons and list of X comparisons to be done as well) -- note that a failed cast will throw error (not sure if catching this should be done by typespec, and if it is then what's to prevent `A is not B as C` returning true when both A and B fail to cast causing typespec to supply identical default value for each)
+    // TO DO: might be best to use `equals` rather than `is`, since `is` is likely to be used in boolean value names; also prob. best to avoid `as` at end of name, as that will get confused with `as` clause
     (("is before",         .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("lt",                   .Phrase, .Full)]),
     (("is same or before", .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("le",                   .Phrase, .Full),
                                                                                           ("is same as or before", .Phrase, .Full),
@@ -208,7 +209,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
 
 struct OperatorWordInfo<WordT: Hashable>: CustomStringConvertible { // WordT is String or Character
     // An operator name is composed of one or more 'words'. In a keyword-based operator, e.g. "is not same as", each word is a String, created by splitting the full name on interstitial whitespace. (In a symbol-based operator, e.g. "!=", the full name should always be a single String-based word.) The PunctuationLexer outputs single String-based words, e.g. ["is", "not", "same", "as"], so to match an entire operator, each defined operator name is first broken down into nested dictionaries, each of whose keys are a single 'word' to match, and whose values are the next matchable word[s] (if any) and/or an operator definition (if a full match has been made).
-    // In addition, any 'words' not identified as operator names defined in the PhraseOperatorTable need to be examined character-by-character to see if they contain any symbol-based operators, e.g. "foo<bar". (Ideally, users would always surround symbol operators with whitespace, making them trivial to identify, but this is not an ideal world so we must check for cases where a user might accidentally/deliberately enter symbol operators without explicitly separating them from adjoining characters; a task further complicated by the fact that some characters take on different meanings according to immediate context, e.g. `-` might be a negation or subtraction operator, or an in-word hyphen.)
+    // In addition, any 'words' not identified as operator names defined in the OperatorPhrasesTable need to be examined character-by-character to see if they contain any symbol-based operators, e.g. "foo<bar". (Ideally, users would always surround symbol operators with whitespace, making them trivial to identify, but this is not an ideal world so we must check for cases where a user might accidentally/deliberately enter symbol operators without explicitly separating them from adjoining characters; a task further complicated by the fact that some characters take on different meanings according to immediate context, e.g. `-` might be a negation or subtraction operator, or an in-word hyphen.)
     typealias WordsDictionary = [WordT:OperatorWordInfo<WordT>]
     
     // note: if prefix/infix definition != nil, a valid match has been made; however, if isLongest is false, there might still be a longer match to be made, in which case keep looking
@@ -289,7 +290,7 @@ class OperatorTable<WordT: Hashable> { // Keyword/Symbol table (only real differ
 
 
 
-class SymbolOperatorTable: OperatorTable<Character> {
+class OperatorSymbolsTable: OperatorTable<Character> {
     
     override func splitWords(nameInfo: OperatorName) -> [Character] {
         
@@ -299,10 +300,10 @@ class SymbolOperatorTable: OperatorTable<Character> {
 
 
 
-class PhraseOperatorTable: OperatorTable<String> { // whole-word matching
+class OperatorPhrasesTable: OperatorTable<String> { // whole-word matching
     
     
-    //let StandardSymbolOperatorTable = SymbolOperatorTable().add(...)
+    //let StandardOperatorSymbolsTable = OperatorSymbolsTable().add(...)
 
     
     override func splitWords(nameInfo: OperatorName) -> [String] {
@@ -313,7 +314,7 @@ class PhraseOperatorTable: OperatorTable<String> { // whole-word matching
 
 
 
-let StandardPhraseOperatorTable = PhraseOperatorTable().add(StandardOperators)
+let StandardOperatorPhrasesTable = OperatorPhrasesTable().add(StandardOperators)
 
 
 
