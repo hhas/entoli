@@ -21,14 +21,7 @@ private let DEBUG = false
 class VocabularyLexer {
     
     // TO DO: use same structure as punc lexer, with struct value being enum? (unconvinced: mostly that just adds complexity, and it's reasonable to assume parser will deal with vocab tokens by passing them to a switch that returns corresponding Value)
-    
-    enum Token { // unlike PunctuationLexer, where there are many types of tokens all with the same structure, vocab tokens have different structures depending on token type
-        case OperatorSymbol(prefixDefinition: OperatorDefinition?, infixDefinition: OperatorDefinition?, range: ScriptRange)
-        case OperatorPhrase(prefixDefinition: OperatorDefinition?, infixDefinition: OperatorDefinition?, range: ScriptRange)
-        case UnquotedName(value: String, range: ScriptRange)
-        case NumericWord(value: String, range: ScriptRange)
-    }
-    
+
     /**********************************************************************/
     
     private let lexer: PunctuationLexer
@@ -42,25 +35,24 @@ class VocabularyLexer {
     /**********************************************************************/
     // PARSE WORD [SEQUENCE]
     
-    private typealias WordType = PunctuationLexer.Token
-    private typealias PartialOperatorPhraseMatch = (words: [WordType], startIndex: ScriptIndex, match: OperatorPhrasesTable.WordInfoType)
+    private typealias PartialOperatorPhraseMatch = (words: [Token], startIndex: ScriptIndex, match: OperatorPhrasesTable.WordInfoType)
 
     // support
     
     private var hasNextWord: Bool { return self.lexer.lookaheadBy(1, ignoreWhiteSpace: false)?.type == .WhiteSpace
                                                                  && self.lexer.lookaheadBy(1)?.type == .UnquotedWord }
     
-    private func joinWords(words: [WordType]) -> String {
+    private func joinWords(words: [Token]) -> String {
         return words.map{$0.value}.joinWithSeparator(" ")
     }
     
-    private func wordsRange(words: [WordType]) -> ScriptRange {
+    private func wordsRange(words: [Token]) -> ScriptRange {
         return words.first!.range.startIndex..<words.last!.range.endIndex
     }
     
-    private func addName(words: [WordType]) {
+    private func addName(words: [Token]) {
         if DEBUG {if words.count == 0 {print("BUG: can't addName (zero-length)")}; print("FOUND NAME: <\(self.joinWords(words))>     range=\(self.wordsRange(words))")}
-        self.currentTokensCache.append(.UnquotedName(value: self.joinWords(words), range: self.wordsRange(words)))
+        self.currentTokensCache.append(Token(type: .UnquotedName, value: self.joinWords(words), range: self.wordsRange(words)))
     }
     
     // operator
@@ -99,7 +91,7 @@ class VocabularyLexer {
             return
         }
         // scan all words until the first full [and longest] operator match is made (caveat: if it's not left and right auto-delimiting, need to discard if there are adjoining words)
-        var words = [WordType]() // used to construct command name, if first word[s] are not numeric word or operator name
+        var words = [Token]() // used to construct command name, if first word[s] are not numeric word or operator name
         var partialOperatorPhraseMatches = [PartialOperatorPhraseMatch]()
         while self.lexer.currentToken?.type == .UnquotedWord {
             let token = self.lexer.currentToken!
@@ -110,7 +102,7 @@ class VocabularyLexer {
                 
                 if words.count > 0 { self.addName(words) }
                 if DEBUG {print("FOUND NUMBER: \(result)     range=\(token.range.startIndex..<self.lexer.currentToken!.range.endIndex)")}
-                self.currentTokensCache.append(.NumericWord(value: result, range: token.range.startIndex..<self.lexer.currentToken!.range.endIndex))
+                self.currentTokensCache.append(Token(type: .NumericWord, value: result, range: token.range.startIndex..<self.lexer.currentToken!.range.endIndex))
                 return
             }
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -135,9 +127,9 @@ class VocabularyLexer {
                         self.addName(precedingWords)
                     }
                     if DEBUG {print("FOUND OPERATOR: <\(match.name)>     range=\(startIndex..<self.lexer.currentToken!.range.endIndex)")}
-                    self.currentTokensCache.append(.OperatorPhrase(prefixDefinition: match.prefixDefinition,
-                                                                   infixDefinition: match.infixDefinition,
-                                                                   range: startIndex..<self.lexer.currentToken!.range.endIndex))
+                            self.currentTokensCache.append(Token(type: .Operator, value: "",
+                                                                 range: startIndex..<self.lexer.currentToken!.range.endIndex,
+                                                                 operatorDefinition: (match.prefixDefinition, match.infixDefinition)))
                     return
                 }
                 // update current partial matches
@@ -151,7 +143,7 @@ class VocabularyLexer {
             words.append(token)
             if !self.hasNextWord { // no numerics or operators were found, so treat entire word sequence as unquoted name
                 self.isDone = true
-                self.currentTokensCache.append(.UnquotedName(value: self.joinWords(words), range: self.wordsRange(words)))
+                self.currentTokensCache.append(Token(type: .UnquotedName, value: self.joinWords(words), range: self.wordsRange(words)))
                 return
             }
             self.lexer.advance() // advance to next word
