@@ -78,12 +78,16 @@ class VocabularyLexer {
             idx = idx.successor()
         }
         if !(idx < chars.endIndex && digitChars.contains(chars[idx])) { return nil } // is it a numeric word?
-         // next, scan to last digit
+        // TO DO: finish
+        // next, scan to last digit
+        // should exponent support be built-in here? (probably simplest: it needs to know about decimals, so would have to be done in lexer/parser anyway)
         
         return word
     }
     
-    // re-tokenizer; reads UnquotedWord sequences (including related tokens) from PunctuationLexer, and converts them into VocabularyLexer.Tokens
+    
+    /**********************************************************************/
+    // re-tokenizer; reads UnquotedWord sequences (plus any related tokens) from PunctuationLexer, and converts them into vocabulary tokens
 
     private func _next() { // match next numeric word/keyword operator/unquoted name, reading ahead and caching additional tokens as necessary
         if self.isDone || self.lexer.currentToken == nil {
@@ -127,9 +131,9 @@ class VocabularyLexer {
                         self.addName(precedingWords)
                     }
                     if DEBUG {print("FOUND OPERATOR: <\(match.name)>     range=\(startIndex..<self.lexer.currentToken!.range.endIndex)")}
-                            self.currentTokensCache.append(Token(type: .Operator, value: "",
+                            self.currentTokensCache.append(Token(type: .Operator, value: match.name!,
                                                                  range: startIndex..<self.lexer.currentToken!.range.endIndex,
-                                                                 operatorDefinition: (match.prefixDefinition, match.infixDefinition)))
+                                                                 operatorDefinition: (prefixDefinition: match.prefixDefinition, infixDefinition: match.infixDefinition)))
                     return
                 }
                 // update current partial matches
@@ -169,13 +173,13 @@ class VocabularyLexer {
     func lookaheadBy(offset: UInt) -> Token? { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
         if offset == 0 { return self.currentToken }
         let lookaheadTokenIndex = self.currentTokenIndex + Int(offset)
-        //if DEBUG {print("LOOKING AHEAD from \(self.currentToken) by \(offset)")}
+        if DEBUG {print("\tVOCAB LOOKING AHEAD from \(self.currentToken) by \(offset)")}
         while lookaheadTokenIndex >= self.currentTokensCache.count { self._next() }
         if self.currentTokensCache[lookaheadTokenIndex] == nil {
-            if DEBUG {print("LOOKAHEAD REACHED END: \(self.currentTokensCache)")}
+            if DEBUG {print("\tVOCAB LOOKAHEAD REACHED END: \(self.currentTokensCache)")}
             return nil
         }
-        //if DEBUG {print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")}
+        if DEBUG {print("\tVOCAB LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")}
         return self.currentTokensCache[lookaheadTokenIndex]
     }
     
@@ -186,27 +190,6 @@ class VocabularyLexer {
         self.currentTokenIndex = 0
         self.isDone = false
     }
-    
-    
-    
-    
-    
-    /*
-    
-    func skip(tokenType: TokenType, ignoreWhiteSpace: Bool = true) throws { // advance to next token, throwing SyntaxError if it's not the specified type
-        self.advance(ignoreWhiteSpace)
-        if let token = self.currentToken {
-            if token.type != tokenType {
-                throw SyntaxError(description: "[0] Expected \(tokenType) but found \(token.type)")
-            }
-        }
-    }
-    
-    func backtrackTo(tokenIndex: Int) { // note: technically this doesn't backtrack but rather moves to a previously read token (thus it could also be used to advance over previously parsed tokens for which cached Values have already been generated); might be an idea to rename it, or else replace with [safe] setter for currentTokenIndex
-        self.currentTokenIndex = tokenIndex
-    }
-    
-    */
 }
 
     

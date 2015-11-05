@@ -10,13 +10,20 @@
 // note: an entoli script can contain three things: code, user docs (annotations) and developer docs (comments) // TO DO: in implementation terms, can comments safely be treated as a particular type of annotation, with different code delimiters but same the syntax rules and internal storage mechanism? Or do they need more flexibility/hygene, e.g. since they're often also used temporarily to block out broken/unfinished code during development and testing? (note: the same 3-prong approach - user+dev+trace info - should apply to error reporting)
 
 
+private let DEBUG = false
+
+
+
 typealias ScriptIndex = String.CharacterView.Index
 typealias ScriptRange = Range<ScriptIndex> // position of this token within the original source code (note: this may be different size to Token.value due to white space and operator name normalization)
 
 
 /**********************************************************************/
 //
-        
+
+let gOperatorDefinedPrecedence = Int.min
+
+
 enum TokenType { // TO DO: implement human-readable names for use in error messages
     case WhiteSpace
     case QuotedText // atomic; the lexer automatically reads everything between `"` and corresponding `"`, including `""` escapes
@@ -39,7 +46,6 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
     case Operator
     case UnquotedName
     case NumericWord
-
     
     var precedence: Int {
         switch self {
@@ -48,7 +54,7 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
         case .ItemSeparator:        return 50
         case .PairSeparator:        return 60
         case .PipeSeparator:        return 50
-        case .Operator:       return -1
+        case .Operator:             return gOperatorDefinedPrecedence
         default:                    return 0
         }
     }
@@ -253,12 +259,12 @@ class PunctuationLexer {
         if offset == 0 { return self.currentToken }
         var count: UInt = 0
         var lookaheadTokenIndex: Int = self.currentTokenIndex
-        //      print("LOOKING AHEAD from \(self.currentToken) by \(offset)")
+        //if DEBUG {print("LOOKING AHEAD from \(self.currentToken) by \(offset)")}
         while count < offset {
             lookaheadTokenIndex += 1
             while lookaheadTokenIndex >= self.currentTokensCache.count { self.next() }
             guard let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex] else {
-                print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{$0?.value as String!})")
+                if DEBUG {print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{$0?.value as String!})")}
                 return nil
             }
             if lookaheadToken.type != .WhiteSpace || !ignoreWhiteSpace { count += 1 }

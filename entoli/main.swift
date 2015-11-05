@@ -17,26 +17,26 @@ let source = "  bob   !=   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
 
 let lexer = Lexer(code: source, keywordOperators: StandardOperatorPhrasesTable)
 
+/*
 var i = 0
 repeat {
     i+=1
     print("==>TOKEN:", lexer.currentToken, "\n----------------------------------------------------------\n")
     lexer.advance(ignoreVocabulary: false)
 } while lexer.currentToken != nil //&& i<4
+*/
 
 
-/*
-
-let lexer = PunctuationLexer(code: source)
 let p = Parser(lexer: lexer)
 
 
 do {
-    print(try p.parse())
+    let result = try p.parse()
+    print("\n\n================================================\n", result)
 } catch {
-    print(error)
+    print("\n\n================================================\nERROR:", error)
 }
-*/
+
 /*
 do {
     while true {
