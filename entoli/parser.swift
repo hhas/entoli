@@ -68,8 +68,10 @@ class Parser {
     init(lexer: Lexer) {
         self.lexer = lexer
     }
-    
-    
+    func parseExpression(precedence: Int = 0) throws -> Value { // parse atom or prefix op, followed by any infix/postfix ops
+        throw SyntaxError(description:"TODO")
+    }
+
     /**********************************************************************/
     // TOKENS
     
@@ -77,13 +79,14 @@ class Parser {
     
     var currentToken: Token? { return self.lexer.currentToken } // current token
     
+    /*
     private var precedenceForNextToken: Int { // used by parseOperation() to determine if leftExpr binds more tightly to its right (i.e. the infix/postfix operator [if any] currently being processed) than its left (the previous prefix/infix operator [if any])
         // TO DO: this gets a bit thorny with non-breaking whitespace tokens (that said, linebreaks should always delimit exprs; the only ones to worry about are in groups) (Q. what about linebreaks/comments/annotations?); lookahead should always skip those
         guard let token = self.lexer.lookaheadBy(1) else { return Int.min } // break loop
 //        print("precedenceForNextToken: \(token)")
         let precedence = token.type.precedence
         if precedence == gOperatorDefinedPrecedence {
-            return token.operatorDefinition!.infixDefinition?.precedence ?? 0 // only infix/postfix ops are of relevance (atom/prefix ops do not take a left operand [i.e. leftExpr], so return 0 for those to finish the previous expression and start a new one)
+            return token.infixOperator?.precedence ?? 0 // only infix/postfix ops are of relevance (atom/prefix ops do not take a left operand [i.e. leftExpr], so return 0 for those to finish the previous expression and start a new one)
         } else {
             return precedence
         }
@@ -234,11 +237,10 @@ class Parser {
         case .UnquotedName:
             return try self.parseArgument(NameValue(data: token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
         case .Operator:
-            print("parseAtom got Operator @\(self.lexer.currentTokenIndex): \(token.operatorDefinition!)")
-            let (prefixOperator, infixOperator) = token.operatorDefinition!
-            guard let operatorDefinition = prefixOperator else {
+            print("parseAtom got Operator @\(self.lexer.currentTokenIndex): \(token.prefixOperator) \(token.infixOperator)")
+            guard let operatorDefinition = token.prefixOperator else {
                 self.lexer.backtrackTo(previousIndex)
-                throw LeftOperandNotFoundError(description: "parseAtom() encountered an infix operator: \(infixOperator!)") // note: when speculatively parsing a command argument, this indicates the command has no argument so will be used as leftExpr; elsewhere it's a syntax error
+                throw LeftOperandNotFoundError(description: "parseAtom() encountered an infix operator: \(token.infixOperator!)") // note: when speculatively parsing a command argument, this indicates the command has no argument so will be used as leftExpr; elsewhere it's a syntax error
             }
             let result = try operatorDefinition.parseFunc(self, leftExpr: nil, operatorName: operatorDefinition.name.name, precedence: precedence)
             print("... and returned it: \(result)")
@@ -261,39 +263,31 @@ class Parser {
             switch token.type {
                 // PUNCTUATION TOKENS
             case .AnnotationLiteral: // «...» // attaches arbitrary contents to preceding node as metadata
-                let annotation = token.value
-                leftExpr.annotations.append(annotation)
-            case .ExpressionSeparator: // period // note: comma and period seps are currently treated as postfix [no-]ops to preserve them // TO DO: this allows for somewhat silly inputs, e.g. `foo..,...,,,bar`, that should arguably be cleaned up or rejected
-                return ExpressionSeparator(data: leftExpr) // this should be a no-op // TO DO: pretty certain this should return, as `.` indicates end of expression (e.g. `1. - 2` is two exprs, not a sub op); confirm this
-            case .ItemSeparator: // comma
+                leftExpr.annotations.append(token.value)
+            case .ExpressionSeparator: // period separator // note: comma and period seps are currently treated as postfix [no-]ops to preserve them // TO DO: this allows for somewhat silly inputs, e.g. `foo..,...,,,bar`, that should arguably be cleaned up or rejected
+                return ExpressionSeparator(data: leftExpr) // as with linebreak token, period token (`.`) indicates end of expression (e.g. `1. - 2` is two expressions, not an operation), so is a no-op // TO DO: is it safe to return leftExpr without preserving period? any use cases where that would cause problems?
+            case .ItemSeparator: // comma separator is normally used to separate list and record items; here it acts as an expression separator, though period separators are strongly preferred to avoid confusion
                 return ItemSeparator(data: leftExpr) // ditto
-            case .PairSeparator: // colon
+            case .PairSeparator: // colon pair
                 leftExpr = PairValue(name: leftExpr, data: try self.parseExpression(TokenType.PairSeparator.precedence-1))
-            case .PipeSeparator: // semicolon
+            case .PipeSeparator: // semicolon pair
                 // TO DO: would it be better to append RH expr to LH expr? (i.e. evaling LH expr would cause it to eval remaining piped commands as well, returning final result) or is it simplest just to have an object that specifically does this? (one issue with chaining [command] values is whether to go left-to-right or right-to-left; not that PipeValue exactly solves that)
                 leftExpr = PipeValue(leftExpr: leftExpr, rightExpr: try self.parseExpression(TokenType.PipeSeparator.precedence))
-            case .LineBreak: // linebreaks act as name (and expr?) separators
+            case .LineBreak: // linebreaks act as expression separators
                 return leftExpr // TO DO: need to check this is correct // TO DO: check behavior is appropriate when linebreak appears between an operator and its operand[s]
                 // VOCABULARY TOKENS
-            case .UnquotedWord: // TO DO: confirm Lexer never returns these, but always converts to one of the vocab forms below
-                throw SyntaxError(description: "BUG: Parser encountered an undigested UnquotedWord: \(self.currentToken)")
-            case .NumericWord, .UnquotedName: // an atom instead of an operator implictly starts a new expression
-                self.lexer.backtrackTo(previousIndex)
-                return leftExpr
             case .Operator:
-                print("parseOperation got Operator: \(token.operatorDefinition!)")
-                if let operatorDefinition = token.operatorDefinition!.infixDefinition {
-                    let result = try operatorDefinition.parseFunc(self, leftExpr: leftExpr, operatorName: operatorDefinition.name.name, precedence: operatorDefinition.precedence)
-                    print("... and returned it: \(result)")
-                    return result
-                } else { // found a prefix operator, so end this expression and deal with it on next pass
+                print("parseOperation got Operator: \(token.prefixOperator) \(token.infixOperator)")
+                guard let operatorDefinition = token.infixOperator else { // found a prefix operator, so end this expression and process it on next pass
                     self.lexer.backtrackTo(previousIndex)
                     return leftExpr
                 }
-                
-                // UNSUPPORTED TOKENS (these cannot appear where an atom or prefix operator is expected)
-            default:
-                throw SyntaxError(description: "[2] Unexpected \"\(token)\"")
+                leftExpr = try operatorDefinition.parseFunc(self, leftExpr: leftExpr, operatorName:
+                                                            operatorDefinition.name.name, precedence: operatorDefinition.precedence)
+                // UNSUPPORTED TOKENS (these cannot appear where an infix/postfix operator is expected)
+            default: // anything else implictly starts a new expression (if token is invalid, e.g. unbalanced bracket/brace/paren, if will be detected and thrown by parseAtom on next pass)
+                self.lexer.backtrackTo(previousIndex)
+                return leftExpr
             }
         }
         return leftExpr
@@ -330,6 +324,6 @@ class Parser {
         }
         return EntoliScript(data: result)
     }
+*/
 }
-
 

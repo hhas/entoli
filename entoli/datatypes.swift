@@ -83,6 +83,8 @@ class PairValue: Value { // note: `A:B:C` is right-associative // TO DO: probabl
 }
 
 
+
+// TO DO: commands could (and should) have lighter-weight structure, storing name as String and args as [Value] (record access methods could be provided via protocol extension, or by having CommandValue subclass RecordValue)
 class CommandValue: PairValue { // note: operators are just syntactic sugar over commands, so always parse to CommandValue // TO DO: renderer will need to supply commands with ops table so that they can choose optimal display format for themselves (one problem: how to distinguish pre/in/post-fix ops (esp. pre-vs-post) as that really requires a different command name for each)
     convenience init(name: Value) {
         self.init(name: name, data: RecordValue(data: []))
@@ -102,7 +104,7 @@ class CommandValue: PairValue { // note: operators are just syntactic sugar over
 
 
 class PipeValue: Value {// TO DO: needed? or should CommandValue have slot for this? (caution: recursively traversing linked lists of commands in order to eval them is a surefire way to blow Swift stack; a safer way would be for evaluator to start at head, and have each command return the next command to eval [on success]; that said, the simplest strategy would be to get rid of PipeValue and just set a flag on the RH command telling it to consume the current output value [which the evaluator always captures as the result of the previous command] as its first arg — this also avoids complexity/confusion of some commands being items in group array and others being their own linked lists; only thing we need to check is a piped command can never consume input that wasn't actually meant for it)
-    let leftExpr: Value, rightExpr: Value
+    let leftExpr: Value, rightExpr: Value // TO DO: if keeping PipeValue, use a single Array<Value>, and have parsefunc append commands to it as long as additional `;` separators are encountered
     
     init(leftExpr: Value, rightExpr: Value) {
         self.leftExpr = leftExpr

@@ -18,18 +18,17 @@
 private let DEBUG = false
 
 
-class VocabularyLexer {
+class VocabularyLexer: Lexer {
     
     // TO DO: use same structure as punc lexer, with struct value being enum? (unconvinced: mostly that just adds complexity, and it's reasonable to assume parser will deal with vocab tokens by passing them to a switch that returns corresponding Value)
 
     /**********************************************************************/
     
-    private let lexer: PunctuationLexer
     private let keywordOperators: OperatorPhrasesTable
     
-    init(lexer: PunctuationLexer, keywordOperators: OperatorPhrasesTable) {
-        self.lexer = lexer
+    init(code: String, keywordOperators: OperatorPhrasesTable) {
         self.keywordOperators = keywordOperators
+        super.init(code: code)
     }
     
     /**********************************************************************/
@@ -38,9 +37,14 @@ class VocabularyLexer {
     private typealias PartialOperatorPhraseMatch = (words: [Token], startIndex: ScriptIndex, match: OperatorPhrasesTable.WordInfoType)
 
     // support
-    
-    private var hasNextWord: Bool { return self.lexer.lookaheadBy(1, ignoreWhiteSpace: false)?.type == .WhiteSpace
-                                                                 && self.lexer.lookaheadBy(1)?.type == .UnquotedWord }
+   /*
+    private var hasNextWord: Bool {
+        
+        // TO DO: opportunistic read ahead with backtracking of cursor to end of last word on failure would probably be simpler
+        
+        return self.lexer.lookaheadBy(1, ignoreWhiteSpace: false)?.type == .WhiteSpace
+                                                                 && self.lexer.lookaheadBy(1)?.type == .UnquotedWord
+    }
     
     private func joinWords(words: [Token]) -> String {
         return words.map{$0.value}.joinWithSeparator(" ")
@@ -133,7 +137,7 @@ class VocabularyLexer {
                     if DEBUG {print("FOUND OPERATOR: <\(match.name)>     range=\(startIndex..<self.lexer.currentToken!.range.endIndex)")}
                             self.currentTokensCache.append(Token(type: .Operator, value: match.name!,
                                                                  range: startIndex..<self.lexer.currentToken!.range.endIndex,
-                                                                 operatorDefinition: (prefixDefinition: match.prefixDefinition, infixDefinition: match.infixDefinition)))
+                                                                 operatorDefinitions: (match.prefixDefinition, match.infixDefinition)))
                     return
                 }
                 // update current partial matches
@@ -155,6 +159,7 @@ class VocabularyLexer {
         self.currentTokensCache.append(nil)
     }
 
+  
     
     // parse a sequence of unquoted words (name/number/operation)
     
@@ -190,6 +195,6 @@ class VocabularyLexer {
         self.currentTokenIndex = 0
         self.isDone = false
     }
+*/
 }
 
-    

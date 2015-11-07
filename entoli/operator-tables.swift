@@ -20,44 +20,12 @@
 // TO DO: should `no value`, `did nothing` be defined as Atom ops or commands? (Atoms would be safer in that these _never_ take an arg; not sure if they should self-delimit though, and given they're really only intended as return values it's not very useful if they did, so probably best use .None)
 
 
-enum OperatorType {
-    case Phrase
-    case Symbol
-}
-
-enum OperatorForm { // TO DO: distinguish keyword from symbol
-    case Atom
-    case Prefix
-    case Infix
-    case Postfix
-    
-    var hasLeftOperand: Bool { return (self == .Infix || self == .Postfix) }
-}
-
-
-enum AutoDelimit { // e.g. Given word sequence `red is blue`, should it be parsed as a single name, or as an `is` operator with `red` and `blue` operands?
-    case Left
-    case Right
-    case Full // `red is blue` will be parsed as operation; to make it a single name, user must single-quote it: `'red is blue'`
-    case None // `red is blue` will be parsed as single name; to make it an operation, user must punctuate it: `'red' is 'blue'`, `(red) is (blue)`, etc.
-    
-    // If `left` and/or `right` property is true, this op does not require its left and/or right operand to be explicitly delimited.
-    //
-    // e.g. Assume `A` and `B` are UnquotedWord tokens, and `(A/B)` is any explicitly delimited operand (group/list/quoted/etc literal):
-    // 
-    // - if .Full, `A op B` *always* parses to operation `(A) op (B)`
-    // - if .Left, `op B` parses to `op (B)`, but `A op` parses to name 'A op'
-    // - if .None, *only* `(A) op (B)` parses to operation `(A) op (B)`
-    //
-    var left:  Bool { return (self == .Left  || self == .Full) }
-    var right: Bool { return (self == .Right || self == .Full) }
-}
-
-
-typealias ParseFuncType = (Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value
-
 
 // standard prefix/infix/postfix operator parsing functions // TO DO: how to distinguish pre/in/post arguments when command name is same? use explicit property labels in record? (e.g. even standardizing on generic `{first value:..., second value:...}`) would do it)
+
+func parseAtomOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: []))
+}
 
 func parsePrefixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
     return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [try parser.parseExpression(precedence)]))
@@ -126,10 +94,6 @@ func throwMisplacedToken(parser: Parser, leftExpr: Value!, operatorName: String,
 
 
 
-typealias OperatorName = (name: String, type: OperatorType, autoDelimit: AutoDelimit)
-
-typealias OperatorDefinition = (name: OperatorName, precedence: Int, form: OperatorForm, parseFunc: ParseFuncType, aliases: [OperatorName])
-
 // Standard operators
 
 // TO DO: should operators be grouped by category (math, etc) where practical, allowing them to be selectively loaded/unloaded? (that alternative would be to define each operator on corresponding proc, but don't think that level of granularity will make code any easier to follow); or is it enough just to define operator table within library, and leave library client to indicate whether or not it wants to import library's operator definitions in addition to its procs
@@ -182,8 +146,9 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     
     // Boolean
     (("not",     .Phrase, .Right), 100, .Prefix,  parsePrefixOperator, []),
-    (("and",     .Phrase,  .Full),  99, .Infix,   parseInfixOperator,  []),
-    (("or",      .Phrase,  .Full),  98, .Infix,   parseInfixOperator,  []),
+    (("and",     .Phrase,  .Full),  98, .Infix,   parseInfixOperator,  []),
+    (("xor",     .Phrase,  .Full),  96, .Infix,   parseInfixOperator,  []),
+    (("or",      .Phrase,  .Full),  94, .Infix,   parseInfixOperator,  []),
     
     // cast
     (("as",      .Phrase,  .Full), 80, .Infix,    parseInfixOperator,  []),
@@ -207,7 +172,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
 
 
 
-struct OperatorWordInfo<WordT: Hashable>: CustomStringConvertible { // WordT is String or Character
+struct OperatorWordInfo<WordT: Hashable>: CustomStringConvertible { // WordT is String or Character // TO DO: struct or class?
     // An operator name is composed of one or more 'words'. In a keyword-based operator, e.g. "is not same as", each word is a String, created by splitting the full name on interstitial whitespace. (In a symbol-based operator, e.g. "!=", the full name should always be a single String-based word.) The PunctuationLexer outputs single String-based words, e.g. ["is", "not", "same", "as"], so to match an entire operator, each defined operator name is first broken down into nested dictionaries, each of whose keys are a single 'word' to match, and whose values are the next matchable word[s] (if any) and/or an operator definition (if a full match has been made).
     // In addition, any 'words' not identified as operator names defined in the OperatorPhrasesTable need to be examined character-by-character to see if they contain any symbol-based operators, e.g. "foo<bar". (Ideally, users would always surround symbol operators with whitespace, making them trivial to identify, but this is not an ideal world so we must check for cases where a user might accidentally/deliberately enter symbol operators without explicitly separating them from adjoining characters; a task further complicated by the fact that some characters take on different meanings according to immediate context, e.g. `-` might be a negation or subtraction operator, or an in-word hyphen.)
     typealias WordsDictionary = [WordT:OperatorWordInfo<WordT>]
@@ -246,6 +211,9 @@ class OperatorTable<WordT: Hashable> { // Keyword/Symbol table (only real differ
     private(set) var definitionsByWord: WordsDictionary = [:]
     
     private func _addOperator(var words: [WordT], inout wordsTable: WordsDictionary, definition: OperatorDefinition) {
+        if definition.precedence % 2 != 0 { // note: right association relies on subtracting 1 from normal precedence
+            print("Operator has non-even precedence: \(definition)") // TO DO: how best to deal with this? throw?
+        }
         let word = words.removeFirst()
         if wordsTable[word] == nil {
             wordsTable[word] = OperatorWordInfo<WordT>()
@@ -256,7 +224,7 @@ class OperatorTable<WordT: Hashable> { // Keyword/Symbol table (only real differ
             do {
                 try wordsTable[word]!.addDefinition(definition)
             } catch {
-                print("Can't define operator: \(error)") // looks like an operator with the same name and *fix has already been added // TO DO: how best to deal with this?
+                print("Can't define operator: \(error)") // looks like an operator with the same name and *fix has already been added // TO DO: how best to deal with this? throw?
             }
         }
     }

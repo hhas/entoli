@@ -12,7 +12,19 @@
 
 //let source = " (FOO) is not equal. to BAR " // TO DO: this period is causing double period to show when displayed, presumably because it remains attached to first expr as postfix op; the group/script then inserts its own period delimiter when displaying
 
+
+let code: ScriptChars = "3.2e5.1".characters
+let start = code.startIndex
+
+let result = toNumericValue(code, start: start)
+
+print(result)
+
+
+
+/*
 let source = "  bob   !=   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
+
 
 
 let lexer = Lexer(code: source, keywordOperators: StandardOperatorPhrasesTable)
@@ -36,6 +48,10 @@ do {
 } catch {
     print("\n\n================================================\nERROR:", error)
 }
+*/
+
+
+
 
 /*
 do {
