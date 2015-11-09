@@ -45,7 +45,7 @@ enum AutoDelimit { // e.g. Given word sequence `red is blue`, should it be parse
 
 typealias ParseFuncType = (Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value
 
-typealias OperatorName = (name: String, type: OperatorType, autoDelimit: AutoDelimit)
+typealias OperatorName = (text: String, type: OperatorType, autoDelimit: AutoDelimit)
 
 typealias OperatorDefinition = (name: OperatorName, precedence: Int, form: OperatorForm, parseFunc: ParseFuncType, aliases: [OperatorName])
 
@@ -64,8 +64,9 @@ let gOperatorDefinedPrecedence = -2
 
 
 enum TokenType { // TO DO: implement human-readable names for use in error messages
+    case StartOfCode
     case EndOfCode
-    
+    // Punctuation
     case WhiteSpace
     case QuotedText // atomic; the lexer automatically reads everything between `"` and corresponding `"`, including `""` escapes
     case QuotedName // atomic; the lexer automatically reads everything between `'` and corresponding `'`, including `''` escapes
@@ -82,11 +83,11 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
     case PairSeparator
     case PipeSeparator
     case LineBreak
-    case UnquotedWord // everything else that is not one of the above predefined token types
-    // VocabularyLexer converts unquoted words and related tokens to the following token types
-    case Operator
-    case UnquotedName
-    case NumericWord
+    case UnquotedWord // everything else that is not one of the above predefined token types // TO DO: get rid of this once vocab lexing is done
+    // Vocabulary (note: Lexer converts unquoted words and related tokens to the following token types, according to hardcoded rules and lookup tables)
+    case NumericWord // atomic; a word that represents a whole/decimal/hexadecimal number, optionally including exponent and/or unit type prefix/suffix
+    case Operator // atomic/prefix/infix/postfix; a recognized operator (basically syntactic sugar for a standard command), including its definition
+    case UnquotedName // atomic, or special-case prefix; equivalent to QuotedName in function, but constructed from contiguous sequence of non-special unquoted words
     
     var precedence: Int {
         switch self {
@@ -96,7 +97,6 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
         case .PairSeparator:        return 60
         case .PipeSeparator:        return 50
         case .Operator:             return gOperatorDefinedPrecedence
-        case .EndOfCode:            return -1
         default:                    return 0
         }
     }
@@ -105,25 +105,31 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
 
 struct Token {
     let type: TokenType
-    let value: String
-    let range: ScriptRange
+    let value: String // normalized representation
+    let range: ScriptRange // position of original (raw) input in source code
     let partial: Int // >0 = missing N close tokens; <0 = missing N open tokens
     
     // one or both of the following are non-nil when token type is .Operator
     let prefixOperator: OperatorDefinition?
     let infixOperator:  OperatorDefinition?
+    // the following is non-nil when token type is .NumericWord
+    let numericInfo:   NumericValue?
     
-    init(type: TokenType, value: String, range: ScriptRange, partial: Int = 0, operatorDefinitions: OperatorDefinitions = (nil, nil)) {
+    init(type: TokenType, value: String, range: ScriptRange, partial: Int = 0,
+            operatorDefinitions: OperatorDefinitions = (nil, nil), numericInfo: NumericValue? = nil) {
         self.type = type
         self.value = value
         self.range = range
         self.partial = partial
         (self.prefixOperator, self.infixOperator) = operatorDefinitions
+        self.numericInfo = numericInfo
     }
 }
 
 
-let gEndOfCodeToken = Token(type: .EndOfCode, value: "", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate start and end of script
+
+let gStartOfCodeToken = Token(type: .StartOfCode, value: "", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate start of script
+let gEndOfCodeToken = Token(type: .EndOfCode, value: "", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate end of script
 
 
 

@@ -56,6 +56,8 @@ class EndOfCodeError: SyntaxError {}
 
 class LeftOperandNotFoundError: SyntaxError {}
 
+class MalformedNumericError: SyntaxError {}
+
 
 /**********************************************************************/
 
@@ -109,6 +111,8 @@ class Parser {
     
     /**********************************************************************/
     // PARSE RECORD
+    
+    // TO DO: enforce unique item names here?
     
     // TO DO: parseRecord could optionally be parameterized with parsefunc that knows how to read a record item; that'll allow context-sensitive interpretation; as for `to` op vs `to` command, don't need to worry about latter as typespecs will insist on NAME or NAME:VALUE, forcing users to single-quote as needed (note: procs are typically defined at top-level, so any malformed records will be reported as soon as script runs; thus parse-time checking, while nice, isn't essential)
     

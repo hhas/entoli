@@ -104,13 +104,15 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     
     // TO DO: disambiguating `-` (neg op/sub op/in-word hyphen) is going to be problematic
     
+    // TO DO: also consider `-n`; this is presumably intended to negate the value of `n` but as written refers to slot named "-n" instead (changing it to right-auto-delimit might fix this, but need to check)
+    
     // arithmetic
     (("^", .Symbol, .Full),   500, .Infix,  parseRightInfixOperator, []), // TO DO: what to use as exponent operator? (`^`, `exp`?)
-    (("+", .Symbol, .Full),   490, .Prefix, parsePrefixOperator,     []),
-    (("-", .Symbol, .None),   490, .Prefix, parsePrefixOperator,     [("–", .Symbol, .None)]), // note: also accepts n-dash as synonym
-    (("*", .Symbol, .Full),   480, .Infix,  parseInfixOperator,      []),
-    (("/", .Symbol, .Full),   480, .Infix,  parseInfixOperator,      []),
-    (("+", .Symbol, .Full),   470, .Infix,  parseInfixOperator,      []),
+    (("+", .Symbol, .None),   490, .Prefix, parsePrefixOperator,     []),
+    (("-", .Symbol, .None),   490, .Prefix, parsePrefixOperator,     [("–", .Symbol, .None)]), // note: also accepts n-dash as synonym // TO DO: not 100% decided about this, as n- and m-dashes could arguably be used in unquoted text to mean themselves
+    (("×", .Symbol, .Full),   480, .Infix,  parseInfixOperator,      [("*", .Symbol, .Full)]),
+    (("÷", .Symbol, .Full),   480, .Infix,  parseInfixOperator,      [("/", .Symbol, .Full)]),
+    (("+", .Symbol, .None),   470, .Infix,  parseInfixOperator,      []),
     (("-", .Symbol, .None),   470, .Infix,  parseInfixOperator,      [("–", .Symbol, .None)]), // note: also accepts n-dash as synonym // TO DO: subtraction and hyphenation symbol is same, so adjoining whitespace is required to distinguish the two
     (("div", .Phrase, .Full), 480, .Infix,  parseInfixOperator,      []), // TO DO: allow `//` as alias?
     (("mod", .Phrase, .Full), 480, .Infix,  parseInfixOperator,      []), // TO DO: allow whitespace-delimited `%` as alias? (note: `%` is a unit suffix)
@@ -172,22 +174,25 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
 
 
 
-struct OperatorWordInfo<WordT: Hashable>: CustomStringConvertible { // WordT is String or Character // TO DO: struct or class?
+struct OperatorPart<ElementType: Hashable>: CustomStringConvertible { // ElementType is String or Character // TO DO: struct or class?
     // An operator name is composed of one or more 'words'. In a keyword-based operator, e.g. "is not same as", each word is a String, created by splitting the full name on interstitial whitespace. (In a symbol-based operator, e.g. "!=", the full name should always be a single String-based word.) The PunctuationLexer outputs single String-based words, e.g. ["is", "not", "same", "as"], so to match an entire operator, each defined operator name is first broken down into nested dictionaries, each of whose keys are a single 'word' to match, and whose values are the next matchable word[s] (if any) and/or an operator definition (if a full match has been made).
-    // In addition, any 'words' not identified as operator names defined in the OperatorPhrasesTable need to be examined character-by-character to see if they contain any symbol-based operators, e.g. "foo<bar". (Ideally, users would always surround symbol operators with whitespace, making them trivial to identify, but this is not an ideal world so we must check for cases where a user might accidentally/deliberately enter symbol operators without explicitly separating them from adjoining characters; a task further complicated by the fact that some characters take on different meanings according to immediate context, e.g. `-` might be a negation or subtraction operator, or an in-word hyphen.)
-    typealias WordsDictionary = [WordT:OperatorWordInfo<WordT>]
+    // In addition, any 'words' not identified as operator names defined in the PhraseOperatorsTable need to be examined character-by-character to see if they contain any symbol-based operators, e.g. "foo<bar". (Ideally, users would always surround symbol operators with whitespace, making them trivial to identify, but this is not an ideal world so we must check for cases where a user might accidentally/deliberately enter symbol operators without explicitly separating them from adjoining characters; a task further complicated by the fact that some characters take on different meanings according to immediate context, e.g. `-` might be a negation or subtraction operator, or an in-word hyphen.)
+    
+    typealias Element = ElementType
+    
+    typealias WordsDictionary = [ElementType:OperatorPart<ElementType>]
     
     // note: if prefix/infix definition != nil, a valid match has been made; however, if isLongest is false, there might still be a longer match to be made, in which case keep looking
     
     var prefixDefinition: OperatorDefinition? = nil
     var infixDefinition:  OperatorDefinition? = nil
     
-    var nextWords: [WordT:OperatorWordInfo<WordT>] = [:]
+    var nextWords: [ElementType:OperatorPart<ElementType>] = [:]
     var isLongest: Bool { return self.nextWords.count == 0 }
     
-    var name: String? { return self.prefixDefinition?.name.name ?? self.infixDefinition?.name.name }
+    var name: String? { return self.prefixDefinition?.name.text ?? self.infixDefinition?.name.text }
     
-    var description: String {return "<OperatorWordInfo prefixOp=\(self.prefixDefinition?.name) infixOp=\(self.infixDefinition?.name) next=\(Array(self.nextWords.keys))>"}
+    var description: String {return "<OperatorPart prefixOp=\(self.prefixDefinition?.name) infixOp=\(self.infixDefinition?.name) next=\(Array(self.nextWords.keys))>"}
     
     mutating func addDefinition(definition: OperatorDefinition) throws {
         if definition.form.hasLeftOperand {
@@ -202,21 +207,20 @@ struct OperatorWordInfo<WordT: Hashable>: CustomStringConvertible { // WordT is 
 
 
 // lookup table for Keyword (e.g. "is not same as") or Symbol ("!=") operators
-class OperatorTable<WordT: Hashable> { // Keyword/Symbol table (only real difference is that first matches on words, the second on chars)
+class OperatorTable<ElementType: Hashable> { // Keyword/Symbol table (only real difference is that first matches on words, the second on chars)
     // given a multi-word operator name, split it into words, then store as a series of nested dicts, ending in the operator definition itself
     
-    typealias WordInfoType = OperatorWordInfo<WordT>
-    typealias WordsDictionary = WordInfoType.WordsDictionary
+    typealias Part = OperatorPart<ElementType>
     
-    private(set) var definitionsByWord: WordsDictionary = [:]
+    private(set) var definitionsByPart: Part.WordsDictionary = [:]
     
-    private func _addOperator(var words: [WordT], inout wordsTable: WordsDictionary, definition: OperatorDefinition) {
+    private func _addOperator(var words: [ElementType], inout wordsTable: Part.WordsDictionary, definition: OperatorDefinition) {
         if definition.precedence % 2 != 0 { // note: right association relies on subtracting 1 from normal precedence
             print("Operator has non-even precedence: \(definition)") // TO DO: how best to deal with this? throw?
         }
         let word = words.removeFirst()
         if wordsTable[word] == nil {
-            wordsTable[word] = OperatorWordInfo<WordT>()
+            wordsTable[word] = OperatorPart<ElementType>()
         }
         if words.count > 0 {
             self._addOperator(words, wordsTable: &(wordsTable[word]!.nextWords), definition: definition)
@@ -228,61 +232,62 @@ class OperatorTable<WordT: Hashable> { // Keyword/Symbol table (only real differ
             }
         }
     }
+}
+
+
+
+
+class SymbolOperatorsTable: OperatorTable<Character> {
     
-    func splitWords(name: OperatorName) -> [WordT] { // concrete subclasses override this
-        return []
+    func addOperator(name: String, definition: OperatorDefinition) {
+        self._addOperator(Array(name.characters), wordsTable: &self.definitionsByPart, definition: definition)
     }
+}
+
+
+class PhraseOperatorsTable: OperatorTable<String> { // whole-word matching
     
+    func addOperator(name: String, definition: OperatorDefinition) {
+        // TO DO: what about normalizing name? (trim, lowercase, etc), or is it reasonable to expect tables to be correctly formatted before reading?
+        self._addOperator(name.characters.split{$0 == " "}.map(String.init), wordsTable: &self.definitionsByPart, definition: definition)
+    }
+}
+
+
+//
+
+
+class Operators {
+    
+    typealias Phrase = PhraseOperatorsTable.Part
+    typealias Symbol = SymbolOperatorsTable.Part
+    
+    let phrases = PhraseOperatorsTable()
+    let symbols = SymbolOperatorsTable()
     
     
     func add(definition: OperatorDefinition) -> Self {
         // given a multi-word operator name, split it into words, then store as a series of nested dicts,
         // ending in the operator definition itself
         for name in [definition.name] + definition.aliases {
-           self._addOperator(self.splitWords(name), wordsTable: &self.definitionsByWord, definition: definition)
+            if name.type == .Symbol {
+                self.symbols.addOperator(name.text, definition: definition)
+            } else {
+                self.phrases.addOperator(name.text, definition: definition)
+            }
         }
         return self
     }
     
-    
-    // TO DO: move this to keyword subclass; it should then call symbol subclass as needed (it should prob. also check that symbols don't contain ws); alternatively, wrap both tables in OperatorDefinitions class and put
     func add(definitions: [OperatorDefinition]) -> Self {
-        for definition in definitions {
-            self.add(definition)
-            // TO DO: also add to symbol op table
-        }
+        for definition in definitions { self.add(definition) }
         return self
     }
 }
 
 
 
-
-class OperatorSymbolsTable: OperatorTable<Character> {
-    
-    override func splitWords(nameInfo: OperatorName) -> [Character] {
-        
-        return Array(nameInfo.name.characters)
-    }
-}
-
-
-
-class OperatorPhrasesTable: OperatorTable<String> { // whole-word matching
-    
-    
-    //let StandardOperatorSymbolsTable = OperatorSymbolsTable().add(...)
-
-    
-    override func splitWords(nameInfo: OperatorName) -> [String] {
-        // TO DO: what about normalizing name? (trim, lowercase, etc), or is it reasonable to expect tables to be correctly formatted before reading?
-        return nameInfo.name.characters.split{$0 == " "}.map(String.init)
-    }
-}
-
-
-
-let StandardOperatorPhrasesTable = OperatorPhrasesTable().add(StandardOperators)
+let StandardOperatorsTable = Operators().add(StandardOperators)
 
 
 
