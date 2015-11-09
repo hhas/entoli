@@ -13,7 +13,7 @@
 // there might also be an argument for pushing vocab opdefs and numeric parsefuncs onto a stack, allowing ops to be added/removed mid-script; this does suggest that vocab parser should consume punc lexer's character stream directly (which is arguably simpler anyway, since it knows more about what it needs and can deal with e.g. periods as decimal separators without any messing about)
 
 
-private let DEBUG = true
+private let DEBUG = false
 
 
 /**********************************************************************/
@@ -22,6 +22,8 @@ private let DEBUG = true
 private struct PartialOperatorMatch<T:Hashable> {
     let precedingWords: [Lexer.UnquotedWord] // any preceding unquoted words already matched to LH side of match (if the operator is successfully matched, these will be added to cache as UnquotedName token, followed by the Operator token)
     let isLeftDelimited: Bool // is there an explicit delimiter on LH side of match? (if false, the operator definition's autoDelimit flag will be used)
+    let isValidPrefixOperatorName: Bool
+    let isValidInfixOperatorName: Bool
     let startIndex: ScriptIndex // position in source code at which the whole match begins
     let endIndex: ScriptIndex // position in source code at which this partial/whole match ends
     let matchInfo: OperatorTable<T>.Part // struct describing the current char/word match along with lookup table for making the next char/word match
@@ -62,7 +64,7 @@ class Lexer {
         "}": .RecordLiteralEnd,
         "(": .ExpressionGroupLiteral,
         ")": .ExpressionGroupLiteralEnd,
-        // TO DO: also consider making `!` and `?` expression separators; this would be mostly cosmetic as it wouldn't affect behavior, however, it could be used to infer metadata (e.g. `expr!` might indicate that user regards the operation as especially important, so could be highlighted differently, prioritized in searches, etc)
+        // TO DO: also consider making `!` and `?` expression separators; this would be mostly cosmetic as it wouldn't affect behavior, however, it could be used to infer metadata (e.g. `expr!` might indicate that user regards the operation as especially important, so could be highlighted differently, prioritized in searches, etc); caution: `!=` is defined as ASCII equivalent for `≠` operator, so would require [e.g.] leading whitespace to disambiguate (e.g. see also `.` overloading in numerics; might be worth considering a general scheme)
         ".": .ExpressionSeparator, // also decimal sep in canonical numbers (or thousands sep in localized numbers?)
         ",": .ItemSeparator, // also thousands separator in canonical numbers? (or decimal sep in localized numbers?)
         ":": .PairSeparator,
@@ -259,6 +261,8 @@ class Lexer {
     
     // determine if a matched char/word sequence is a valid operator name (i.e. it's self-delimiting or not bounded by additional chars/words)
     
+    // TO DO: parameterize these: they shouldn't rely on cursor's current position but should instead take current match's endIndex as arg
+    
     private func isEndOfPhrase() -> Bool { // used by isValidOperatorName() to determine if there are any more words in current unquoted words sequence
         var idx = self.cursor
         repeat {
@@ -288,7 +292,7 @@ class Lexer {
     private func updateOperatorMatches<T:Hashable>(operatorsTable: OperatorTable<T>,
                                                    inout partialOperatorMatches: [PartialOperatorMatch<T>],
                                                    inout fullOperatorMatch: (match: PartialOperatorMatch<T>, isValidPrefixName: Bool, isValidInfixName: Bool)?, // once first full match is made, it is cached here, and no later operators are matched
-                                                   value: T, endIndex: ScriptIndex, precedingWords: [UnquotedWord],
+                                                   value: T, startIndex: ScriptIndex, endIndex: ScriptIndex, precedingWords: [UnquotedWord],
                                                    isLeftDelimited: Bool, isRightDelimitedFunc: ()->Bool) -> (Token?, Token)? { // returns true if operator found
     //    if DEBUG {print("Checking \(T.self) operator matches: `\(value)` partial=\(partialOperatorMatches.count), full=\(fullOperatorMatch)")}
 
@@ -300,10 +304,10 @@ class Lexer {
             
             
             
-            // TO DO: this is too eager; it needs to wait until isLongest is reached for earliest match
             let isValidPrefixOperatorName = self.isValidOperatorName(match.matchInfo.prefixDefinition, isLeftDelimited: match.isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
             let isValidInfixOperatorName = self.isValidOperatorName(match.matchInfo.infixDefinition, isLeftDelimited: match.isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
             // TO DO: fullMatch needs to indicate which name(s) are valid; when final best match is made, only include the op(s) that are valid (i.e. different op names, including aliases, can have different delimiting)
+            if DEBUG {print("isValidOp: `\(match.matchInfo)`: \(isValidPrefixOperatorName), \(isValidInfixOperatorName)")}
             if isValidPrefixOperatorName || isValidInfixOperatorName { // found a full, correctly delimited operator name
                 fullOperatorMatch = (match, isValidPrefixOperatorName, isValidInfixOperatorName)
                 partialOperatorMatches = [match]
@@ -315,8 +319,9 @@ class Lexer {
             if let nextMatch = match.matchInfo.nextWords[value] {
                 partialOperatorMatches[partialMatchIndex] = PartialOperatorMatch<T>(precedingWords: match.precedingWords, // TO DO: need to add value to precedingWords here!
                                                                                     isLeftDelimited: match.isLeftDelimited,
-                                                                                    startIndex: match.startIndex, endIndex: endIndex,
-                                                                                    matchInfo: nextMatch)
+                                                                                    isValidPrefixOperatorName: isValidPrefixOperatorName,
+                                                                                    isValidInfixOperatorName: isValidInfixOperatorName,
+                                                                                    startIndex: match.startIndex, endIndex: endIndex, matchInfo: nextMatch)
                 if DEBUG {print("... and matched it too: \(partialOperatorMatches[partialMatchIndex])")}
                 partialMatchIndex += 1
             } else {
@@ -325,12 +330,19 @@ class Lexer {
             }
         }
         if fullOperatorMatch == nil { // check for the start of a new operator (note: this only needs done until the first full match is made)
-            if let foundOp = operatorsTable.definitionsByPart[value] { // matched the first char/word of a possible operator
-                partialOperatorMatches.append(PartialOperatorMatch<T>(precedingWords: precedingWords, isLeftDelimited: isLeftDelimited,
-                    startIndex: self.cursor, endIndex: endIndex, matchInfo: foundOp))
-                print("Got a new operator match: \(foundOp)")
+            if let matchInfo = operatorsTable.definitionsByPart[value] { // matched the first char/word of a possible operator
+                let isValidPrefixOperatorName = self.isValidOperatorName(matchInfo.prefixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
+                let isValidInfixOperatorName = self.isValidOperatorName(matchInfo.infixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
+
+                partialOperatorMatches.append(PartialOperatorMatch<T>(precedingWords: precedingWords,
+                                                                      isLeftDelimited: isLeftDelimited,
+                                                                      isValidPrefixOperatorName: isValidPrefixOperatorName,
+                                                                      isValidInfixOperatorName: isValidInfixOperatorName,
+                                                                      startIndex: startIndex, endIndex: endIndex, matchInfo: matchInfo))
+                if DEBUG {print("Got a new operator match: \(matchInfo)")}
             }
-        } else if fullOperatorMatch!.match.matchInfo.isLongest || partialOperatorMatches.count == 0 { // check if longest full match has been made
+        }
+        if fullOperatorMatch != nil && (fullOperatorMatch!.match.matchInfo.isLongest || partialOperatorMatches.count == 0) { // check if longest full match has been made
             var nameToken: Token? = nil
             let match = fullOperatorMatch!.match
             if match.precedingWords.count > 0 {
@@ -339,7 +351,8 @@ class Lexer {
             //print(precedingWords)
             if DEBUG {print("FULLY MATCHED \(T.self) OPERATOR: <\(match.matchInfo.name)>     range=\(match.startIndex..<match.endIndex)")}
             return (nameToken, Token(type: .Operator, value: match.matchInfo.name!, range: match.startIndex..<match.endIndex,
-                operatorDefinitions: (match.matchInfo.prefixDefinition, match.matchInfo.infixDefinition))) // TO DO: FIX!!!!! only include matches with valid name flag
+                operatorDefinitions: (match.isValidPrefixOperatorName ? match.matchInfo.prefixDefinition : nil,
+                                      match.isValidInfixOperatorName  ? match.matchInfo.infixDefinition  : nil)))
         }
         return nil
     }
@@ -391,25 +404,29 @@ class Lexer {
             
             var isFirstChar = true
             repeat {
-                let char = self.code[self.cursor]
+                let charIndex = self.cursor
+                let char = self.code[charIndex]
+                self.cursor = self.cursor.successor()
                 if bestChoiceOperator == nil {
                     bestChoiceOperator = updateOperatorMatches(self.operatorsTable.symbols, partialOperatorMatches: &partialSymbolOperatorMatches,
-                                                              fullOperatorMatch: &fullSymbolOperatorMatch, value: char, endIndex: self.cursor,
-                                                              precedingWords: words, isLeftDelimited: isFirstChar, isRightDelimitedFunc: self.isEndOfWord)
-                    if (bestChoiceOperator != nil) {print("MATCHED SYMBOL OPERATOR!!!!", bestChoiceOperator)}
+                                                               fullOperatorMatch: &fullSymbolOperatorMatch,
+                                                               value: char, startIndex: charIndex, endIndex: self.cursor, precedingWords: words,
+                                                               isLeftDelimited: isFirstChar, isRightDelimitedFunc: self.isEndOfWord)
+                    if DEBUG {if (bestChoiceOperator != nil) {print("MATCHED SYMBOL OPERATOR!!!!", bestChoiceOperator)}}
                 }
                 isFirstChar = false
                 wordChars.append(char)
-                self.cursor = self.cursor.successor()
             } while self.cursor < self.codeLength && !Lexer.reservedCharacters.contains(self.code[self.cursor])
             let word = String(wordChars)
             let wordEndIndex = self.cursor // caution: non-inclusive; use `..<` (not `...`) to construct ScriptRange
             isFirstWord = false
             if let fullMatch = updateOperatorMatches(self.operatorsTable.phrases, partialOperatorMatches: &partialPhraseOperatorMatches,
-                                                                   fullOperatorMatch: &fullPhraseOperatorMatch, value: word, endIndex: wordEndIndex,
-                                                                   precedingWords: words, isLeftDelimited: isFirstWord, isRightDelimitedFunc: self.isEndOfPhrase) {
+                                                     fullOperatorMatch: &fullPhraseOperatorMatch,
+                                                     value: word, startIndex: wordStartIndex, endIndex: wordEndIndex, precedingWords: words,
+                                                     isLeftDelimited: isFirstWord, isRightDelimitedFunc: self.isEndOfPhrase) {
                 bestChoiceOperator = fullMatch // note: while symbol ops are matched first, while word is still being read, phrase
                 words.removeAll()
+                self.cursor = self.cursor.successor()
             }
             words.append((word, wordStartIndex, wordEndIndex))
             if DEBUG {print("bestChoiceOperator=",bestChoiceOperator,"   \n\t\tcurrent-words:",words)}
@@ -422,8 +439,9 @@ class Lexer {
                 self.currentTokensCache.append(operatorToken)
                 
                 // TO DO: move cursor back to end of op
+                let n = self.cursor
                 self.cursor = operatorToken.range.endIndex
-                //print("...MOVED CURSOR BACK TO: \(self.cursor)")
+                if DEBUG {print("...MOVED CURSOR FROM \(n) BACK TO: \(self.cursor), `\(self.code[self.cursor])`")}
                 return
             }
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

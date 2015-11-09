@@ -18,7 +18,7 @@
 
 
 
-let source = "  bob is not smith   !=   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
+let source = "  bob is not smith   !=x   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
 
 
 
