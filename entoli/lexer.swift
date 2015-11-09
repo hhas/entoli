@@ -22,8 +22,6 @@ private let DEBUG = false
 private struct PartialOperatorMatch<T:Hashable> {
     let precedingWords: [Lexer.UnquotedWord] // any preceding unquoted words already matched to LH side of match (if the operator is successfully matched, these will be added to cache as UnquotedName token, followed by the Operator token)
     let isLeftDelimited: Bool // is there an explicit delimiter on LH side of match? (if false, the operator definition's autoDelimit flag will be used)
-    let isValidPrefixOperatorName: Bool
-    let isValidInfixOperatorName: Bool
     let startIndex: ScriptIndex // position in source code at which the whole match begins
     let endIndex: ScriptIndex // position in source code at which this partial/whole match ends
     let matchInfo: OperatorTable<T>.Part // struct describing the current char/word match along with lookup table for making the next char/word match
@@ -208,7 +206,7 @@ class Lexer {
     }
     
     // caution: lookahead doesn't know about operators/data detectors; it can only look for punctuation, whitespace, quoted name/text, and unquoted word
-    func lookaheadBy(offset: UInt, ignoreWhiteSpace: Bool = true, ignoreVocabulary: Bool = false) -> Token? { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
+    func lookaheadBy(offset: UInt, ignoreWhiteSpace: Bool = true, ignoreVocabulary: Bool = false) -> Token { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
         if offset == 0 { return self.currentToken }
         var count: UInt = 0
         var lookaheadTokenIndex: Int = self.currentTokenIndex
@@ -219,7 +217,7 @@ class Lexer {
             let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex]
             if lookaheadToken.type == .EndOfCode {
                 if DEBUG {print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{$0.value as String!})")}
-                return nil
+                return lookaheadToken
             }
             if lookaheadToken.type != .WhiteSpace || !ignoreWhiteSpace { count += 1 }
         }
@@ -240,8 +238,8 @@ class Lexer {
     
     private typealias PartialPhraseOperatorMatch = PartialOperatorMatch<Operators.Phrase.Element>
     private typealias PartialSymbolOperatorMatch = PartialOperatorMatch<Operators.Symbol.Element>
-    private typealias FullPhraseOperatorMatch    = (match: PartialPhraseOperatorMatch, isValidPrefixName: Bool, isValidInfixName: Bool)
-    private typealias FullSymbolOperatorMatch    = (match: PartialSymbolOperatorMatch, isValidPrefixName: Bool, isValidInfixName: Bool)
+    private typealias FullPhraseOperatorMatch    = (match: PartialPhraseOperatorMatch, isValidPrefixOperatorName: Bool, isValidInfixOperatorName: Bool)
+    private typealias FullSymbolOperatorMatch    = (match: PartialSymbolOperatorMatch, isValidPrefixOperatorName: Bool, isValidInfixOperatorName: Bool)
     private typealias UnquotedWord               = (text: String, startIndex: ScriptIndex, endIndex: ScriptIndex)
     
     //
@@ -287,11 +285,13 @@ class Lexer {
     }
     
     
+    /**********************************************************************/
     // note: symbol ops can't be added to cache until current word is fully read, allowing keyword op first refusal; therefore, this needs to return any preceding words as UnquotedName token, followed by Operator token; or nil if no full match was made
+    
     
     private func updateOperatorMatches<T:Hashable>(operatorsTable: OperatorTable<T>,
                                                    inout partialOperatorMatches: [PartialOperatorMatch<T>],
-                                                   inout fullOperatorMatch: (match: PartialOperatorMatch<T>, isValidPrefixName: Bool, isValidInfixName: Bool)?, // once first full match is made, it is cached here, and no later operators are matched
+                                                   inout fullOperatorMatch: (match: PartialOperatorMatch<T>, isValidPrefixOperatorName: Bool, isValidInfixOperatorName: Bool)?, // once first full match is made, it is cached here, and no later operators are matched
                                                    value: T, startIndex: ScriptIndex, endIndex: ScriptIndex, precedingWords: [UnquotedWord],
                                                    isLeftDelimited: Bool, isRightDelimitedFunc: ()->Bool) -> (Token?, Token)? { // returns true if operator found
     //    if DEBUG {print("Checking \(T.self) operator matches: `\(value)` partial=\(partialOperatorMatches.count), full=\(fullOperatorMatch)")}
@@ -319,8 +319,6 @@ class Lexer {
             if let nextMatch = match.matchInfo.nextWords[value] {
                 partialOperatorMatches[partialMatchIndex] = PartialOperatorMatch<T>(precedingWords: match.precedingWords, // TO DO: need to add value to precedingWords here!
                                                                                     isLeftDelimited: match.isLeftDelimited,
-                                                                                    isValidPrefixOperatorName: isValidPrefixOperatorName,
-                                                                                    isValidInfixOperatorName: isValidInfixOperatorName,
                                                                                     startIndex: match.startIndex, endIndex: endIndex, matchInfo: nextMatch)
                 if DEBUG {print("... and matched it too: \(partialOperatorMatches[partialMatchIndex])")}
                 partialMatchIndex += 1
@@ -333,30 +331,29 @@ class Lexer {
             if let matchInfo = operatorsTable.definitionsByPart[value] { // matched the first char/word of a possible operator
                 let isValidPrefixOperatorName = self.isValidOperatorName(matchInfo.prefixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
                 let isValidInfixOperatorName = self.isValidOperatorName(matchInfo.infixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
-
+                if DEBUG {print("NEW OP `\(value)`, isLeftDelimited=\(isLeftDelimited): `\(matchInfo)`, isValidName: \(isValidPrefixOperatorName)/\(isValidInfixOperatorName)")}
                 partialOperatorMatches.append(PartialOperatorMatch<T>(precedingWords: precedingWords,
                                                                       isLeftDelimited: isLeftDelimited,
-                                                                      isValidPrefixOperatorName: isValidPrefixOperatorName,
-                                                                      isValidInfixOperatorName: isValidInfixOperatorName,
                                                                       startIndex: startIndex, endIndex: endIndex, matchInfo: matchInfo))
                 if DEBUG {print("Got a new operator match: \(matchInfo)")}
             }
         }
         if fullOperatorMatch != nil && (fullOperatorMatch!.match.matchInfo.isLongest || partialOperatorMatches.count == 0) { // check if longest full match has been made
             var nameToken: Token? = nil
-            let match = fullOperatorMatch!.match
+            let (match, isValidPrefixOperatorName, isValidInfixOperatorName) = fullOperatorMatch!
             if match.precedingWords.count > 0 {
                 nameToken = Token(type: .UnquotedName, value: self.joinWords(match.precedingWords), range: self.wordsRange(match.precedingWords))
             }
             //print(precedingWords)
             if DEBUG {print("FULLY MATCHED \(T.self) OPERATOR: <\(match.matchInfo.name)>     range=\(match.startIndex..<match.endIndex)")}
             return (nameToken, Token(type: .Operator, value: match.matchInfo.name!, range: match.startIndex..<match.endIndex,
-                operatorDefinitions: (match.isValidPrefixOperatorName ? match.matchInfo.prefixDefinition : nil,
-                                      match.isValidInfixOperatorName  ? match.matchInfo.infixDefinition  : nil)))
+                operatorDefinitions: (isValidPrefixOperatorName ? match.matchInfo.prefixDefinition : nil,
+                                      isValidInfixOperatorName  ? match.matchInfo.infixDefinition  : nil)))
         }
         return nil
     }
     
+    /**********************************************************************/
     // readers
     
     

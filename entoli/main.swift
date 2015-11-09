@@ -18,12 +18,17 @@
 
 
 
-let source = "  bob is not smith   !=x   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
+//let source = "  bob is not smith   !=x   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
 
+
+//let source = " 1 / 2 + 4  "  //   wrong:  `"1". '/' {"2"}. '+' {"4"}.`
+
+let source = " a / b + c "      //  really wrong:  `'a / b + c'.`
 
 
 let lexer = Lexer(code: source)
 
+/*
 var i = 0
 repeat {
     i+=1
@@ -32,10 +37,8 @@ repeat {
     lexer.advance(true, ignoreVocabulary: false)
 } while lexer.currentToken.type != gEndOfCodeToken.type //&& i<4
 
-/*
 */
 
-/*
 let p = Parser(lexer: lexer)
 
 
@@ -45,6 +48,7 @@ do {
 } catch {
     print("\n\n================================================\nERROR:", error)
 }
+/*
 */
 
 
