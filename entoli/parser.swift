@@ -65,7 +65,7 @@ class MalformedNumericError: SyntaxError {}
 class Parser {
     // TO DO: currently whitespace tokens are always included in lexer stream; if they usually aren't needed (e.g. to disambiguate adjoining tokens) then lexer could be revised to emit significant tokens only (alternatively, if lookahead and backtracking moves to lexer, could use 'includeWhiteSpace' arg in VocabularyLexer.lookahead() to check for whitespace separator only when it needs them, e.g. when parsing multi-word unquoted names)
     
-    let lexer: Lexer
+    let lexer: Lexer // TO DO: make private (i.e. lexer is stateful, so only parser should be able to control it    )
     
     init(lexer: Lexer) {
         self.lexer = lexer
@@ -76,7 +76,7 @@ class Parser {
     
     // TO DO: need to maintain cache of punctuation+vocabulary tokens
     
-    var currentToken: Token { return self.lexer.currentToken } // current token
+    var currentToken: Token { return self.lexer.currentToken } // current token // TO DO: currently unused by Parser; might be used by other code, e.g. for error reporting (e.g. throwMisplacedToken() in operator-tables.swift), but this is probably not ideal
     
     
     private var precedenceForNextToken: Int { // used by parseOperation() to determine if leftExpr binds more tightly to its right (i.e. the infix/postfix operator [if any] currently being processed) than its left (the previous prefix/infix operator [if any])
@@ -117,43 +117,40 @@ class Parser {
     // parse record, checking items are `NAME-LITERAL:ANY-VALUE` pairs and/or `ANY-VALUE` expressions
     private func parseRecord() throws -> Value { // TO DO: allow optional validation func to be passed in, e.g. `to` op needs to apply additional restrictions on item types (`NAME-LITERAL:TYPE-COMMAND` and/or `NAME-LITERAL` only)
         var result = [Value]()
-        while self.lexer.lookaheadBy(1).type != .RecordLiteralEnd {
-            //     guard let nextTokenType = self.lexer.lookaheadBy(1)?.type else { throw EndOfCodeError(description: "[1a] End of code.") }
-            let nextToken = self.lexer.lookaheadBy(1)
-            if nextToken.type == .EndOfCode { throw EndOfCodeError(description: "[1a] End of code.") }
-            let isLegalPair: Bool
-            let value: Value
-            switch nextToken.type { // note: if item looks like a valid `name:value pair`, need to check pairs' precedence to make sure infix/postfix operators never bind entire pair where they're really intended to bind RH operand only (if they do bind entire pair, it shouldn't break following logic, but it will confuse users since what looks like a named arg is actually a positional one; possibly the safest option is for all operators to have higher precedence than punctuation, and enforce this in OperatorTable; though we will need to watch for 'stray' punctuation getting sucked up in LH operand when it's supposed to delimit it)
-            case .QuotedName: // check for `'NAME' :`
-                isLegalPair = self.lexer.lookaheadBy(2).type == .PairSeparator // literal pairs in records MUST have literal name as LH operand (note: this looks ahead 2, since currentToken is `{` and next token is QuotedName)
-                value = self.stripComma(try self.parseExpression())
-            case .UnquotedWord: // check for [e.g.] `WORD WORD WORD :`
-                let backtrackIndex = self.lexer.currentTokenIndex
-                var words = [String]()
-                repeat {
-                    self.lexer.advance()
-                    words.append(self.lexer.currentToken.value)
-                } while self.lexer.lookaheadBy(1, ignoreWhiteSpace: false).type == .WhiteSpace
-                                              && self.lexer.lookaheadBy(1).type == .UnquotedWord
-                isLegalPair = self.lexer.lookaheadBy(1).type == .PairSeparator
-                if isLegalPair { // it's a pair with only words on left side, so treat those words as pair's name (i.e. no data detection or operator name matching is performed; even numbers are legal), and parse the rest of the pair
-                    value = self.stripComma(try self.parseOperation(NameValue(data: words.joinWithSeparator(" "))))
-                } else { // it's a non-pair expression
-                    self.lexer.backtrackTo(backtrackIndex)
-                    value = self.stripComma(try self.parseExpression())
-                }
+        while true { // starts on `{`
+            let backtrackIndex = self.lexer.currentTokenIndex
+            self.lexer.advance(ignoreVocabulary: true) // initially try reading as quoted/unquoted name followed by pair separator (i.e. a named record item)
+            let token = self.lexer.currentToken
+ //           print("parseRECORD: \(token)")
+            var isNamedPair: Bool = false
+            switch token.type { // note: if item looks like a valid `name:value pair`, need to check pairs' precedence to make sure infix/postfix operators never bind entire pair where they're really intended to bind RH operand only (if they do bind entire pair, it shouldn't break following logic, but it will confuse users since what looks like a named arg is actually a positional one; possibly the safest option is for all operators to have higher precedence than punctuation, and enforce this in OperatorTable; though we will need to watch for 'stray' punctuation getting sucked up in LH operand when it's supposed to delimit it)
+            case .RecordLiteralEnd:
+                return RecordValue(data: result) // double-check this leaves us at correct position
+            case .EndOfCode:
+                throw EndOfCodeError(description: "[1a] End of code.")
+            case .QuotedName, .UnquotedName: // item is of form `'NAME':...` or `NAME:...`
+                isNamedPair = self.lexer.lookaheadBy(1).type == .PairSeparator // literal pairs in records MUST have literal name as LH operand (note: this looks ahead 2, since currentToken is `{` and next token is QuotedName)
             default:
-                isLegalPair = false
-                value = self.stripComma(try self.parseExpression())
+                isNamedPair = false
             }
-            if value is PairValue && !isLegalPair || isLegalPair && !(value is PairValue) { // note: this also disallows `name:value` pair if it's subsequently parsed as LH operand to a lower-precedence operator (technically, this would be a legal positional value, but visually it would be confusing so we disallow it; if users want to apply a low-precedence operator to pair's RH value, they'll need to explicitly parenthesize it)
+            let value: Value
+            if isNamedPair {
+                value = self.stripComma(try self.parseOperation(NameValue(data: token.value)))
+            } else {
+ //               print("...backtrack from \(self.lexer.currentTokenIndex): (\(self.lexer.currentToken))")
+                self.lexer.backtrackTo(backtrackIndex, flush: true)
+ //               print("            ...to \(backtrackIndex): \(self.lexer.currentToken)")
+ //               print("==============\n\t",self.lexer.currentTokensCache.map{String($0)}.joinWithSeparator("\n\t"), "\n===============")
+                value = self.stripComma(try self.parseExpression())
+ //               print("READ ITEM:", value)
+            }
+            // additional validity checks
+            if (value.dynamicType == PairValue.self) != isNamedPair { // note: this also disallows `name:value` pair if it's subsequently parsed as LH operand to a lower-precedence operator (technically, this would be a legal positional value, but visually it would be confusing so we disallow it; if users want to apply a low-precedence operator to pair's RH value, they'll need to explicitly parenthesize it)
                 throw SyntaxError(description: "Bad record item (pairs within records must have a literal name): \(value)")
             }
             result.append(value)
-            //print("CURR: \(self.currentToken)\n")
+            //print("CURR: \(self.lexer.currentToken)\n")
         }
-        try self.lexer.skip(.RecordLiteralEnd) // TO DO: skip is only really needed to throw error if code terminates without closing `]`
-        return RecordValue(data: result)
     }
     
     
@@ -177,7 +174,7 @@ class Parser {
         }
         if argument == nil { // name is not followed by a new expression, so it is either just a name or an argument-less command; in either case, return it unchanged as NameValue
             self.lexer.backtrackTo(backtrackIndex)
-            if DEBUG {print("... no argument found, so parseArgument backtracked to \(self.currentToken)")}
+            if DEBUG {print("... no argument found, so parseArgument backtracked to \(self.lexer.currentToken)")}
             return name // TO DO: if next token is `do...done` block (a postfix structure), confirm that this gets attached to command correctly (note that its parsefunc will need to cast name to command first)
         } else {
             if !(argument is RecordValue) { argument = RecordValue(data: [argument!]) } // non-record values are treated as first item in a record arg
@@ -252,14 +249,13 @@ class Parser {
             return result
             // UNSUPPORTED TOKENS (these cannot appear where an atom or prefix operator is expected)
         default:
-            // Lexer should always convert .UnquotedWord tokens to one of the above vocabulary tokens; if parser encounters an .UnquotedWord token, that's a bug
             // AnnotationLiteralEnd, RecordLiteralEnd, ListLiteralEnd, ExpressionGroupLiteralEnd will only appear if opening '«', '{', '[', or '(' token is missing, in which case parser should treat as syntax error [current behavior] or as an incomplete structure in chunk of code whose remainder is in a previous chunk [depending how incremental parsing is done]; any other token types are infix/postfix ops which are missing their left operand
             return nil
         }
     }
     
     private func parseOperation(var leftExpr: Value, precedence: Int = 0) throws -> Value { // parse infix/postfix
-        if DEBUG {print("\n\nENTERED parseOperation on \(self.lexer.currentTokenIndex), leftExpr=(\(leftExpr), \(precedence)) \n\t\ttoken=\(self.currentToken)\n\t\tnext=\(self.lexer.lookaheadBy(1))\n\n")}
+        if DEBUG {print("\n\nENTERED parseOperation on \(self.lexer.currentTokenIndex), leftExpr=(\(leftExpr), \(precedence)) \n\t\ttoken=\(self.lexer.currentToken)\n\t\tnext=\(self.lexer.lookaheadBy(1))\n\n")}
         while precedence < self.precedenceForNextToken {
             let previousIndex = self.lexer.currentTokenIndex
             self.lexer.advance()
@@ -306,7 +302,7 @@ class Parser {
     // TO DO: should parseExpression be public? what use-cases does it offer vs parse()?
     
     func parseExpression(precedence: Int = 0) throws -> Value { // parse atom or prefix op, followed by any infix/postfix ops
-        if DEBUG {print("\n\n[START] parseExpression: #\(self.lexer.currentTokenIndex) \(self.lexer.lookaheadBy(1))")}
+        if DEBUG {print("\n\n[START] parseExpression at \(self.lexer.currentTokenIndex): \(self.lexer.lookaheadBy(1))")}
         guard let leftExpr = try self.parseAtom(precedence) else {
             throw SyntaxError(description: "[1] Unexpected \"\(self.lexer.currentToken)\"")
         }
@@ -323,7 +319,9 @@ class Parser {
     
     func parse() throws -> EntoliScript { // parse full script
         var result = [Value]()
+     //   print("[1]", self.lexer.currentTokenIndex, self.lexer.currentTokensCache)
      //   print("TOP-LEVEL parse() firstToken=", self.lexer.lookaheadBy(1))
+     //   print("[2]", self.lexer.currentTokenIndex, self.lexer.currentTokensCache)
         while self.lexer.lookaheadBy(1).type != .EndOfCode {
             result.append(self.stripPeriod(try self.parseExpression()))
             if DEBUG {print("TOP-LEVEL parse() completed expr: \(result.last)")}

@@ -7,6 +7,11 @@
 
 import Darwin
 
+
+// TO DO: think both prefixes and suffixes should be pre-defined; avoids any confusion with operator chars appearing in suffix being read as part of that suffix; bonus: it should be possible to predefine them using a simple Dictionary<String,String> (aliases to canonical name; or to whatever eventually represents unit types); might need 2 dicts if doing separate prefix/suffix, given that prefixes are much more restrictive than suffixes (to avoid collisions with unquoted names, only dedicated symbols should be used, e.g. `$`, whereas suffixes could be almost anything, e.g. `USD`)
+
+
+
 // TO DO: once typespecs are implemented, these functions may become static methods on numeric typespecs
 
 // TO DO: prefixes need to be configurable, e.g. to allow currency prefix symbols to be added
@@ -38,14 +43,28 @@ let gHexadecimalSeparators   = Set("Xx".characters)
 let gHexadecimalDigits       = Set("01234567890AaBbCcDdEeFf".characters)
 
 
-// TO DO: this needs moved to its own module, since typespecs will also want to use it to scan [previously untagged] TextValues when coercing them to numeric types for first time
+
+typealias NumericUnit = String // eventually this will be object
+
+
+
+// TO DO: FINISH!!! redo numerics funcs to take NumericsUnitTable instead of `allowPrefix/Suffix`
+
+struct NumericUnitsTable {
+    // caution: while both prefixes and suffixes can be anything, not all can be written as unquoted text, which is the preferred form
+    let prefixes: [String:NumericUnit] // keys must be dedicated symbols to avoid collisions with unquoted names, e.g. "$", "£", "€"
+    let suffixes: [String:NumericUnit] // keys can be anything as long as they don't contain reserved characters, e.g. "kg", "g", "mg", "°C"
+}
+
+let gDefaultNumericUnits = NumericUnitsTable(prefixes: [:], suffixes: [:])
 
 
 /**********************************************************************/
 
 
-typealias NumericUnit = String
 typealias NumericPrefixes = Set<Character>
+
+
 
 // TO DO: probably want to break out numeric unit, as it makes using this enum needlessly complex; better to compose unit info as a struct or another enum (especially since unit suffixes need to be parsed differently when reading source code vs typespec-casting a text value) // also, might be wise to have separate prefix/suffix unit slots, or a bool to indicate which end of word the unit should appear in
 

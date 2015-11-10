@@ -149,7 +149,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     // Boolean
     (("not",     .Phrase, .Right), 100, .Prefix,  parsePrefixOperator, []),
     (("and",     .Phrase,  .Full),  98, .Infix,   parseInfixOperator,  []),
-    (("xor",     .Phrase,  .Full),  96, .Infix,   parseInfixOperator,  []),
+    (("xor",     .Phrase,  .Full),  96, .Infix,   parseInfixOperator,  []), // note: `!=` only works as XOR if both operands are already Bools, whereas `xor` will coerce its operands as necessary, and is visually self-explanatory
     (("or",      .Phrase,  .Full),  94, .Infix,   parseInfixOperator,  []),
     
     // cast

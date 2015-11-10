@@ -67,7 +67,6 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
     case StartOfCode
     case EndOfCode
     // Punctuation
-    case WhiteSpace
     case QuotedText // atomic; the lexer automatically reads everything between `"` and corresponding `"`, including `""` escapes
     case QuotedName // atomic; the lexer automatically reads everything between `'` and corresponding `'`, including `''` escapes
     case AnnotationLiteral // atomic; the lexer automatically reads everything between `«` and corresponding `»`, including nested annotations

@@ -21,36 +21,43 @@
 //let source = "  bob is not smith   !=x   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
 
 
-//let source = " 1 / 2 + 4  "  //   wrong:  `"1". '/' {"2"}. '+' {"4"}.`
+//let source = "a*b"  //   wrong:  `parseAtom() encountered an infix operator`
 
-let source = " a / b + c "      //  really wrong:  `'a / b + c'.`
+//let source = "a and b"
+
+//let source = " 3*4 "  //   wrong:  `3*4` is being read as numeric, not operator
+
+
+let source = " foo {some 0 label:1, 2, c and d} "
 
 
 let lexer = Lexer(code: source)
 
-/*
-var i = 0
-repeat {
-    i+=1
-    print("==>TOKEN:", lexer.currentToken)
-    print("__________________________________________________________________\n")
-    lexer.advance(true, ignoreVocabulary: false)
-} while lexer.currentToken.type != gEndOfCodeToken.type //&& i<4
 
-*/
+let test1 = 0
 
-let p = Parser(lexer: lexer)
-
-
-do {
-    let result = try p.parse()
-    print("\n\n================================================\n", result)
-} catch {
-    print("\n\n================================================\nERROR:", error)
+if test1 != 0 {
+    var i = 0
+    repeat {
+        i+=1
+        print("==>TOKEN:", lexer.currentToken)
+        print("__________________________________________________________________\n")
+        lexer.advance()
+    } while lexer.currentToken.type != gEndOfCodeToken.type //&& i<4
 }
-/*
-*/
 
+
+let test2 = 1
+
+if test2 != 0 {
+    let p = Parser(lexer: lexer)
+    do {
+        let result = try p.parse()
+        print("\n\n================================================\n", result)
+    } catch {
+        print("\n\n================================================\nERROR:", error)
+    }
+}
 
 
 

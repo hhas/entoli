@@ -21,10 +21,11 @@ private let DEBUG = false
  
 private struct PartialOperatorMatch<T:Hashable> {
     let precedingWords: [Lexer.UnquotedWord] // any preceding unquoted words already matched to LH side of match (if the operator is successfully matched, these will be added to cache as UnquotedName token, followed by the Operator token)
+    let currentPartialWord: Lexer.PartialWord?
     let isLeftDelimited: Bool // is there an explicit delimiter on LH side of match? (if false, the operator definition's autoDelimit flag will be used)
     let startIndex: ScriptIndex // position in source code at which the whole match begins
     let endIndex: ScriptIndex // position in source code at which this partial/whole match ends
-    let matchInfo: OperatorTable<T>.Part // struct describing the current char/word match along with lookup table for making the next char/word match
+    let info: OperatorTable<T>.Part // struct describing the current char/word match along with lookup table for making the next char/word match
 }
 
 
@@ -96,7 +97,7 @@ class Lexer {
         self.numericPrefixes = numericPrefixes
     }
     
-    private var currentTokensCache: [Token] = [gStartOfCodeToken]
+    private(set) var currentTokensCache: [Token] = [gStartOfCodeToken] // TO DO: DEBUG; make fully private
     
     private(set) var currentTokenIndex = 0 // parser can get this value and use it to backtrack to that token later on if required; caution: only valid until the next flush() call
     
@@ -108,6 +109,10 @@ class Lexer {
     // read next token[s] into currentTokensCache; inserts gEndOfCodeToken once all tokens have been read
     private func readNextToken(ignoreVocabulary: Bool) {
         if DEBUG {print("READ_NEXT_TOKEN \(self.cursor) ==================================================")}
+        // skip any leading 'non-breaking' white space (note: unlike LF, space and TAB do not automatically delimit unquoted text but instead can be treated as part of it, allowing the lexer to combine white space-separated words as a single .Operator/.UnquotedName token if/where/when it wishes. Inter-word tabs/spaces will be read and normalized by the relevant `Lexer.read...` method; tab/space runs appearing elsewhere in the code delimit tokens normally and are otherwise ignored.)
+        while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor]) {
+            self.cursor = self.cursor.successor()
+        }
         if self.cursor < self.codeLength { // TO DO: what to do if overrun? (e.g. endlessly adding null tokens prob. isn't good idea if something gets stuck in infinite loop)
             let start = self.cursor
             let firstChar = self.code[self.cursor] // TO DO: prob make this `char` var and rejig stages into a single switch
@@ -143,14 +148,6 @@ class Lexer {
                 }
                 return
             }
-            // 3. 'non-breaking' white space; unlike LF, space and TAB do not delimit unquoted text but instead are treated as part of it; allowing the parser to reconstitute white space-separated words as a single token if/where/when it wishes
-            while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor]) {
-                self.cursor = self.cursor.successor()
-            }
-            if self.cursor > start {
-                let range = start..<self.cursor
-                return self.currentTokensCache.append(Token(type: .WhiteSpace, value: String(self.code[range]), range: range))
-            }
             // 4. «...» annotations are atomic and nestable and read as-is (understanding their contents is left to the caller)
             if let t = Lexer.annotationDelimiters[firstChar] {
                 if t < 0 { // TO DO: how to handle case where `»` is encountered first?
@@ -181,180 +178,7 @@ class Lexer {
     
     
     /**********************************************************************/
-     // Public interface
-    
-    
-    var currentToken: Token { return self.currentTokensCache[self.currentTokenIndex] } // current token
-    
-    func advance(ignoreWhiteSpace: Bool = true, ignoreVocabulary: Bool = false) {
-        repeat {
-            self.currentTokenIndex += 1
-            if self.currentTokenIndex == self.currentTokensCache.count { self.readNextToken(ignoreVocabulary) }
-            //            if self.currentTokenIndex > 100 { print("BUG: punc.advance() is stuck: "+(self.currentTokensCache.map{String($0)}.joinWithSeparator("\n\t"))); break} // TO DO: DEBUG; DELETE
-        } while ignoreWhiteSpace && self.currentToken.type == .WhiteSpace
-    }
-    
-    func skip(tokenType: TokenType, ignoreWhiteSpace: Bool = true) throws { // advance to next token, throwing SyntaxError if it's not the specified type
-        self.advance(ignoreWhiteSpace)
-        if self.currentToken.type != tokenType {
-            throw SyntaxError(description: "[0] Expected \(tokenType) but found \(self.currentToken.type)")
-        }
-    }
-    
-    func backtrackTo(tokenIndex: Int) { // note: technically this doesn't backtrack but rather moves to a previously read token (thus it could also be used to advance over previously parsed tokens for which cached Values have already been generated); might be an idea to rename it, or else replace with [safe] setter for currentTokenIndex
-        self.currentTokenIndex = tokenIndex
-    }
-    
-    // caution: lookahead doesn't know about operators/data detectors; it can only look for punctuation, whitespace, quoted name/text, and unquoted word
-    func lookaheadBy(offset: UInt, ignoreWhiteSpace: Bool = true, ignoreVocabulary: Bool = false) -> Token { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
-        if offset == 0 { return self.currentToken }
-        var count: UInt = 0
-        var lookaheadTokenIndex: Int = self.currentTokenIndex
-        //if DEBUG {print("LOOKING AHEAD from \(self.currentToken) by \(offset)")}
-        while count < offset {
-            lookaheadTokenIndex += 1
-            while lookaheadTokenIndex >= self.currentTokensCache.count { self.readNextToken(ignoreVocabulary) }
-            let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex]
-            if lookaheadToken.type == .EndOfCode {
-                if DEBUG {print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{$0.value as String!})")}
-                return lookaheadToken
-            }
-            if lookaheadToken.type != .WhiteSpace || !ignoreWhiteSpace { count += 1 }
-        }
-        //       print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")
-        return self.currentTokensCache[lookaheadTokenIndex]
-    }
-    
-    func flush() { // clear cache of fully-parsed tokens (at minimum, this leaves the current token at index 0)
-        self.currentTokensCache.removeRange(0..<self.currentTokenIndex)
-        self.currentTokenIndex = 0
-    }
-
-    
-    /**********************************************************************/
-    // Vocabulary readers (used by main tokenizer function to process unquoted word sequences)
-    
-    // supporting methods used by readVocabulary
-    
-    private typealias PartialPhraseOperatorMatch = PartialOperatorMatch<Operators.Phrase.Element>
-    private typealias PartialSymbolOperatorMatch = PartialOperatorMatch<Operators.Symbol.Element>
-    private typealias FullPhraseOperatorMatch    = (match: PartialPhraseOperatorMatch, isValidPrefixOperatorName: Bool, isValidInfixOperatorName: Bool)
-    private typealias FullSymbolOperatorMatch    = (match: PartialSymbolOperatorMatch, isValidPrefixOperatorName: Bool, isValidInfixOperatorName: Bool)
-    private typealias UnquotedWord               = (text: String, startIndex: ScriptIndex, endIndex: ScriptIndex)
-    
-    //
-    
-    private func joinWords(words: [UnquotedWord]) -> String {
-        return words.map{$0.text}.joinWithSeparator(" ")
-    }
-    
-    private func wordsRange(words: [UnquotedWord]) -> ScriptRange {
-        return words.first!.startIndex..<words.last!.endIndex
-    }
-    
-    private func addUnquotedName(words: [UnquotedWord]) {
-        if DEBUG {if words.count == 0 {print("BUG: can't addName (zero-length)")}; print("FOUND NAME: <\(self.joinWords(words))>     range=\(self.wordsRange(words))")}
-        self.currentTokensCache.append(Token(type: .UnquotedName, value: self.joinWords(words), range: self.wordsRange(words)))
-    }
-    
-    // determine if a matched char/word sequence is a valid operator name (i.e. it's self-delimiting or not bounded by additional chars/words)
-    
-    // TO DO: parameterize these: they shouldn't rely on cursor's current position but should instead take current match's endIndex as arg
-    
-    private func isEndOfPhrase() -> Bool { // used by isValidOperatorName() to determine if there are any more words in current unquoted words sequence
-        var idx = self.cursor
-        repeat {
-            idx = idx.successor()
-        } while idx < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[idx])
-        if idx == self.codeLength || Lexer.reservedCharacters.contains(self.code[idx]) { return true }
-        // there is a next word, so determine whether or not it's a numeric (numeric words cannot appear in operators or unquoted names)
-        return isNumericWord(self.code, start: idx, allowPrefixes: self.numericPrefixes)
-    }
-    
-    private func isEndOfWord() -> Bool {
-        let idx = self.cursor.successor()
-        return idx == self.codeLength || Lexer.reservedCharacters.contains(self.code[idx])
-    }
-    
-    private func isValidOperatorName(operatorDefinition: OperatorDefinition?, isLeftDelimited: Bool, isRightDelimitedFunc: ()->Bool) -> Bool { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
-        if let opDef = operatorDefinition { // non-nil if the operator name has been fully matched
-            // note: if the matched "operator" is NOT left-self-delimiting, it must be first in word sequence; conversely, if it is NOT right-self-delimiting, it must be last. If these conditions are not met then it is not an operator, just normal word[s] within a longer phrase. e.g. The `to` prefix operator is not left-self-delimiting, so `to foo` is a valid `to` op with 'foo' as its RH operand, but `go to` is just an ordinary name (i.e. the 'to' is not special as it is not the first word in the expression).
-            return (isLeftDelimited || opDef.name.autoDelimit.left) && (opDef.name.autoDelimit.right || isRightDelimitedFunc())
-        }
-        return false
-    }
-    
-    
-    /**********************************************************************/
-    // note: symbol ops can't be added to cache until current word is fully read, allowing keyword op first refusal; therefore, this needs to return any preceding words as UnquotedName token, followed by Operator token; or nil if no full match was made
-    
-    
-    private func updateOperatorMatches<T:Hashable>(operatorsTable: OperatorTable<T>,
-                                                   inout partialOperatorMatches: [PartialOperatorMatch<T>],
-                                                   inout fullOperatorMatch: (match: PartialOperatorMatch<T>, isValidPrefixOperatorName: Bool, isValidInfixOperatorName: Bool)?, // once first full match is made, it is cached here, and no later operators are matched
-                                                   value: T, startIndex: ScriptIndex, endIndex: ScriptIndex, precedingWords: [UnquotedWord],
-                                                   isLeftDelimited: Bool, isRightDelimitedFunc: ()->Bool) -> (Token?, Token)? { // returns true if operator found
-    //    if DEBUG {print("Checking \(T.self) operator matches: `\(value)` partial=\(partialOperatorMatches.count), full=\(fullOperatorMatch)")}
-
-        // check each current partial operator match; if a full valid operator name is matched, proceed to next stage; otherwise update or discard each partial match depending on whether or not it continues to match on current word
-        var partialMatchIndex = 0
-        while partialMatchIndex < partialOperatorMatches.count { // partial matches are ordered from earliest to latest; goal is to find the earliest, longest full match
-            let match = partialOperatorMatches[partialMatchIndex]
-            // check if we've found a complete, valid (i.e. correctly delimited) operator name
-            
-            
-            
-            let isValidPrefixOperatorName = self.isValidOperatorName(match.matchInfo.prefixDefinition, isLeftDelimited: match.isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
-            let isValidInfixOperatorName = self.isValidOperatorName(match.matchInfo.infixDefinition, isLeftDelimited: match.isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
-            // TO DO: fullMatch needs to indicate which name(s) are valid; when final best match is made, only include the op(s) that are valid (i.e. different op names, including aliases, can have different delimiting)
-            if DEBUG {print("isValidOp: `\(match.matchInfo)`: \(isValidPrefixOperatorName), \(isValidInfixOperatorName)")}
-            if isValidPrefixOperatorName || isValidInfixOperatorName { // found a full, correctly delimited operator name
-                fullOperatorMatch = (match, isValidPrefixOperatorName, isValidInfixOperatorName)
-                partialOperatorMatches = [match]
-                partialMatchIndex = 0
-                if DEBUG {print("FOUND A FULL MATCH: \(fullOperatorMatch!)\n")}
-            }
-            // update current partial matches
-            if DEBUG {print("MATCHING NEXT \(T.self): `\(value)` in `\(match.matchInfo.nextWords.map{$0.0})`")}
-            if let nextMatch = match.matchInfo.nextWords[value] {
-                partialOperatorMatches[partialMatchIndex] = PartialOperatorMatch<T>(precedingWords: match.precedingWords, // TO DO: need to add value to precedingWords here!
-                                                                                    isLeftDelimited: match.isLeftDelimited,
-                                                                                    startIndex: match.startIndex, endIndex: endIndex, matchInfo: nextMatch)
-                if DEBUG {print("... and matched it too: \(partialOperatorMatches[partialMatchIndex])")}
-                partialMatchIndex += 1
-            } else {
-                if DEBUG {print("...and failed to make a match, so discarding partial.")}
-                partialOperatorMatches.removeAtIndex(partialMatchIndex)
-            }
-        }
-        if fullOperatorMatch == nil { // check for the start of a new operator (note: this only needs done until the first full match is made)
-            if let matchInfo = operatorsTable.definitionsByPart[value] { // matched the first char/word of a possible operator
-                let isValidPrefixOperatorName = self.isValidOperatorName(matchInfo.prefixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
-                let isValidInfixOperatorName = self.isValidOperatorName(matchInfo.infixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
-                if DEBUG {print("NEW OP `\(value)`, isLeftDelimited=\(isLeftDelimited): `\(matchInfo)`, isValidName: \(isValidPrefixOperatorName)/\(isValidInfixOperatorName)")}
-                partialOperatorMatches.append(PartialOperatorMatch<T>(precedingWords: precedingWords,
-                                                                      isLeftDelimited: isLeftDelimited,
-                                                                      startIndex: startIndex, endIndex: endIndex, matchInfo: matchInfo))
-                if DEBUG {print("Got a new operator match: \(matchInfo)")}
-            }
-        }
-        if fullOperatorMatch != nil && (fullOperatorMatch!.match.matchInfo.isLongest || partialOperatorMatches.count == 0) { // check if longest full match has been made
-            var nameToken: Token? = nil
-            let (match, isValidPrefixOperatorName, isValidInfixOperatorName) = fullOperatorMatch!
-            if match.precedingWords.count > 0 {
-                nameToken = Token(type: .UnquotedName, value: self.joinWords(match.precedingWords), range: self.wordsRange(match.precedingWords))
-            }
-            //print(precedingWords)
-            if DEBUG {print("FULLY MATCHED \(T.self) OPERATOR: <\(match.matchInfo.name)>     range=\(match.startIndex..<match.endIndex)")}
-            return (nameToken, Token(type: .Operator, value: match.matchInfo.name!, range: match.startIndex..<match.endIndex,
-                operatorDefinitions: (isValidPrefixOperatorName ? match.matchInfo.prefixDefinition : nil,
-                                      isValidInfixOperatorName  ? match.matchInfo.infixDefinition  : nil)))
-        }
-        return nil
-    }
-    
-    /**********************************************************************/
-    // readers
+     // readers
     
     
     private func readVocabulary() {
@@ -373,22 +197,22 @@ class Lexer {
             let wordStartIndex = self.cursor
             
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-            // pattern match current word for numbers, units, currency, etc. 
+            // pattern match current word for numbers, units, currency, etc.
             // (note: this is done before operator matching to ensure operators cannot redefine numeric words)
             // TO DO: how to avoid confusion between prefix/suffix chars in numeric word and symbol operators?
             // check for numeric word
             if let (numericValue, range) = readNumericChars(self.code, start: wordStartIndex, allowPrefixes: self.numericPrefixes,
-                                                                                         nonWordCharacters: Lexer.reservedCharacters) {
-                
-                if words.count > 0 { // complete and cache tokens for all preceding chars
-                    self.addUnquotedName(words) // TO DO: FIX!!! need to add any matched ops and interstitial names prior to adding numeric (currently, this justs adds everything as a single unquoted name, which is wrong); oh, and also need to think about how symbol ops - esp. when in-word - interact with numerics, particularly their unit suffixes (i.e. prob. need to move suffix parsing into its own function to be called after the readNumericChars function, thus allowing symbol operator matching to be done on it first, e.g. `2.5g*n`)
-                }
-                
-                self.cursor = range.endIndex // TO DO: confirm this positions correctly
-                let token = Token(type: .NumericWord, value: String(self.code[range]), range: wordStartIndex..<self.cursor, numericInfo: numericValue)
-                //if DEBUG {print("READ NUMERIC: \(token)")}
-                self.currentTokensCache.append(token)
-                return
+                                                                                            nonWordCharacters: Lexer.reservedCharacters) {
+                    
+                    if words.count > 0 { // complete and cache tokens for all preceding chars
+                        self.addUnquotedName(words) // TO DO: FIX!!! need to add any matched ops and interstitial names prior to adding numeric (currently, this justs adds everything as a single unquoted name, which is wrong); oh, and also need to think about how symbol ops - esp. when in-word - interact with numerics, particularly their unit suffixes (i.e. prob. need to move suffix parsing into its own function to be called after the readNumericChars function, thus allowing symbol operator matching to be done on it first, e.g. `2.5g*n`)
+                    }
+                    
+                    self.cursor = range.endIndex // TO DO: confirm this positions correctly
+                    let token = Token(type: .NumericWord, value: String(self.code[range]), range: wordStartIndex..<self.cursor, numericInfo: numericValue)
+                    //if DEBUG {print("READ NUMERIC: \(token)")}
+                    self.currentTokensCache.append(token)
+                    return
             }
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
             // pattern match for symbol and phrase operators
@@ -403,11 +227,18 @@ class Lexer {
             repeat {
                 let charIndex = self.cursor
                 let char = self.code[charIndex]
+                //print("READ VOCAB CHAR `\(char)`")
                 self.cursor = self.cursor.successor()
                 if bestChoiceOperator == nil {
-                    bestChoiceOperator = updateOperatorMatches(self.operatorsTable.symbols, partialOperatorMatches: &partialSymbolOperatorMatches,
-                                                               fullOperatorMatch: &fullSymbolOperatorMatch,
-                                                               value: char, startIndex: charIndex, endIndex: self.cursor, precedingWords: words,
+                    
+                    
+                    // TO DO: BUG: .UnquotedName currently only contains preceding words, not preceding chars in current word; simplest solution is to pass wordChars as partialWord
+                    
+                    
+                    bestChoiceOperator = updateOperatorMatches(self.operatorsTable.symbols,
+                                                               partialMatches: &partialSymbolOperatorMatches, fullMatch: &fullSymbolOperatorMatch,
+                                                               value: char, startIndex: charIndex, endIndex: self.cursor,
+                                                               precedingWords: words, currentPartialWord: (wordChars, wordStartIndex),
                                                                isLeftDelimited: isFirstChar, isRightDelimitedFunc: self.isEndOfWord)
                     if DEBUG {if (bestChoiceOperator != nil) {print("MATCHED SYMBOL OPERATOR!!!!", bestChoiceOperator)}}
                 }
@@ -417,13 +248,14 @@ class Lexer {
             let word = String(wordChars)
             let wordEndIndex = self.cursor // caution: non-inclusive; use `..<` (not `...`) to construct ScriptRange
             isFirstWord = false
-            if let fullMatch = updateOperatorMatches(self.operatorsTable.phrases, partialOperatorMatches: &partialPhraseOperatorMatches,
-                                                     fullOperatorMatch: &fullPhraseOperatorMatch,
-                                                     value: word, startIndex: wordStartIndex, endIndex: wordEndIndex, precedingWords: words,
+            if let fullMatch = updateOperatorMatches(self.operatorsTable.phrases,
+                                                     partialMatches: &partialPhraseOperatorMatches, fullMatch: &fullPhraseOperatorMatch,
+                                                     value: word, startIndex: wordStartIndex, endIndex: wordEndIndex,
+                                                     precedingWords: words, currentPartialWord: nil,
                                                      isLeftDelimited: isFirstWord, isRightDelimitedFunc: self.isEndOfPhrase) {
-                bestChoiceOperator = fullMatch // note: while symbol ops are matched first, while word is still being read, phrase
-                words.removeAll()
-                self.cursor = self.cursor.successor()
+                    bestChoiceOperator = fullMatch // note: while symbol ops are matched first, while word is still being read, phrase
+                    words.removeAll()
+                    self.cursor = self.cursor.successor()
             }
             words.append((word, wordStartIndex, wordEndIndex))
             if DEBUG {print("bestChoiceOperator=",bestChoiceOperator,"   \n\t\tcurrent-words:",words)}
@@ -444,9 +276,10 @@ class Lexer {
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
             // skip over whitespace
             let n = self.cursor
-            repeat {
+            while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor]) {
+                //print("SKIP c\(self.cursor)")
                 self.cursor = self.cursor.successor()
-            } while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor])
+            } 
             if DEBUG {print("******* SKIPPING WHITE SPACE \(n)..<\(self.cursor)")}
         }
         
@@ -466,22 +299,228 @@ class Lexer {
         // TO DO: implement; read all whitespace-separated words and append .UnquotedName token
         var words = [String]()
         let startIndex = self.cursor
-        var endWordIndex: ScriptIndex
-        repeat {
+        var endWordIndex: ScriptIndex = startIndex
+        while self.cursor < self.codeLength && !Lexer.reservedCharacters.contains(self.code[self.cursor]) {
             let startWordIndex = self.cursor
             // read to end of word
-            repeat {
+            while self.cursor < self.codeLength && !Lexer.reservedCharacters.contains(self.code[self.cursor]) {
                 self.cursor = self.cursor.successor()
-            } while self.cursor < self.codeLength && !Lexer.reservedCharacters.contains(self.code[self.cursor])
+            } 
             words.append(String(self.code[startWordIndex..<self.cursor]))
             endWordIndex = self.cursor
-            repeat {
+            while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor]) {
                 self.cursor = self.cursor.successor()
-            } while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor])
-        } while self.cursor < self.codeLength && !Lexer.reservedCharacters.contains(self.code[self.cursor])
+            } 
+        } 
         self.cursor = endWordIndex // TO DO: confirm this positions correctly
+        //print("READ UNQUOTED NAME \"\(String(self.code[startIndex..<endWordIndex]))\" \(startIndex..<endWordIndex)")
         return self.currentTokensCache.append(Token(type: .UnquotedName, value: words.joinWithSeparator(" "), range: startIndex..<endWordIndex))
     }
+    
+    
+    
+    /**********************************************************************/
+     // Vocabulary readers (used by main tokenizer function to process unquoted word sequences)
+     
+     // supporting methods used by readVocabulary
+    private typealias PartialPhraseOperatorMatch = PartialOperatorMatch<Operators.Phrase.Element>
+    private typealias PartialSymbolOperatorMatch = PartialOperatorMatch<Operators.Symbol.Element>
+    private typealias OperatorMatchType          = (prefix: Bool, infix: Bool)
+    private typealias FullPhraseOperatorMatch    = (match: PartialPhraseOperatorMatch, type: OperatorMatchType)
+    private typealias FullSymbolOperatorMatch    = (match: PartialSymbolOperatorMatch, type: OperatorMatchType)
+    
+    private typealias UnquotedWord               = (text: String, startIndex: ScriptIndex, endIndex: ScriptIndex)
+    private typealias PartialWord                = (chars: String.CharacterView, startIndex: ScriptIndex)
+    
+    //
+    
+    private func joinWords(words: [UnquotedWord]) -> String {
+        return words.map{$0.text}.joinWithSeparator(" ")
+    }
+    
+    private func wordsRange(words: [UnquotedWord]) -> ScriptRange {
+        return words.first!.startIndex..<words.last!.endIndex
+    }
+    
+    private func addUnquotedName(words: [UnquotedWord]) {
+        if DEBUG {if words.count == 0 {print("BUG: can't addName (zero-length)")}; print("FOUND NAME: <\(self.joinWords(words))>     range=\(self.wordsRange(words))")}
+        self.currentTokensCache.append(Token(type: .UnquotedName, value: self.joinWords(words), range: self.wordsRange(words)))
+    }
+    
+    // determine if a matched char/word sequence is a valid operator name (i.e. it's self-delimiting or not bounded by additional chars/words)
+    
+    // TO DO: parameterize these: they shouldn't rely on cursor's current position but should instead take current match's endIndex as arg
+    
+    private func isEndOfPhrase() -> Bool { // used by isValidOperatorName() to determine if there are any more words in current unquoted words sequence (note: this does not test if subsequent word is a left-delimited operator, which also needs to be done if this test returns false)
+        var idx = self.cursor
+        repeat {
+            idx = idx.successor()
+        } while idx < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[idx])
+        return idx == self.codeLength || Lexer.reservedCharacters.contains(self.code[idx])
+            || isNumericWord(self.code, start: idx, allowPrefixes: self.numericPrefixes)
+    }
+    
+    private func isEndOfWord() -> Bool { // as above, returns false if there are still characters to be consumed, requiring an additional test to disambiguate adjoining operators
+        let idx = self.cursor.successor()
+        return idx == self.codeLength || Lexer.reservedCharacters.contains(self.code[idx])
+    }
+    
+    private var isAutoLeftDelimitedOperatorNext: Bool {
+        print("CAUTION: Auto-delimiting doesn't yet work for adjoining operators; code may parse incorrectly as a result.")
+        return true             // TO DO: fix; check if next char[s]/word[s] can form an operator; if they do, and they're auto-delimiting, then return true
+        
+    }
+    
+    private func isValidOperatorName(operatorDefinition: OperatorDefinition?, isLeftDelimited: Bool, isRightDelimitedFunc: ()->Bool) -> Bool { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
+        if let opDef = operatorDefinition { // non-nil if the operator name has been fully matched
+            // note: if the matched "operator" is NOT left-self-delimiting, it must be first in word sequence; conversely, if it is NOT right-self-delimiting, it must be last. If these conditions are not met then it is not an operator, just normal word[s] within a longer phrase. e.g. The `to` prefix operator is not left-self-delimiting, so `to foo` is a valid `to` op with 'foo' as its RH operand, but `go to` is just an ordinary name (i.e. the 'to' is not special as it is not the first word in the expression).
+            return (isLeftDelimited || opDef.name.autoDelimit.left)
+                && (opDef.name.autoDelimit.right || isRightDelimitedFunc() || self.isAutoLeftDelimitedOperatorNext)
+        }
+        return false
+    }
+    
+    
+    /**********************************************************************/
+     // note: symbol ops can't be added to cache until current word is fully read, allowing keyword op first refusal; therefore, this needs to return any preceding words as UnquotedName token, followed by Operator token; or nil if no full match was made
+    
+    
+    private func updateOperatorMatches<T:Hashable>(operatorsTable: OperatorTable<T>,
+                                                   inout partialMatches: [PartialOperatorMatch<T>],
+                                                   inout fullMatch: (match: PartialOperatorMatch<T>, type: OperatorMatchType)?, // once first full match is made, it is cached here, and no later operators are matched
+                                                   value: T, startIndex: ScriptIndex, endIndex: ScriptIndex,
+                                                   precedingWords: [UnquotedWord], currentPartialWord: PartialWord?,
+                                                   isLeftDelimited: Bool, isRightDelimitedFunc: ()->Bool) -> (Token?, Token)? { // once the best operator match is made, returns .UnquotedName token for preceding words (if any) and the finished .Operator token
+        //    if DEBUG {print("Checking \(T.self) operator matches: `\(value)` partial=\(partialOperatorMatches.count), full=\(fullMatch)")}
+        // check for the start of a new operator (note: this only needs done until the first full match is made)
+        
+        //print(">>> `\(value)`, \(precedingWords)")
+                                                
+        if fullMatch == nil {
+            if let matchInfo = operatorsTable.definitionsByPart[value] { // matched the first char/word of a possible operator
+                let isValidPrefixOperatorName = self.isValidOperatorName(matchInfo.prefixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
+                let isValidInfixOperatorName = self.isValidOperatorName(matchInfo.infixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
+                if DEBUG {print("NEW OP `\(value)`, isLeftDelimited=\(isLeftDelimited): `\(matchInfo)`, isValidName: \(isValidPrefixOperatorName)/\(isValidInfixOperatorName)")}
+                partialMatches.append(PartialOperatorMatch<T>(precedingWords: precedingWords,
+                                                              currentPartialWord: currentPartialWord,
+                                                              isLeftDelimited: isLeftDelimited,
+                                                              startIndex: startIndex, endIndex: endIndex, info: matchInfo))
+                if DEBUG {print("Got a new operator match: \(matchInfo)")}
+                
+                
+            }
+        }
+        // check each current partial operator match; if a full valid operator name is matched, proceed to next stage; otherwise update or discard each partial match depending on whether or not it continues to match on current word
+        var partialMatchIndex = 0
+        while partialMatchIndex < partialMatches.count { // partial matches are ordered from earliest to latest; goal is to find the earliest, longest full match
+            let match = partialMatches[partialMatchIndex]
+            // check if we've found a complete, valid (i.e. correctly delimited) operator name
+            let isValidPrefixOperatorName = self.isValidOperatorName(match.info.prefixDefinition, isLeftDelimited: match.isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
+            let isValidInfixOperatorName = self.isValidOperatorName(match.info.infixDefinition, isLeftDelimited: match.isLeftDelimited, isRightDelimitedFunc: isRightDelimitedFunc)
+            // TO DO: fullMatch needs to indicate which name(s) are valid; when final best match is made, only include the op(s) that are valid (i.e. different op names, including aliases, can have different delimiting)
+            if DEBUG {print("isValidOp: `\(match.info)`: \(isValidPrefixOperatorName), \(isValidInfixOperatorName)")}
+            if isValidPrefixOperatorName || isValidInfixOperatorName { // found a full, correctly delimited operator name
+                fullMatch = (match, (isValidPrefixOperatorName, isValidInfixOperatorName))
+                partialMatches = [match]
+                partialMatchIndex = 0
+                if DEBUG {print("FOUND A FULL MATCH: \(fullMatch!)\n")}
+            }
+            // update current partial matches
+            if DEBUG {print("MATCHING NEXT \(T.self): `\(value)` in `\(match.info.nextWords.map{$0.0})`")}
+            if let nextMatch = match.info.nextWords[value] {
+                partialMatches[partialMatchIndex] = PartialOperatorMatch<T>(precedingWords: match.precedingWords,
+                                                                            currentPartialWord: match.currentPartialWord,
+                                                                            isLeftDelimited: match.isLeftDelimited,
+                                                                            startIndex: match.startIndex, endIndex: endIndex, info: nextMatch)
+                if DEBUG {print("... and matched it too: \(partialMatches[partialMatchIndex])")}
+                partialMatchIndex += 1
+            } else {
+                if DEBUG {print("...and failed to make a match, so discarding partial.")}
+                partialMatches.removeAtIndex(partialMatchIndex)
+            }
+        }
+        if let (match, type) = fullMatch {
+            if match.info.isLongest || partialMatches.count == 0 { // check if longest full match has been made
+                var nameToken: Token? = nil
+                if match.precedingWords.count > 0 || match.currentPartialWord?.chars.count > 0 {
+                    var words = match.precedingWords
+                    if match.currentPartialWord?.chars.count > 0 {
+                        words.append((String(match.currentPartialWord!.chars), match.currentPartialWord!.startIndex, endIndex)) // TO DO: confirm these indexes are right
+                    }
+                    nameToken = Token(type: .UnquotedName, value: self.joinWords(words), range: self.wordsRange(words))
+                }
+                //print(precedingWords)
+                if DEBUG {print("FULLY MATCHED \(T.self) OPERATOR: <\(match.info.name)>     range=\(match.startIndex..<match.endIndex)")}
+                return (nameToken, Token(type: .Operator, value: match.info.name!, range: match.startIndex..<match.endIndex,
+                                                          operatorDefinitions: (type.prefix ? match.info.prefixDefinition : nil,
+                                                                                type.infix  ? match.info.infixDefinition  : nil)))
+            }
+        }
+        return nil
+    }
+    
+    
+    /**********************************************************************/
+     // Public interface
+    
+    
+    var currentToken: Token { return self.currentTokensCache[self.currentTokenIndex] } // current token
+    
+    // TO DO: FIX!!!!! ignoreVocabulary will screw up cache if it changes; safe solution is to write all tokens to cache with a flag that indicates the ignore settings with which they were originally read; advance, etc. can then check the token has the same ignore settings as it has, and flush it and the remaining tokens if not
+    
+    func advance(ignoreVocabulary ignoreVocabulary: Bool = false) {
+        self.currentTokenIndex += 1
+        if self.currentTokenIndex == self.currentTokensCache.count { self.readNextToken(ignoreVocabulary) }
+        //            if self.currentTokenIndex > 100 { print("BUG: punc.advance() is stuck: "+(self.currentTokensCache.map{String($0)}.joinWithSeparator("\n\t"))); break} // TO DO: DEBUG; DELETE
+    }
+    
+    func skip(tokenType: TokenType) throws { // advance to next token, throwing SyntaxError if it's not the specified type
+        self.advance()
+        if self.currentToken.type != tokenType {
+            throw SyntaxError(description: "[0] Expected \(tokenType) but found \(self.currentToken.type)")
+        }
+    }
+    
+    func backtrackTo(tokenIndex: Int, flush: Bool = false) { // backtrack to a previous token, optionally flushing subsequent tokens if they need to be regenerated (e.g. with different ignoreVocabulary option)
+        self.currentTokenIndex = tokenIndex
+        if flush {
+            self.currentTokensCache.removeRange(tokenIndex+1..<self.currentTokensCache.count)
+            self.cursor = self.currentToken.range.endIndex
+        }
+    }
+    
+    
+    // TO DO: CAUTION: lookahead will screw up cache if ignoreVocabulary changes, as tokens appended to cache read with one ignore setup need to be thrown out if read with another; currently this shouldn't be a problem since only parseRecord does this, and it backtracks and flushes before re-reading with different ignoreVocabulary setting
+    
+    func lookaheadBy(offset: UInt, ignoreVocabulary: Bool = false) -> Token { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
+        if offset == 0 { return self.currentToken }
+        var count: UInt = 0
+        var lookaheadTokenIndex: Int = self.currentTokenIndex
+        //if DEBUG {print("LOOKING AHEAD from \(self.currentToken) by \(offset)")}
+        while count < offset { // TO DO: .WhiteSpace tokens are no longer emitted, so this loop can be simplified
+            lookaheadTokenIndex += 1
+            while lookaheadTokenIndex >= self.currentTokensCache.count { self.readNextToken(ignoreVocabulary) }
+            let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex]
+            if lookaheadToken.type == .EndOfCode {
+                if DEBUG {print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{$0.value as String!})")}
+                return lookaheadToken
+            }
+            count += 1
+        }
+        //       print("LOOKED AHEAD to    \(self.currentTokensCache[lookaheadTokenIndex])")
+        return self.currentTokensCache[lookaheadTokenIndex]
+    }
+    
+    func flush() { // clear cache of fully-parsed tokens (at minimum, this leaves the current token at index 0)
+        self.currentTokensCache.removeRange(0..<self.currentTokenIndex)
+        self.currentTokenIndex = 0
+    }
 }
+
+
+
+
+
+
 
 

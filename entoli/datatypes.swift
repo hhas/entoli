@@ -58,7 +58,7 @@ class ExpressionGroupValue: Value { // TO DO: can/should these be omitted where 
 class RecordValue: Value {
     let data: [Value]
     
-    init(data: [Value]) {
+    init(data: [Value]) { // TO DO: eventually this may use a more efficient representation internally, with all values stored in a list and named values also stored in a dict, allowing both positional and named lookups to be performed more efficiently
         self.data = data
     }
     override var description: String {
