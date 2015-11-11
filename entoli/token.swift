@@ -127,8 +127,8 @@ struct Token {
 
 
 
-let gStartOfCodeToken = Token(type: .StartOfCode, value: "", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate start of script
-let gEndOfCodeToken = Token(type: .EndOfCode, value: "", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate end of script
+let gStartOfCodeToken = Token(type: .StartOfCode, value: "««STARTCODE»»", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate start of script
+let gEndOfCodeToken = Token(type: .EndOfCode, value: "««ENDEDCODE»»", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate end of script
 
 
 

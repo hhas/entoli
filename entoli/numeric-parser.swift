@@ -8,6 +8,12 @@
 import Darwin
 
 
+// disallow pure numbers in record names, e.g. {12:00} is time
+
+// split func: one for sign, one for number; units should be separate func that trims both prefix and suffix of non-numeric chars before and after reading number itself; bear in mind that tail may have symbol ops, thus it needs to make longest unit name match then return index of any unconsumed chars for caller (parser/typespec) to decide what to do with; shouldn't need to refer to Lexer.reserved as unit names should be sanitised first; also start thinking about how complex structures such as dates can be best detected and matched (ideally they'd be another form of suffix, being pattern matched on separator char, though whether such funcs should be passed for tail calling with accummulated data as arg or nested in composition remains to be decided)
+
+
+
 // TO DO: think both prefixes and suffixes should be pre-defined; avoids any confusion with operator chars appearing in suffix being read as part of that suffix; bonus: it should be possible to predefine them using a simple Dictionary<String,String> (aliases to canonical name; or to whatever eventually represents unit types); might need 2 dicts if doing separate prefix/suffix, given that prefixes are much more restrictive than suffixes (to avoid collisions with unquoted names, only dedicated symbols should be used, e.g. `$`, whereas suffixes could be almost anything, e.g. `USD`)
 
 

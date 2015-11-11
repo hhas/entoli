@@ -28,13 +28,15 @@
 //let source = " 3*4 "  //   wrong:  `3*4` is being read as numeric, not operator
 
 
-let source = " foo {some 0 label:1, 2, c and d} "
+//  `'foo' {'a label': "1", "2", 'and' {'c', 'not' {'d'}, '+' {"4", "6"}, '=' {"10"}}.` // screwups: `=` isn't binding LH (off-by-one in lexer? compare `==`)
+//let source = " foo {a label:1, 2, c and not d, 4 + 6 = 10} "
 
+let source = "4 + 6 = 10"
 
 let lexer = Lexer(code: source)
 
 
-let test1 = 0
+let test1 = 1
 
 if test1 != 0 {
     var i = 0
