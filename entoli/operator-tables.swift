@@ -134,21 +134,26 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
 
     
     // non-numeric comparisons (e.g. text); note that parsefunc overrides standard precedence to allow `COMP as TYPE` to specify comparison type, e.g. `A is B as C` is shorthand for `(A as C) is (B as C)` (currently, `as` operator binds lowest, so would apply to comparison's result, but since these ops always return boolean that isn't really useful, whereas applying cast to both operands prior to comparison is, and allows things like case-insensitive text comparisons and list of X comparisons to be done as well) -- note that a failed cast will throw error (not sure if catching this should be done by typespec, and if it is then what's to prevent `A is not B as C` returning true when both A and B fail to cast causing typespec to supply identical default value for each)
-    // TO DO: might be best to use `equals` rather than `is`, since `is` is likely to be used in boolean value names; also prob. best to avoid `as` at end of name, as that will get confused with `as` clause
-    (("is before",         .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("lt",                   .Phrase, .Full)]),
-    (("is same or before", .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("le",                   .Phrase, .Full),
-                                                                                          ("is same as or before", .Phrase, .Full),
-                                                                                          ("is before or same as", .Phrase, .Full),
-                                                                                          ("is not after",         .Phrase, .Full)]),
-    (("is after",          .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("gt",                   .Phrase, .Full)]),
-    (("is same or after",  .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("ge",                   .Phrase, .Full),
-                                                                                          ("is same as or after",  .Phrase, .Full),
-                                                                                          ("is after or same as",  .Phrase, .Full),
-                                                                                          ("is not before",        .Phrase, .Full)]),
-    (("is not",            .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("ne",                   .Phrase, .Full),
-                                                                                          ("is not same as",       .Phrase, .Full)]),
-    (("is",                .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("eq",                   .Phrase, .Full),
-                                                                                          ("is same as",           .Phrase, .Full)]),
+   
+    // TO DO: `is before/after or equal to` names are problematic for length (would `is or before` be any better?)
+    
+    // note: `is` and `is not` shortcuts are not right-auto-delimited as they may often appear at start of, or within, longer user-defined command names, particularly those that return a boolean result, e.g. `is job done`
+    (("is before",             .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("lt",                    .Phrase, .Full)]),
+    (("is before or equal to", .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("le",                    .Phrase, .Full),
+                                                                                              ("is or before",          .Phrase, .Full),
+                                                                                              ("is equal or before",    .Phrase, .Full),
+                                                                                              ("is equal to or before", .Phrase, .Full),
+                                                                                              ("is not after",          .Phrase, .Full)]),
+    (("is after",              .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("gt",                    .Phrase, .Full)]),
+    (("is after or equal to",  .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("ge",                    .Phrase, .Full),
+                                                                                              ("is or after",           .Phrase, .Full),
+                                                                                              ("is equal or after",     .Phrase, .Full),
+                                                                                              ("is equal to or after",  .Phrase, .Full),
+                                                                                              ("is not before",         .Phrase, .Full)]),
+    (("is not equal to",       .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("ne",                    .Phrase, .Full),
+                                                                                              ("is not",                .Phrase, .Left)]),
+    (("is equal to",           .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("eq",                    .Phrase, .Full),
+                                                                                              ("is",                    .Phrase, .Left)]),
     
     // Boolean
     (("not",     .Phrase, .Right), 100, .Prefix,  parsePrefixOperator, []),
@@ -171,7 +176,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     // expression blocks
     (("do",       .Phrase, .Full),  50, .Atom,    parseAtomDoBlock,    []),
     (("do",       .Phrase, .Full),  50, .Postfix, parsePostfixDoBlock, []),
-    (("done",     .Phrase, .Full),   0, .Atom,    throwMisplacedToken, []), // `do` block parsefuncs use `done` as terminator; anywhere else is a syntax error (note: this won't work if parsing per-line; TO DO: would be better to use same approach as for punctuation-based blocks where imbalances are counted [note: the latter currently don't do this either, but there's a TODO for that too])
+    (("done",     .Phrase, .Full),   0, .Atom,    throwMisplacedToken, []), // `do` block parsefuncs use `done` as terminator; anywhere else is a syntax error (note: this won't work if parsing per-line; TO DO: would be better to use same approach as for punctuation-based blocks where imbalances are counted [note: the latter currently don't do this either, but there's a TODO for that too]) // TO DO: suspect `done` needs to be right-auto-delimited only, otherwise `do command done` will result in `done` being absorbed as argument to `command`; similarly, `do` could be troublesome as it's a short word likely to appear in regular command names, so again probably want's to be [left/right?]-auto-delimited only (need to consider common use cases, e.g. `if {} do ... done else do ... done`, and how well it jives with commands and other operators, and also with good [single-/multi-line] code formatting practice, which pretty printer in particular will have to do a very good job of otherwise it'll annoy users)
     
     // TO DO: `to` operator for defining new procs
 ]
@@ -179,7 +184,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
 
 
 struct OperatorPart<ElementType: Hashable>: CustomStringConvertible { // ElementType is String or Character // TO DO: struct or class?
-    // An operator name is composed of one or more 'words'. In a keyword-based operator, e.g. "is not same as", each word is a String, created by splitting the full name on interstitial whitespace. (In a symbol-based operator, e.g. "!=", the full name should always be a single String-based word.) The PunctuationLexer outputs single String-based words, e.g. ["is", "not", "same", "as"], so to match an entire operator, each defined operator name is first broken down into nested dictionaries, each of whose keys are a single 'word' to match, and whose values are the next matchable word[s] (if any) and/or an operator definition (if a full match has been made).
+    // An operator name is composed of one or more 'words'. In a keyword-based operator, e.g. "is not equal to", each word is a String, created by splitting the full name on interstitial whitespace. (In a symbol-based operator, e.g. "!=", the full name should always be a single String-based word.) The PunctuationLexer outputs single String-based words, e.g. ["is", "not", "same", "as"], so to match an entire operator, each defined operator name is first broken down into nested dictionaries, each of whose keys are a single 'word' to match, and whose values are the next matchable word[s] (if any) and/or an operator definition (if a full match has been made).
     // In addition, any 'words' not identified as operator names defined in the PhraseOperatorsTable need to be examined character-by-character to see if they contain any symbol-based operators, e.g. "foo<bar". (Ideally, users would always surround symbol operators with whitespace, making them trivial to identify, but this is not an ideal world so we must check for cases where a user might accidentally/deliberately enter symbol operators without explicitly separating them from adjoining characters; a task further complicated by the fact that some characters take on different meanings according to immediate context, e.g. `-` might be a negation or subtraction operator, or an in-word hyphen.)
     
     typealias Element = ElementType
@@ -210,7 +215,7 @@ struct OperatorPart<ElementType: Hashable>: CustomStringConvertible { // Element
 }
 
 
-// lookup table for Keyword (e.g. "is not same as") or Symbol ("!=") operators
+// lookup table for Keyword (e.g. "is not equal to") or Symbol ("!=") operators
 class OperatorTable<ElementType: Hashable> { // Keyword/Symbol table (only real difference is that first matches on words, the second on chars)
     // given a multi-word operator name, split it into words, then store as a series of nested dicts, ending in the operator definition itself
     

@@ -13,7 +13,7 @@
 // there might also be an argument for pushing vocab opdefs and numeric parsefuncs onto a stack, allowing ops to be added/removed mid-script; this does suggest that vocab parser should consume punc lexer's character stream directly (which is arguably simpler anyway, since it knows more about what it needs and can deal with e.g. periods as decimal separators without any messing about)
 
 
-private let DEBUG = true
+private let DEBUG = false
 
 
 /**********************************************************************/
@@ -184,6 +184,9 @@ class Lexer {
     
     /**********************************************************************/
      // readers
+     
+     
+    private var currentChar: Character! { return self.cursor<codeLength ? self.code[self.cursor] : nil }
     
     // TO DO: this function is a car crash; FIX!!!!!!!!! (Q. could it be redone as state machine? or otherwise modularized?)
     
@@ -228,11 +231,7 @@ class Lexer {
                 // we've found a numeric word, but there's already an operator waiting to be added to cache so we have to add that first
                 if let (precedingNameToken, operatorToken) = currentLongestOperator {
                     print("found number, so processing previous operator")
-                    if precedingNameToken != nil {
-                        if DEBUG {print("CACHING PRECEDING NAME \(precedingNameToken!)")}
-                        self.currentTokensCache.append(precedingNameToken!)
-                    }
-                    if DEBUG {print("CACHING SYMBOL OPERATOR \(operatorToken)")}
+                    if precedingNameToken != nil { self.currentTokensCache.append(precedingNameToken!) }
                     self.currentTokensCache.append(operatorToken)
                     
                     self.cursor = operatorToken.range.endIndex // TO DO: don't do this as it's wasteful re-reading already processed words; instead, trim words array
@@ -243,7 +242,6 @@ class Lexer {
                         
                         
                         self.addUnquotedName(words) // TO DO: FIX!!! need to add any matched ops and interstitial names prior to adding numeric (currently, this justs adds everything as a single unquoted name, which is wrong) // TO DO: is this TODO redundant now? (pretty certain it is: lexer now scans ahead when reading op to determine longest match, then adds it before continuing to read up to number)
-                        
                         
                         
                     }                
@@ -281,6 +279,7 @@ class Lexer {
                 isFirstChar = false
                 wordChars.append(char)
             } while self.cursor < self.codeLength && !Lexer.reservedCharacters.contains(self.code[self.cursor])
+            if DEBUG {print("ended char scan loop on \(self.cursor): `\(self.currentChar)`")}
             // note: while in-word symbols are matched first (as chars are being read), if the entire word makes a full phrase match then that takes precedence
             let word = String(wordChars)
             let wordEndIndex = self.cursor // caution: non-inclusive; use `..<` (not `...`) to construct ScriptRange
@@ -296,7 +295,6 @@ class Lexer {
             if fullPhraseOperatorMatch != nil {
                 currentLongestOperator = self.tokenizeMatchedOperator(fullPhraseOperatorMatch!.match, fixity: fullPhraseOperatorMatch!.fixity)
                 words.removeAll()
-                self.cursor = self.cursor.successor()
             } else if let longestSymbolMatch = fullSymbolOperatorMatch {
                 currentLongestOperator = self.tokenizeMatchedOperator(longestSymbolMatch.match, fixity: longestSymbolMatch.fixity)
                 words.removeAll()
@@ -306,12 +304,13 @@ class Lexer {
             words.append((word, wordStartIndex, wordEndIndex))
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
             // skip over whitespace
-            let n = self.cursor
+            //if DEBUG {print("!!!Going to skip whitespace now `\(self.code[self.cursor])`")}
             while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor]) {
                 //print("SKIP c\(self.cursor)")
                 self.cursor = self.cursor.successor()
-            } 
-            if DEBUG {print("******* SKIPPING WHITE SPACE \(n)..<\(self.cursor)")}
+            }
+            //if DEBUG {print("ended whitespace skip loop on \(self.cursor): `\(self.code[self.cursor])`")}
+            
         }
         
         if DEBUG {print("******* END OF VOCAB LOOP \(self.cursor)\n\n\t\(partialPhraseOperatorMatches)\n\n\t\(words)")}
@@ -331,7 +330,7 @@ class Lexer {
             // move cursor back to end of operator
             let n = self.cursor
             self.cursor = operatorToken.range.endIndex
-            if DEBUG {print("...MOVED CURSOR FROM \(n) BACK TO: \(self.cursor), `\(self.code[self.cursor])`")}
+            if DEBUG {print("...MOVED CURSOR FROM \(n) BACK TO: \(self.cursor), `\(self.currentChar)`")}
             return
         }
 
@@ -462,7 +461,7 @@ class Lexer {
             if match.endIndex == endIndex { // TO DO: check this; supposed to prevent new match added above from being double-matched
                 print("...skipping new match `\(match.info.name)`")
             } else {
-                print("...updating existing match \(match.info.name), \((match.endIndex, endIndex))")
+                print("...updating existing match `\(match.info.name)` with `\(value)` at \((match.endIndex, endIndex))")
                 if let nextMatchInfo = match.info.nextWords[value] {
                     partialMatches[partialMatchIndex].update(endIndex, info: nextMatchInfo)
                     if DEBUG {print("... and matched `\(value)` to it too: \(partialMatches[partialMatchIndex].info.name)")}
@@ -551,7 +550,7 @@ class Lexer {
             while lookaheadTokenIndex >= self.currentTokensCache.count { self.readNextToken(ignoreVocabulary) }
             let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex]
             if lookaheadToken.type == .EndOfCode {
-                if DEBUG {print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{"\($0.value)"})")}
+                //if DEBUG {print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{"\($0.value)"})")}
                 return lookaheadToken
             }
             count += 1

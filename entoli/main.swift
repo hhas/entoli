@@ -11,9 +11,13 @@ let source: String
 //source = " 'one' 'two' 'three' "
 
 
-//source = " (FOO) is not same as BAR "   // correct:  `'is not' {('FOO'), 'BAR'}.` (`is same as` is alias for `is not`)
+//source = " (FOO) is not equal to BAR "   // correct:  `'is not' {('FOO'), 'BAR'}.` (`is not equal to` is alias for `is not`)
 
-source = " (FOO) is not same. as BAR " // wrong:  `'is not' {('FOO'), 'BAR'}.` - the `same` (which should be right operand to `is not`) is being lost (prob. readVocabulary forgetting to reset cursor correctly after final op match, or `words` array being over-cleared); the `as` (which should be a 'missing left operand' error) is ignored
+// obsolete: //source = " (FOO) is not same. as BAR " // correct:  `parseAtom() encountered an infix operator: "as"`
+
+source = " (FOO) is not equal. to BAR " // 
+
+//source = " 4 is equal to not test 3" // correct:  `'is' {"4", 'not' {'test' {"3"}}}.`
 
 
 //let code: ScriptChars = "3.2e+5.1".characters; print(readNumericWord(code, start: code.startIndex))
