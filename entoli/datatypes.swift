@@ -14,6 +14,16 @@ class Value: CustomStringConvertible { // being homoiconic, there is no differen
     var description: String {return "<VALUE>"} // TO DO: make this an up-call, and implement `literalRepresentation` methods that take additional options (e.g. always/never quote names); also implement debugDescription that returns Swift-style representation
 }
 
+
+
+class NoValue: Value {
+    override var description: String {return "<NO-VALUE>"}
+}
+
+let gNoValue = NoValue()
+
+
+
 class ListValue: Value { // TO DO: how best to constrain as array/dictionary/set? (parser can provide array-vs-dict hint when creating from literal; otherwise it's down to usage)
     let data: [Value]
     

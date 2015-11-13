@@ -5,6 +5,11 @@
 //
 
 
+// caution: symbol-based operator names, unlike other names, are case-sensitive; not sure if this should be a 'feature', though given that symbol names should never contain alphanumerics hopefully it'll end up being a non-issue anyway
+
+// TO DO: what about symbols such as `π` (`pi`) or `∅` (`empty set`)? these would need to be defined as atoms, not commands, to ensure they don't try to take next token as argument (their long ASCII names might be defined as either atomic phrase, or left as commands that throw error if given an argument - and assuming they're available during editing could give a warning, or autocorrect, even then).
+
+
 // TO DO: think we need a hard rule for devs: never implement new types using command- or prefixop-based constructors (e.g. `file "/"`), as the same name can't then be used for typespec (e.g. `"/" as file`) [technically, through proc overloading and optional args `file` probably _could_ do both, but it'd likely get nasty; avoiding it also provides clear distinction between object specifiers and datatypes, e.g. `document "foo" of ...` vs `document`, although that still requires thought]
 
 
@@ -21,44 +26,111 @@
 
 
 
-// standard prefix/infix/postfix operator parsing functions // TO DO: how to distinguish pre/in/post arguments when command name is same? use explicit property labels in record? (e.g. even standardizing on generic `{first value:..., second value:...}`) would do it, although {left:..., right:...} would probably be easier to write; the proc dispatcher should automatically note when two procs have the same name and same number of args, and require args to be labeled to disambiguate)
+extension CommandValue { // convenience constructors used by operator parsefuncs
+    
+    static let _NameLeft    = NameValue(data: "left")
+    static let _NameRight   = NameValue(data: "right")
+    static let _EmptyRecord = RecordValue(data: [])
+
+    convenience init(name: String) {
+        self.init(name: NameValue(data: name), data: CommandValue._EmptyRecord)
+    }
+    convenience init(name: String, data: [Value]) {
+        self.init(name: NameValue(data: name), data: RecordValue(data: data))
+    }
+    convenience init(name: String, leftOperand: Value) {
+        self.init(name: name, data: [PairValue(name: CommandValue._NameLeft, data: leftOperand)])
+    }
+    convenience init(name: String, leftOperand: Value, rightOperand: Value) {
+        self.init(name: name, data: [PairValue(name: CommandValue._NameLeft, data: leftOperand),
+                                     PairValue(name: CommandValue._NameRight, data: rightOperand)])
+    }
+    convenience init(name: String, rightOperand: Value) {
+        self.init(name: name, data: [PairValue(name: CommandValue._NameRight, data: rightOperand)])
+    }
+}
+
+
+// standard prefix/infix/postfix operator parsing functions
+
+// caution: postfix ops MUST label their operand `gNameRight` to avoid any possible confusion with prefix ops of the same name, as they cannot be distinguished by number of arguments alone (the above convenience constructors will label all operands automatically and are recommended for constructing commands for all unary and binary operators)
 
 func parseAtomOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: []))
+    return CommandValue(name: operatorName)
 }
 
 func parsePrefixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [try parser.parseExpression(precedence)]))
+    return CommandValue(name: operatorName, leftOperand: try parser.parseExpression(precedence))
 }
 
 func parseInfixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [leftExpr, try parser.parseExpression(precedence)]))
+    return CommandValue(name: operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence))
 }
 
 func parseRightInfixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [leftExpr, try parser.parseExpression(precedence-1)]))
+    return CommandValue(name: operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence-1))
 }
 
 func parsePostfixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [leftExpr]))
+    return CommandValue(name: operatorName, rightOperand: leftExpr)
+}
+
+
+// custom parsefuncs
+
+
+func readTypeOperand(parser: Parser, precedence: Int) throws -> CommandValue { // precedence is that of `as` operator
+    let expr = try parser.parseExpression(precedence) // TO DO: avoid hardcoded values
+    switch expr { // TO DO: Value classes should implement cast methods, avoiding need for switches
+    case is CommandValue: return expr as! CommandValue
+    case is NameValue: return CommandValue(name: expr, data: CommandValue._EmptyRecord)
+    default: throw SyntaxError(description: "Expected type command after `as` operator but found \(expr.dynamicType): \(expr)")
+    }
 }
 
 
 func parseGeneralComparisonOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    // TO DO: if next token is UnquotedWord "as", parse that as type to which both operands should be cast before comparing (i.e. append it to RecordValue `as:typespec` item)
     let rightOperand = try parser.parseExpression(precedence)
-    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [leftExpr, rightOperand]))
+    let nextToken = parser.lexer.lookaheadBy(1)// TO DO: if next token is .Operator("as"), consume it and then consume its RH operand and use that as the type to which both operands should be cast before comparing; if not found, use default `text` type instead
+    let asType: Value
+    if nextToken.type == .Operator && nextToken.value == "as" { // TO DO: avoid hardcoded values
+        parser.lexer.advance() // advance onto .Operator("as") token
+        asType = try readTypeOperand(parser, precedence: 80)
+    } else {
+        asType = gNoValue
+    }
+    return CommandValue(name: operatorName, data: [leftExpr, rightOperand, PairValue(name: NameValue(data: "as"), data: asType)])
 }
 
+
+func parseCastOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+    return CommandValue(name: operatorName, leftOperand: leftExpr, rightOperand: try readTypeOperand(parser, precedence: precedence))
+}
+
+
+// TO DO: could `done` atom be given a priority (e.g. negative) that forces it to be ignored by a preceding command looking for an arg?
 
 func parseAtomDoBlock(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    // TO DO: need to parse expression group up to `done` UnquotedWord, returning ExpressionGroup (possibly tagged to indicate display preference)
-    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [try parser.parseExpression(precedence)]))
+    var result = [Value]()
+    while parser.lexer.lookaheadBy(1).type != .Operator && parser.lexer.lookaheadBy(1).value != "done" {
+        // TO DO: how best to implement this parse loop? currently this fails if there's a linebreak before `done` as unlike parseExpression this does not automatically skip linebreak tokens (not that it should anyway, since that info should be preserved for display purposes)
+        // problem: linebreaks are significant tokens (TBH, it'd probably make more sense to refactor group expression parsing code to allow its reuse with parameterized end token; that way, things like linebreaks can be handled consistently in a single place as expr groups should always preserve user's original linebreaks for display purposes, whereas currently the parser eats them silently)
+        print("READING EXPR:", parser.lexer.lookaheadBy(1))
+        let value = parser.stripPeriod(try parser.parseExpression())
+        result.append(value)
+        print("READ EXPR:", value)
+    }
+    try parser.lexer.skip(.Operator) // TO DO: should probably specify [optional] value too, just to make sure
+    print("NOW ON \(parser.lexer.currentToken)")
+    return CommandValue(name: operatorName, data: result) // TO DO: how to represent (it's basically an expression group, but with alternate syntax)
 }
+
 
 func parsePostfixDoBlock(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
     // TO DO: ditto, then attach it to leftExpr (how best to do this? and should it only apply to commands [including names], or would the be uses in attaching it to other things as well?)
-    return CommandValue(name: NameValue(data: operatorName), data: RecordValue(data: [leftExpr]))
+    let doBlock = try parseAtomDoBlock(parser, leftExpr: leftExpr, operatorName: operatorName, precedence: precedence)
+    print("READ DO BLOCK:", doBlock)
+    return leftExpr
 }
 
 
@@ -126,8 +198,8 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     (("<", .Symbol, .Full),   400, .Infix,  parseInfixOperator, []),
     (("=", .Symbol, .Full),   400, .Infix,  parseInfixOperator, [("==", .Symbol, .Full)]),
     (("≠", .Symbol, .Full),   400, .Infix,  parseInfixOperator, [("!=", .Symbol, .Full)]),
-    (("≤", .Symbol, .Full),   400, .Infix,  parseInfixOperator, [("<=", .Symbol, .Full)]),
-    (("≥", .Symbol, .Full),   400, .Infix,  parseInfixOperator, [(">=", .Symbol, .Full)]),
+    (("≤", .Symbol, .Full),   400, .Infix,  parseInfixOperator, [("<=", .Symbol, .Full), ("!<", .Symbol, .Full)]),
+    (("≥", .Symbol, .Full),   400, .Infix,  parseInfixOperator, [(">=", .Symbol, .Full), ("!>", .Symbol, .Full)]),
     
     // concatenation
     (("&", .Symbol, .Full),   450, .Infix,  parseInfixOperator, []),
@@ -135,9 +207,10 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     
     // non-numeric comparisons (e.g. text); note that parsefunc overrides standard precedence to allow `COMP as TYPE` to specify comparison type, e.g. `A is B as C` is shorthand for `(A as C) is (B as C)` (currently, `as` operator binds lowest, so would apply to comparison's result, but since these ops always return boolean that isn't really useful, whereas applying cast to both operands prior to comparison is, and allows things like case-insensitive text comparisons and list of X comparisons to be done as well) -- note that a failed cast will throw error (not sure if catching this should be done by typespec, and if it is then what's to prevent `A is not B as C` returning true when both A and B fail to cast causing typespec to supply identical default value for each)
    
-    // TO DO: `is before/after or equal to` names are problematic for length (would `is or before` be any better?)
+    // TO DO: `is before/after or equal to` names are problematic for length; would it be better to use `is not after/before` instead? (these have benefit of brevity, but while self-explanatory in themselves they are much harder to relate to their symbolic equivalents)
     
     // note: `is` and `is not` shortcuts are not right-auto-delimited as they may often appear at start of, or within, longer user-defined command names, particularly those that return a boolean result, e.g. `is job done`
+    // caution: it is safer to use longest match for canonical name, e.g. `A is equal B` will rewrite to `A is equal to equal B`, making the mistake obvious, whereas shortest would rewrite to `A is equal B`, concealing it (a highlighting editor would still give some clue since "is" and "equal B" would be colored differently, but a less experienced user could miss that whereas an extra word is much harder to overlook; using longest match as canonical name should also be more auto-complete friendly)
     (("is before",             .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("lt",                    .Phrase, .Full)]),
     (("is before or equal to", .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("le",                    .Phrase, .Full),
                                                                                               ("is or before",          .Phrase, .Full),
@@ -162,7 +235,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     (("or",      .Phrase,  .Full),  94, .Infix,   parseInfixOperator,  []),
     
     // cast
-    (("as",      .Phrase,  .Full), 80, .Infix,    parseInfixOperator,  []),
+    (("as",      .Phrase,  .Full),  80, .Infix,    parseCastOperator,   []),
     
     // reference
     (("of",       .Phrase, .Full), 800, .Infix,   parseInfixOperator,  []), // TO DO: what precedence?

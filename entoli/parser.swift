@@ -96,12 +96,12 @@ class Parser {
     /**********************************************************************/
     // utility funcs; used to clean up collection items
     
-    private func stripComma(value: Value) -> Value { // used to tidy list items after parsing; TO DO: should this strip _all_ commas? or treat adjoining commas as syntax error/warning (e.g. [1,2,,4] is legal but suggests a typo)? or just leave as-is and leave user to clean up surplus commas in code if it bothers them
+    func stripComma(value: Value) -> Value { // used to tidy list items after parsing; TO DO: should this strip _all_ commas? or treat adjoining commas as syntax error/warning (e.g. [1,2,,4] is legal but suggests a typo)? or just leave as-is and leave user to clean up surplus commas in code if it bothers them
         if let v = value as? ItemSeparator { return v.data }
         return value
     }
     
-    private func stripPeriod(value: Value) -> Value { // TO DO: ditto
+    func stripPeriod(value: Value) -> Value { // TO DO: ditto
         if let v = value as? ExpressionSeparator { return v.data }
         return value
     }
@@ -110,7 +110,7 @@ class Parser {
     /**********************************************************************/
     // PARSE RECORD
      
-    // TO DO: disallow pure numbers in record names as they should _always_ be treated as a hardcoded special form (as opposed to operators, which are extensible special form), e.g. {12:00} is a time value, not a name:value pair; `{a 0:...}` and `{0a:...}` should also be disallowed as those names do not transfer well to command scope (requiring single-quoted to be read as names, not command/numeric unit respectively); probably just requires tweaking parser so that ignoreVocabulary only ignores operators, not numerics
+    // TO DO: disallow numericals as record names as they should _always_ be treated as a hardcoded special form (as opposed to operators, which are extensible special form), e.g. {12:00} is a time value, not a name:value pair; note that `{a 0:...}` and `{0a:...}` should probably also be disallowed (or at least discouraged) as those names do not transfer well to command scope (requiring single-quoted to be read as names, not command/numeric unit respectively); probably just requires tweaking Lexer.readUnquotedName() so that readNextToken(ignoreVocabulary:true) only ignores operators, not numerics
 
     
     // TO DO: parseRecord could optionally be parameterized with parsefunc that knows how to read a record item; that'll allow context-sensitive interpretation; as for `to` op vs `to` command, don't need to worry about latter as typespecs will insist on NAME or NAME:VALUE, forcing users to single-quote as needed (note: procs are typically defined at top-level, so any malformed records will be reported as soon as script runs; thus parse-time checking, while nice, isn't essential)
@@ -309,9 +309,12 @@ class Parser {
         return leftExpr
     }
     
-    // TO DO: should parseExpression be public? what use-cases does it offer vs parse()?
     
-    func parseExpression(precedence: Int = 0) throws -> Value { // parse atom or prefix op, followed by any infix/postfix ops
+    /**********************************************************************/
+    // parse a single expression (i.e. a single atom or prefix operation, followed by zero or more infix and/or postfix operations on it)
+    
+    
+    func parseExpression(precedence: Int = 0) throws -> Value { 
         if DEBUG {print("\n\n[START] parseExpression at \(self.lexer.currentTokenIndex): \(self.lexer.lookaheadBy(1))")}
         guard let leftExpr = try self.parseAtom(precedence) else {
             throw SyntaxError(description: "[1] Unexpected \"\(self.lexer.currentToken)\"")
@@ -327,18 +330,12 @@ class Parser {
     // PARSE SCRIPT
     
     
-    func parse() throws -> EntoliScript { // parse full script
+    func parseScript() throws -> EntoliScript { // parse entire document (result is expression group)
         var result = [Value]()
-     //   print("[1]", self.lexer.currentTokenIndex, self.lexer.currentTokensCache)
-     //   print("TOP-LEVEL parse() firstToken=", self.lexer.lookaheadBy(1))
-     //   print("[2]", self.lexer.currentTokenIndex, self.lexer.currentTokensCache)
         while self.lexer.lookaheadBy(1).type != .EndOfCode {
             result.append(self.stripPeriod(try self.parseExpression()))
             if DEBUG {print("TOP-LEVEL parse() completed expr: \(result.last)")}
             self.lexer.flush()
-            
-        //    break // DEBUG; delete
-            
         }
         return EntoliScript(data: result)
     }

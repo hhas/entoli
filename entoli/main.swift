@@ -15,15 +15,12 @@ let source: String
 
 // obsolete: //source = " (FOO) is not same. as BAR " // correct:  `parseAtom() encountered an infix operator: "as"`
 
-source = " (FOO) is not equal. to BAR " // 
+//source = " (FOO) is NOT equal. to BAR " // correct:  `'is not equal to' {('FOO'), 'equal'}. 'to BAR'.` (though this will change once `to` operator is implemented, at which point its parsefunc will throw a 'missing argument' error)
 
 //source = " 4 is equal to not test 3" // correct:  `'is' {"4", 'not' {'test' {"3"}}}.`
 
 
 //let code: ScriptChars = "3.2e+5.1".characters; print(readNumericWord(code, start: code.startIndex))
-
-
-
 
 //source = "  bob is not smith   !=x   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
 
@@ -43,6 +40,14 @@ source = " (FOO) is not equal. to BAR " //
 //source = "4 + 6 != 10"          // correct:   `'≠' {'+' {"4", "6"}, "10"}.`
 
 //source = "0-123-7.34" // TO DO: hyphenated numbers currently split into separate negative numbers; should eventually be pattern matched as dates
+
+//source = "forward 50 left 90 forward 50. repeat {4 (forward 50 left 90)}. repeat 4 [forward 50 left 90]"
+
+source = " repeat 4 do \n  forward 50 left 90  \n done"
+
+//source = "forward 100 left turn, forward 40, left turn 45, forward 10. turn -90 forward 25"
+
+
 
 let lexer = Lexer(code: source)
 
@@ -65,7 +70,7 @@ let test2 = 1
 if test2 != 0 {
     let p = Parser(lexer: lexer)
     do {
-        let result = try p.parse()
+        let result = try p.parseScript()
         print("\n\n================================================\n", result)
     } catch {
         print("\n\n================================================\nERROR:", error)

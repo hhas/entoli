@@ -263,6 +263,7 @@ func readDecimalNumber(code: ScriptChars, startIndex: ScriptIndex, allowExponent
             } while idx < codeLength && gNumericDigits.contains(code[idx])
             scalar = Scalar.makeDouble(code[firstDigitIndex..<idx], isNegative: isNegative)
         } else { // no digit after period (i.e. the period is an expression separator, not decimal separator), so it's a suffix-less integer
+            idx = idx.predecessor()
             return (Scalar.makeInt(code[firstDigitIndex..<idx.predecessor()], isNegative: isNegative), idx) // ...and return it, as we're done
         }
     } else {
