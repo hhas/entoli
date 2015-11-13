@@ -3,14 +3,17 @@
 //  entoli
 
 
+let source: String
 
 // TO DO: following isn't working quite right yet: the `run script{"yes"}` command isn't appearing in parsed result
 //let source = "hello is  equal to \tthat  {user name :1, 'smith', to:A and B, 99:nope} \n run script \"yes\" foo: bar: baz"
 
-//let source = " 'one' 'two' 'three' "
+//source = " 'one' 'two' 'three' "
 
 
-//let source = " (FOO) is not equal. to BAR " // TO DO: this period is causing double period to show when displayed, presumably because it remains attached to first expr as postfix op; the group/script then inserts its own period delimiter when displaying
+//source = " (FOO) is not same as BAR "   // correct:  `'is not' {('FOO'), 'BAR'}.` (`is same as` is alias for `is not`)
+
+source = " (FOO) is not same. as BAR " // wrong:  `'is not' {('FOO'), 'BAR'}.` - the `same` (which should be right operand to `is not`) is being lost (prob. readVocabulary forgetting to reset cursor correctly after final op match, or `words` array being over-cleared); the `as` (which should be a 'missing left operand' error) is ignored
 
 
 //let code: ScriptChars = "3.2e+5.1".characters; print(readNumericWord(code, start: code.startIndex))
@@ -18,24 +21,24 @@
 
 
 
-//let source = "  bob is not smith   !=x   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
+//source = "  bob is not smith   !=x   1   /   2   +   4  . " //. 2*2. 3 - 3. 4-4. "
 
 
-//let source = "a*b"  //   wrong:  `parseAtom() encountered an infix operator`
+//source = "a*b"  //   correct:   `'×' {'a', 'b'}.`
 
-//let source = "a and b"
+//source = "a and b" //  correct:  `'and' {'a', 'b'}.`
 
-//let source = " 3*4 "  //   wrong:  `3*4` is being read as numeric, not operator
+//source = " 3*4 "  //   correct:  `'×' {"3", "4"}.`
+//source = " 3not b"  //   wrong:  produces  `"3". 'not' {'b'}.`, but `not` isn't a new word so should be treated as [unknown] unit suffix to `3`
 
+//source = " foo {a label:1, 2, c and not d, 4 + 6 = 10} "
 
-//  `'foo' {'a label': "1", "2", 'and' {'c', 'not' {'d'}, '+' {"4", "6"}, '=' {"10"}}.` // screwups: `=` isn't binding LH (off-by-one in lexer? compare `==`)
-//let source = " foo {a label:1, 2, c and not d, 4 + 6 = 10} "
+//source = "4 + 6 * 10"         // correct:   `'+' {"4", '×' {"6", "10"}}.`
+//source = "4 + 6 < 10"         // correct:   `'<' {'+' {"4", "6"}, "10"}.`
+//source = "4 + 6 is after 10"  // correct:   `'is after' {'+' {"4", "6"}, "10"}.`
+//source = "4 + 6 != 10"          // correct:   `'≠' {'+' {"4", "6"}, "10"}.`
 
-//let source = "4 + 6 * 10" // correct: `'+' {"4", '×' {"6", "10"}}.`
-//let source = "4 + 6 < 10" // correct:  `'<' {'+' {"4", "6"}, "10"}.`
-let source = "6 is after 10" // WRONG:  `'+' {"4", "6"}. '!=' {"10"}.`4 + 
-
-// let source = "0-123-7.34" // TO DO: hyphenated numbers currently split into separate negative numbers; should eventually be pattern matched as dates
+//source = "0-123-7.34" // TO DO: hyphenated numbers currently split into separate negative numbers; should eventually be pattern matched as dates
 
 let lexer = Lexer(code: source)
 

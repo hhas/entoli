@@ -24,10 +24,10 @@ private struct PartialOperatorMatch<T:Hashable> {
     let currentPartialWord: Lexer.PartialWord? // when matching a symbol operator in-word, the word's preceding characters (if any); nil when matching phrase operators // TO DO: make this non-nil? // TO DO: add endIndex to tuple (avoids dodgy coupling in update func)
     let isLeftDelimited: Bool // is there an explicit delimiter on LH side of match? (if false, the operator definition's autoDelimit flag will be used)
     let startIndex: ScriptIndex // position in source code at which the whole match begins
-    var endIndex: ScriptIndex // position in source code at which this partial/whole match ends
-    var info: OperatorTable<T>.Part // struct describing the current char/word match along with lookup table for making the next char/word match
+    private(set) var endIndex: ScriptIndex // position in source code at which this partial/whole match ends
+    private(set) var info: OperatorTable<T>.Part // struct describing the current char/word match along with lookup table for making the next char/word match
     
-    mutating func update(endIndex: ScriptIndex, info: OperatorTable<T>.Part) {
+    mutating func update(endIndex: ScriptIndex, info: OperatorTable<T>.Part) { // called by updateOperatorMatches
         self.endIndex = endIndex
         self.info = info
     }
@@ -199,7 +199,8 @@ class Lexer {
         if DEBUG {print("******* START READ VOCAB \(self.cursor)")}
         var isFirstWord = true
         
-        var longestOperator: (precedingNameToken: Token?, operatorToken: Token)? = nil // the longest operator found so far
+        var currentLongestOperator: (precedingNameToken: Token?, operatorToken: Token)? = nil // the longest operator found so far; TO DO: this is unnecessary complexity (and subtly incorrect) as fullSymbolOperatorMatch!=nil is sufficient to signal longest symbol op has been found
+        // TO DO: add `fullSymbolOperatorMatch: FullSymbolOperatorMatch`
         
         var partialPhraseOperatorMatches = [PartialPhraseOperatorMatch]()
         var fullPhraseOperatorMatch: FullPhraseOperatorMatch? = nil
@@ -219,39 +220,38 @@ class Lexer {
                     // TO DO: FIX!!! need to check for any remaining chars in word; if found, the first char *must* be [the start of] a symbol operator, otherwise the whole word must be treated as a malformed numeric ('unknown unit suffix' error)
                     print("caution: found additional chars after `\(numericValue)` in word; these are not yet processed correctly")
                 } // TO DO: when readNumericWord returns a match, lexer needs to read remaining chars in case it contains symbol operators, e.g. `2.5g*count` (currently, these chars are treated as a new word, which is incorrect); if the first char after the unit suffix is an operator then it should treat the op as explicitly left-delimited; if it is a name or another number, then the whole word should be reported as a malformed numeric (i.e. unknown unit suffix) as only operators have the right to auto-delimit
+            
                 
-                    
-                    // HACK
-                    // if operator ended on last word, it won't be picked up by above loop
-                    if let (precedingNameToken, operatorToken) = longestOperator {
-                        if precedingNameToken != nil {
-                            if DEBUG {print("CACHING PRECEDING NAME \(precedingNameToken!)")}
-                            self.currentTokensCache.append(precedingNameToken!)
-                        }
-                        if DEBUG {print("CACHING SYMBOL OPERATOR \(operatorToken)")}
-                        self.currentTokensCache.append(operatorToken)
-                        
-                        // TO DO: move cursor back to end of op
-                        let n = self.cursor
-                        self.cursor = operatorToken.range.endIndex
-                        if DEBUG {print("...MOVED CURSOR FROM \(n) BACK TO: \(self.cursor), `\(self.code[self.cursor])`")}
-                        
+                // TO DO: it'd be better to copy the way ops are handled and store the matched numeric and its preceding words in top-level var which is processed once we break out of loop; that will avoid this duplication of logic at cost of one more nil check (which is nothing)
+                
+                
+                // we've found a numeric word, but there's already an operator waiting to be added to cache so we have to add that first
+                if let (precedingNameToken, operatorToken) = currentLongestOperator {
+                    print("found number, so processing previous operator")
+                    if precedingNameToken != nil {
+                        if DEBUG {print("CACHING PRECEDING NAME \(precedingNameToken!)")}
+                        self.currentTokensCache.append(precedingNameToken!)
                     }
-                
-                if words.count > 0 { // complete and cache tokens for all preceding chars
+                    if DEBUG {print("CACHING SYMBOL OPERATOR \(operatorToken)")}
+                    self.currentTokensCache.append(operatorToken)
                     
-                    
-                    
-                    
-                    self.addUnquotedName(words) // TO DO: FIX!!! need to add any matched ops and interstitial names prior to adding numeric (currently, this justs adds everything as a single unquoted name, which is wrong) // TO DO: is this TODO redundant now? (pretty certain it is: lexer now scans ahead when reading op to determine longest match, then adds it before continuing to read up to number)
-                    
-                    
-                    
-                }                
-                let range = wordStartIndex..<endIndex
-                let token = Token(type: .NumericWord, value: String(self.code[range]), range: range, numericInfo: numericValue)
-                //if DEBUG {print("READ NUMERIC: \(token)")}
-                self.currentTokensCache.append(token)
+                    self.cursor = operatorToken.range.endIndex // TO DO: don't do this as it's wasteful re-reading already processed words; instead, trim words array
+                } else { // TO DO: get rid of this else clause and instead trim words
+                    if words.count > 0 { // complete and cache tokens for all preceding chars
+                        
+                        print("found number, so processing previous words")
+                        
+                        
+                        self.addUnquotedName(words) // TO DO: FIX!!! need to add any matched ops and interstitial names prior to adding numeric (currently, this justs adds everything as a single unquoted name, which is wrong) // TO DO: is this TODO redundant now? (pretty certain it is: lexer now scans ahead when reading op to determine longest match, then adds it before continuing to read up to number)
+                        
+                        
+                        
+                    }                
+                    let range = wordStartIndex..<endIndex
+                    let token = Token(type: .NumericWord, value: String(self.code[range]), range: range, numericInfo: numericValue)
+                    //if DEBUG {print("READ NUMERIC: \(token)")}
+                    self.currentTokensCache.append(token)
+                }
                 return
             }
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -262,18 +262,21 @@ class Lexer {
             var partialSymbolOperatorMatches = [PartialSymbolOperatorMatch]()
             var fullSymbolOperatorMatch: FullSymbolOperatorMatch? = nil
             var isFirstChar = true
+            var isDone = false // becomes true once longest match is made
             repeat {
                 let charIndex = self.cursor
                 let char = self.code[charIndex]
                 //print("READ VOCAB CHAR `\(char)`")
                 self.cursor = self.cursor.successor()
-                if longestOperator == nil {
-                    updateOperatorMatches(self.operatorsTable.symbols,
-                                           partialMatches: &partialSymbolOperatorMatches, fullMatch: &fullSymbolOperatorMatch,
-                                           value: char, startIndex: charIndex, endIndex: self.cursor, // TO DO: group as `thisMatch` tuple for clarity?
-                                           precedingWords: words, currentPartialWord: (wordChars, wordStartIndex, self.cursor),
-                                           isLeftDelimited: isFirstChar, isRightDelimitedFunc: self.isEndOfWord)
-                    if DEBUG {if (longestOperator != nil) {print("MATCHED SYMBOL OPERATOR!!!!", longestOperator)}}
+                if fullPhraseOperatorMatch == nil { // if there is not already a full phrase operator match, then give symbol operator a chance
+                    if updateOperatorMatches(self.operatorsTable.symbols,
+                                             partialMatches: &partialSymbolOperatorMatches, fullMatch: &fullSymbolOperatorMatch,
+                                             value: char, startIndex: charIndex, endIndex: self.cursor, // TO DO: group as `thisMatch` tuple for clarity?
+                                             precedingWords: words, currentPartialWord: (wordChars, wordStartIndex, self.cursor),
+                                             isLeftDelimited: isFirstChar, isRightDelimitedFunc: self.isEndOfWord) {
+                        isDone = true
+                    }
+                    if DEBUG {if (fullSymbolOperatorMatch != nil) {print("MATCHED SYMBOL OPERATOR!!!!", currentLongestOperator)}}
                 }
                 isFirstChar = false
                 wordChars.append(char)
@@ -287,30 +290,20 @@ class Lexer {
                                      value:           word, startIndex: wordStartIndex, endIndex: wordEndIndex,
                                      precedingWords:  words, currentPartialWord: nil,
                                      isLeftDelimited: isFirstWord, isRightDelimitedFunc: self.isEndOfPhrase) {
-                longestOperator = self.tokenizeMatchedOperator(fullPhraseOperatorMatch!.match, fixity: fullPhraseOperatorMatch!.fixity)
+                isDone = true
+            }
+            // TO DO: this logic is still subtly wrong: the longest symbol should only become final match if the phrase op doesn't make it; the symbol op still needs to wait until the current partial phrase op either fully matches or fails before it can step in; fix is to get rid of `currentLongestOperator` and put a `longestFullSymbolOperatorMatch` var outside main loop; if there's a partial phrase match underway then the successfully matched symbol op gets stored there, and it's only when the full phrase match succeeds or fails that the decision is made whether or not to use it
+            if fullPhraseOperatorMatch != nil {
+                currentLongestOperator = self.tokenizeMatchedOperator(fullPhraseOperatorMatch!.match, fixity: fullPhraseOperatorMatch!.fixity)
                 words.removeAll()
                 self.cursor = self.cursor.successor()
             } else if let longestSymbolMatch = fullSymbolOperatorMatch {
-                longestOperator = self.tokenizeMatchedOperator(longestSymbolMatch.match, fixity: longestSymbolMatch.fixity)
+                currentLongestOperator = self.tokenizeMatchedOperator(longestSymbolMatch.match, fixity: longestSymbolMatch.fixity)
+                words.removeAll()
             }
-            
+            if isDone { break } // no longer matches remain
             isFirstWord = false
             words.append((word, wordStartIndex, wordEndIndex))
-            if DEBUG {print("longestOperatorMatch=",longestOperator,"   \n\t\tcurrent-words:",words)}
-            if let (precedingNameToken, operatorToken) = longestOperator {
-                if precedingNameToken != nil {
-                    if DEBUG {print("CACHING PRECEDING NAME \(precedingNameToken!)")}
-                    self.currentTokensCache.append(precedingNameToken!)
-                }
-                if DEBUG {print("CACHING SYMBOL OPERATOR \(operatorToken)")}
-                self.currentTokensCache.append(operatorToken)
-                
-                // TO DO: move cursor back to end of op
-                let n = self.cursor
-                self.cursor = operatorToken.range.endIndex
-                if DEBUG {print("...MOVED CURSOR FROM \(n) BACK TO: \(self.cursor), `\(self.code[self.cursor])`")}
-                return
-            }
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
             // skip over whitespace
             let n = self.cursor
@@ -326,27 +319,25 @@ class Lexer {
         
         
         
-        // if operator ended on last word, it won't be picked up by above loop
-        if let (precedingNameToken, operatorToken) = longestOperator {
+        // if a full operator match was found, add it
+        if let (precedingNameToken, operatorToken) = currentLongestOperator {
+            print("end of word range, so processing remaining operator")
             if precedingNameToken != nil {
                 if DEBUG {print("CACHING PRECEDING NAME \(precedingNameToken!)")}
                 self.currentTokensCache.append(precedingNameToken!)
             }
             if DEBUG {print("CACHING SYMBOL OPERATOR \(operatorToken)")}
             self.currentTokensCache.append(operatorToken)
-            
-            // TO DO: move cursor back to end of op
+            // move cursor back to end of operator
             let n = self.cursor
             self.cursor = operatorToken.range.endIndex
             if DEBUG {print("...MOVED CURSOR FROM \(n) BACK TO: \(self.cursor), `\(self.code[self.cursor])`")}
             return
         }
 
-        
-        
-        // TO DO: need to sort this out; also need to check partialPhraseOperatorMatches for any completed matches (if an op is found, need to add its preceding name, if any, then op itself, then figure out how much of leftover words are to be added)
-        
+        //
         if words.count > 0 {
+            print("end of word range, so processing remaining words")
             self.addUnquotedName(words)
             self.cursor = words.last!.endIndex
         }
@@ -385,7 +376,7 @@ class Lexer {
     private typealias PartialPhraseOperatorMatch = PartialOperatorMatch<Operators.Phrase.Element>
     private typealias PartialSymbolOperatorMatch = PartialOperatorMatch<Operators.Symbol.Element>
     private typealias OperatorFixity             = (prefix: Bool, infix: Bool)
-    private typealias FullPhraseOperatorMatch    = (match: PartialPhraseOperatorMatch, fixity: OperatorFixity)
+    private typealias FullPhraseOperatorMatch    = (match: PartialPhraseOperatorMatch, fixity: OperatorFixity) // TO DO: rename PartialOperatorMatch to OperatorMatch and add `private(set) var fixity: OperatorFixity?` to that
     private typealias FullSymbolOperatorMatch    = (match: PartialSymbolOperatorMatch, fixity: OperatorFixity)
     
     private typealias UnquotedWord               = (text: String, startIndex: ScriptIndex, endIndex: ScriptIndex)
