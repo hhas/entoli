@@ -10,7 +10,7 @@
 
 
 class Value: CustomStringConvertible { // being homoiconic, there is no difference between a data value and an AST node; even commands and operators are values
-    var annotations = [String]() // TO DO: structure, API, literalRepresentation
+    var annotations = [Any]() // TO DO: structure, API, literalRepresentation
     var description: String {return "<VALUE>"} // TO DO: make this an up-call, and implement `literalRepresentation` methods that take additional options (e.g. always/never quote names); also implement debugDescription that returns Swift-style representation
 }
 
@@ -83,8 +83,8 @@ class PairValue: Value { // note: `A:B:C` is right-associative // TO DO: probabl
 }
 
 
-
-// TO DO: commands could (and should) have lighter-weight structure, storing name as String and args as [Value] (record access methods could be provided via protocol extension, or by having CommandValue subclass RecordValue)
+// TO DO: commands could (and should) have lighter-weight structure, storing name as String and args as [Value] (record access methods could be provided via protocol extension, or by having CommandValue subclass RecordValue); the one caveat being that normalized names are required for binding whereas non-normalized names should be retained for display
+// TO DO: also store normalized (e.g. all-lowercase) name for proc lookups (or should that already be done/implemented as var in NameValue? e.g. record keys also need normalized, and it would be better to implement that behavior in a single location)
 class CommandValue: PairValue { // note: operators are just syntactic sugar over commands, so always parse to CommandValue // TO DO: renderer will need to supply commands with ops table so that they can choose optimal display format for themselves (one problem: how to distinguish pre/in/post-fix ops (esp. pre-vs-post) as that really requires a different command name for each)
     convenience init(name: Value) {
         self.init(name: name, data: RecordValue(data: []))

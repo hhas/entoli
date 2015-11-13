@@ -13,7 +13,7 @@
 //let source = " (FOO) is not equal. to BAR " // TO DO: this period is causing double period to show when displayed, presumably because it remains attached to first expr as postfix op; the group/script then inserts its own period delimiter when displaying
 
 
-//let code: ScriptChars = "3.2e+5.1".characters; print(readNumericChars(code, start: code.startIndex))
+//let code: ScriptChars = "3.2e+5.1".characters; print(readNumericWord(code, start: code.startIndex))
 
 
 
@@ -31,12 +31,16 @@
 //  `'foo' {'a label': "1", "2", 'and' {'c', 'not' {'d'}, '+' {"4", "6"}, '=' {"10"}}.` // screwups: `=` isn't binding LH (off-by-one in lexer? compare `==`)
 //let source = " foo {a label:1, 2, c and not d, 4 + 6 = 10} "
 
-let source = "4 + 6 = 10"
+//let source = "4 + 6 * 10" // correct: `'+' {"4", '×' {"6", "10"}}.`
+//let source = "4 + 6 < 10" // correct:  `'<' {'+' {"4", "6"}, "10"}.`
+let source = "6 is after 10" // WRONG:  `'+' {"4", "6"}. '!=' {"10"}.`4 + 
+
+// let source = "0-123-7.34" // TO DO: hyphenated numbers currently split into separate negative numbers; should eventually be pattern matched as dates
 
 let lexer = Lexer(code: source)
 
 
-let test1 = 1
+let test1 = 0
 
 if test1 != 0 {
     var i = 0

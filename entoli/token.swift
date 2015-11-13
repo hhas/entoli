@@ -102,7 +102,7 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
 }
 
 
-struct Token {
+struct Token: CustomStringConvertible {
     let type: TokenType
     let value: String // normalized representation
     let range: ScriptRange // position of original (raw) input in source code
@@ -112,16 +112,20 @@ struct Token {
     let prefixOperator: OperatorDefinition?
     let infixOperator:  OperatorDefinition?
     // the following is non-nil when token type is .NumericWord
-    let numericInfo:   NumericValue?
+    let numericInfo:   Numeric?
     
     init(type: TokenType, value: String, range: ScriptRange, partial: Int = 0,
-            operatorDefinitions: OperatorDefinitions = (nil, nil), numericInfo: NumericValue? = nil) {
+            operatorDefinitions: OperatorDefinitions = (nil, nil), numericInfo: Numeric? = nil) {
         self.type = type
         self.value = value
         self.range = range
         self.partial = partial
         (self.prefixOperator, self.infixOperator) = operatorDefinitions
         self.numericInfo = numericInfo
+    }
+    
+    var description: String {
+        return "«\(self.type)[\(self.range)] `\(self.value)`»" // TO DO: extended representations for numerics and operators
     }
 }
 

@@ -109,8 +109,9 @@ class Parser {
     
     /**********************************************************************/
     // PARSE RECORD
-    
-    // TO DO: enforce unique item names here?
+     
+    // TO DO: disallow pure numbers in record names as they should _always_ be treated as a hardcoded special form (as opposed to operators, which are extensible special form), e.g. {12:00} is a time value, not a name:value pair; `{a 0:...}` and `{0a:...}` should also be disallowed as those names do not transfer well to command scope (requiring single-quoted to be read as names, not command/numeric unit respectively); probably just requires tweaking parser so that ignoreVocabulary only ignores operators, not numerics
+
     
     // TO DO: parseRecord could optionally be parameterized with parsefunc that knows how to read a record item; that'll allow context-sensitive interpretation; as for `to` op vs `to` command, don't need to worry about latter as typespecs will insist on NAME or NAME:VALUE, forcing users to single-quote as needed (note: procs are typically defined at top-level, so any malformed records will be reported as soon as script runs; thus parse-time checking, while nice, isn't essential)
     
@@ -128,7 +129,8 @@ class Parser {
                 return RecordValue(data: result) // double-check this leaves us at correct position
             case .EndOfCode:
                 throw EndOfCodeError(description: "[1a] End of code.")
-            case .QuotedName, .UnquotedName: // item is of form `'NAME':...` or `NAME:...`
+            case .QuotedName, .UnquotedName: // item is of form `'NAME':...` or `NAME:...` 
+                // (note: multiple names/aliases c.f. Swift funcs are not supported as that would create confusion when pairs are used as `store` shortcuts in command eval scopes as that's analogous to Swift's multiple assignment, and having different binding rules for different contexts will confuse users)
                 isNamedPair = self.lexer.lookaheadBy(1).type == .PairSeparator // literal pairs in records MUST have literal name as LH operand (note: this looks ahead 2, since currentToken is `{` and next token is QuotedName)
             default:
                 isNamedPair = false
@@ -234,7 +236,15 @@ class Parser {
             return try self.parseArgument(NameValue(data: token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
             // VOCABULARY TOKENS
         case .NumericWord:
-            return TextValue(data: token.value) // TO DO: add type info
+            guard let numericInfo = token.numericInfo else { throw SyntaxError(description: "BUG: Numeric data is missing") } // note: this should never happen
+            switch numericInfo {
+            case .Malformed(let word, let error):
+                throw SyntaxError(description: "Malformed numeric literal (\(error)): `\(word)`")
+            default:
+                let result = TextValue(data: token.value)
+                result.annotations.append(numericInfo) // TO DO: how to implement annotation API?
+                return result
+            }
         case .UnquotedName:
             return try self.parseArgument(NameValue(data: token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
         case .Operator:
