@@ -125,14 +125,14 @@ struct Token: CustomStringConvertible {
     }
     
     var description: String {
-        return "«\(self.type)[\(self.range)] `\(self.value)`»" // TO DO: extended representations for numerics and operators
+        return "«\(self.type) \(self.range) `\(self.value)`»" // TO DO: extended representations for numerics and operators
     }
 }
 
 
 
 let gStartOfCodeToken = Token(type: .StartOfCode, value: "««STARTCODE»»", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate start of script
-let gEndOfCodeToken = Token(type: .EndOfCode, value: "««ENDEDCODE»»", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate end of script
+let gEndOfCodeToken = Token(type: .EndOfCode, value: "««ENDOFCODE»»", range: "".startIndex..<"".endIndex) // null token, used in cachedTokens to indicate end of script
 
 
 

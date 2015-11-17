@@ -226,8 +226,6 @@ class Parser {
             }
             try self.lexer.skip(.ExpressionGroupLiteralEnd)
             return ExpressionGroupValue(data: result)
-        case .LineBreak: // linebreaks act as name (and expr?) separators
-            return try self.parseExpression() // skip linebreak and parse next line as new expression // TO DO: prob. should preserve linebreak (e.g. as postfix no-op) for display purposes (i.e. reformatting user's code is one thing; reformatting their layout is another)
             // atomic literals
         case .QuotedText: // "..." // a text (string) literal
             return TextValue(data: token.value)
@@ -248,7 +246,7 @@ class Parser {
         case .UnquotedName:
             return try self.parseArgument(NameValue(data: token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
         case .Operator:
-            if DEBUG {print("\nparseAtom got Operator: \(token.prefixOperator) \(token.infixOperator)")}
+            if true {print("\nparseAtom got Operator: \(token.prefixOperator) \(token.infixOperator)")}
             guard let operatorDefinition = token.prefixOperator else {
                 self.lexer.backtrackTo(previousIndex)
                 if token.infixOperator == nil { print("BUG in parseAtom: .Operator token contains neither prefix nor infix definition!"); exit(1) }
@@ -257,7 +255,10 @@ class Parser {
             let result = try operatorDefinition.parseFunc(self, leftExpr: nil, operatorName: operatorDefinition.name.text, precedence: precedence)
             if DEBUG {print("... and returned it: \(result)")}
             return result
-            // UNSUPPORTED TOKENS (these cannot appear where an atom or prefix operator is expected)
+            // OTHER
+        case .LineBreak: // a line break acts as an expression separator
+            return nil
+            // INVALID TOKENS (these cannot appear where an atom or prefix operator is expected)
         default:
             // AnnotationLiteralEnd, RecordLiteralEnd, ListLiteralEnd, ExpressionGroupLiteralEnd will only appear if opening '«', '{', '[', or '(' token is missing, in which case parser should treat as syntax error [current behavior] or as an incomplete structure in chunk of code whose remainder is in a previous chunk [depending how incremental parsing is done]; any other token types are infix/postfix ops which are missing their left operand
             return nil
@@ -285,8 +286,6 @@ class Parser {
             case .PipeSeparator: // semicolon pair
                 // TO DO: would it be better to append RH expr to LH expr? (i.e. evaling LH expr would cause it to eval remaining piped commands as well, returning final result) or is it simplest just to have an object that specifically does this? (one issue with chaining [command] values is whether to go left-to-right or right-to-left; not that PipeValue exactly solves that)
                 leftExpr = PipeValue(leftExpr: leftExpr, rightExpr: try self.parseExpression(TokenType.PipeSeparator.precedence))
-            case .LineBreak: // linebreaks act as expression separators
-                return leftExpr // TO DO: need to check this is correct // TO DO: check behavior is appropriate when linebreak appears between an operator and its operand[s]
                 // VOCABULARY TOKENS
             case .Operator:
                 if DEBUG {print("\nparseOperation got Operator: \(token.prefixOperator) \(token.infixOperator)")}
@@ -300,7 +299,10 @@ class Parser {
                 }
                 leftExpr = try operatorDefinition.parseFunc(self, leftExpr: leftExpr, operatorName:
                                                             operatorDefinition.name.text, precedence: operatorDefinition.precedence)
-                // UNSUPPORTED TOKENS (these cannot appear where an infix/postfix operator is expected)
+                // OTHER
+            case .LineBreak: // a line break always acts as an expression separator
+                return leftExpr // TO DO: need to check this is correct // TO DO: check behavior is appropriate when linebreak appears between an operator and its operand[s]; also make sure it behaves correctly when it appears after a pipe (semi-colon) separator, as it's not unreasonable for the RH operand to appear on the following line in that case
+                // INVALID TOKENS (these cannot appear where an infix/postfix operator is expected)
             default: // anything else implictly starts a new expression (if token is invalid, e.g. unbalanced bracket/brace/paren, if will be detected and thrown by parseAtom on next pass)
                 self.lexer.backtrackTo(previousIndex)
                 return leftExpr
@@ -314,7 +316,11 @@ class Parser {
     // parse a single expression (i.e. a single atom or prefix operation, followed by zero or more infix and/or postfix operations on it)
     
     
-    func parseExpression(precedence: Int = 0) throws -> Value { 
+    func parseExpression(precedence: Int = 0) throws -> Value {
+        while self.lexer.lookaheadBy(1).type == .LineBreak { // skip any white space prior to new expression (note: linebreaks will need preserved for display purposes; perhaps as annotations?)
+            print("parseExpression skipping linebreak")
+            self.lexer.advance()
+        }
         if DEBUG {print("\n\n[START] parseExpression at \(self.lexer.currentTokenIndex): \(self.lexer.lookaheadBy(1))")}
         guard let leftExpr = try self.parseAtom(precedence) else {
             throw SyntaxError(description: "[1] Unexpected \"\(self.lexer.currentToken)\"")

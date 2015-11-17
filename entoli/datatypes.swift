@@ -17,10 +17,10 @@ class Value: CustomStringConvertible { // being homoiconic, there is no differen
 
 
 class NoValue: Value {
-    override var description: String {return "<NO-VALUE>"}
+    override var description: String {return "no value"}
 }
 
-let gNoValue = NoValue()
+let gNoValue = NoValue() // TO DO: would empty record suffice? (there is already a degree of overlap given their use in command arguments, and since record structures [outside of metaprogramming [which should always return a new record, never modify an existing one]] should always be pre-defined in code and therefore cannot have items added or removed at runtime its meaning is constant)
 
 
 

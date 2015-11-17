@@ -4,10 +4,13 @@
 //
 //
 
-//  TO DO: consider evolving lexer (and parser?) in same direction as numeric-parser.swift is starting to go, as functions that take accummulated results plus cursor position and return new accummulated results plus new cursor position
+//  TO DO: consider evolving lexer (and parser?) in same direction as numeric-parser.swift is starting to go, as functions that take accummulated results plus cursor position and return new accummulated results plus new cursor position; Q. given that lexer/parser also want to support incremental parsing, and ideally some degree of live AST editing, in order to support 'smart' editors, how would such an approach fit with that?
 
 
 // note: an entoli script can contain three things: code, user docs (annotations) and developer docs (comments) // TO DO: in implementation terms, can comments safely be treated as a particular type of annotation, with different code delimiters but same the syntax rules and internal storage mechanism? Or do they need more flexibility/hygene, e.g. since they're often also used temporarily to block out broken/unfinished code during development and testing? (note: the same 3-prong approach - user+dev+trace info - should apply to error reporting)
+
+
+// TO DO: how hard to change expression separator from period to comma, and use period as block terminator? This'd allow users to write `To PROCNAME {name1, name2}, do this, do that, do the other; else fib, fub, zub.` It might also help reduce confusion over when to use commas versus periods (not that the expression parser really cares as it already treats both as separators anyway). It also allows REPL to trigger auto-eval as soon as user types period after one or more exprs. And blocks should be fully composable, being exprs themselves, so will be perfectly happy being sub-separated this way. All of which allows the `do` operator to become more of a convenience, for pairing blocks to [e.g.] `if', `repeat`, etc. (Though still need to think how ops such as `else` and `catching` will interact.) One disadvantage is nesting, since `do...done` are much easier to balance - and see are balanced - than `do xxxx.`, plus they avoid ugly case of multiple continguous periods, which are painful to read when immediately adjoining or look unnatural and are easy to miss when split across multiple lines, and in both cases look like a typo (or ellispis), not a block terminator.
 
 
 private let DEBUG = false
@@ -488,7 +491,7 @@ class Lexer {
     func skip(tokenType: TokenType) throws { // advance to next token, throwing SyntaxError if it's not the specified type
         self.advance()
         if self.currentToken.type != tokenType {
-            throw SyntaxError(description: "[0] Expected \(tokenType) but found \(self.currentToken.type)")
+            throw SyntaxError(description: "[0] Expected \(tokenType) but found \(self.currentToken.type): `\(self.currentToken.value)`")
         }
     }
     

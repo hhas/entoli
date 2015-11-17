@@ -12,18 +12,17 @@
 
 // TO DO: think we need a hard rule for devs: never implement new types using command- or prefixop-based constructors (e.g. `file "/"`), as the same name can't then be used for typespec (e.g. `"/" as file`) [technically, through proc overloading and optional args `file` probably _could_ do both, but it'd likely get nasty; avoiding it also provides clear distinction between object specifiers and datatypes, e.g. `document "foo" of ...` vs `document`, although that still requires thought]
 
-
-// TO DO: how to disambiguate overloaded op/command names? e.g. `'-'{1}` (neg) might be distinguished from `'-'{2,1}` (sub) by counting args, but that won't work where a prefix op overloads a postfix op; also, in the `-` case, `'-'{1,2}` would be a more correct representation (`-1` and `2-1` both negate the RH operand, not the left, but record items count left to right so the required value wants to be first, followed by the optional one), but then that causes more confusion (plus, of course, there's also `2;'-'1` to take into account, and even `1;'-'`)
-
 // TO DO: how much smarts should be dedicated to detecting potential spelling errors, e.g.:
 // `A is before or same B` -- correctly spelled operator parses as intended, i.e. `(A) is before or same (B)`
 // `A is before or eqaal B` -- but with typo, this would give `(A) is before ('or eqaal' B)` (or throw error if both `is before` and `or` are always matched as operators) [unless we treat `or` as op with missing LH operand, in which case syntax error; but it's unclear if/how often we should do that rather than just accept it as a name---although if it's a self-delimiting op then shouldn't this always force it to be treated as op, not just in valid cases but invalid ones too]
 
-// note: `-100` and `-foo` are both valid uses of prefix `-`; however, it would be better that first is matched as number before trying to match it as symbol operator, so perhaps it's just a question of doing keyword op parse first, then pattern-based value detection, then in-word symbol operator detection? Or maybe we should even just say whitespace or other delimiter char is always required around symbol ops? (FWIW, this should happen anyway: e.g. `- 1` will be parsed as prefix op, while `-1` will be parsed as word, with longest-match rule automatically ensuring it's read as a number)
-
 
 // TO DO: should `no value`, `did nothing` be defined as Atom ops or commands? (Atoms would be safer in that these _never_ take an arg; not sure if they should self-delimit though, and given they're really only intended as return values it's not very useful if they did, so probably best use .None)
 
+
+// TO DO: `do EXPR using {NAME:VALUE,...}` operator for binding free names in expression and evaling it? Note: probably best way to allow proc objects to be manipulated as values is to use `as expression` operator, e.g. `my func: (uppercase of standard library) as expression`, though that still leaves questions on how best to invoke it and pass arguments. (It is also a little fuzzy on the meaning of "expression", since here the expression is the reference to the proc object, not the proc object itself. Furthermore, `uppercase as expression` would be expected to work the same. However, both are really capturing the command, not the proc name, and thus not the proc object itself; i.e. `uppercase` would be evaluated as an expression on use, and immediately fail because the command lacks the required argument. Thus it should probably be `as procedure`, to make sure it understands all we're giving it is the name/location of the proc object.) Simply writing `my func "hello"` would work if eval automatically treats all proc object lookups as immediately callable, thus any command name that isn't explicitly cast to expression would lookup and invoke the named procedure. FWIW, this fits with entoli's "say what you want" philosophy, which strongly favors [explicit] instruction-directed behavior rather than [implicit] type-directed behavior (with all the user assumptions about invisible - and largely runtime-specific - information that entails). One particular downside of this usage pattern: `my func` will not be usefully introspectable until the `uppercase of standard library` reference is resolved, which means it is much less useful to editor (at least until it can be evaluated, at which point the editor could even offer to add in signature info in form of an additional cast, or replacing the existing `as procedure` cast with a more precise one: `as procedure {SIGNATURE}`)
+
+// Q. could `EXPR as procedure {SIG}` usefully convert a single/group expression value to a procedure? (this'd certainly be the preferred method, given that entoli strongly favors casts over constructors in order to avoid double-purposed names [i.e. homonyms] as commonly found in AppleScript, e.g. `TEXT as file` vs `file TEXT`)
 
 
 extension CommandValue { // convenience constructors used by operator parsefuncs
@@ -31,7 +30,7 @@ extension CommandValue { // convenience constructors used by operator parsefuncs
     static let _NameLeft    = NameValue(data: "left")
     static let _NameRight   = NameValue(data: "right")
     static let _EmptyRecord = RecordValue(data: [])
-
+    
     convenience init(name: String) {
         self.init(name: NameValue(data: name), data: CommandValue._EmptyRecord)
     }
@@ -89,17 +88,20 @@ func readTypeOperand(parser: Parser, precedence: Int) throws -> CommandValue { /
 }
 
 
+private let gAsOperatorName = "as"
+private let gAsOperatorPrecedence = 80
+
+
 func parseGeneralComparisonOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
     let rightOperand = try parser.parseExpression(precedence)
     let nextToken = parser.lexer.lookaheadBy(1)// TO DO: if next token is .Operator("as"), consume it and then consume its RH operand and use that as the type to which both operands should be cast before comparing; if not found, use default `text` type instead
-    let asType: Value
-    if nextToken.type == .Operator && nextToken.value == "as" { // TO DO: avoid hardcoded values
+    var operands = [leftExpr!, rightOperand]
+    if nextToken.type == .Operator && nextToken.value == gAsOperatorName { // TO DO: avoid hardcoded values
         parser.lexer.advance() // advance onto .Operator("as") token
-        asType = try readTypeOperand(parser, precedence: 80)
-    } else {
-        asType = gNoValue
+        operands.append(PairValue(name: NameValue(data: gAsOperatorName),
+                                  data: try readTypeOperand(parser, precedence: gAsOperatorPrecedence)))
     }
-    return CommandValue(name: operatorName, data: [leftExpr, rightOperand, PairValue(name: NameValue(data: "as"), data: asType)])
+    return CommandValue(name: operatorName, data: operands)
 }
 
 
@@ -108,54 +110,50 @@ func parseCastOperator(parser: Parser, leftExpr: Value!, operatorName: String, p
 }
 
 
-// TO DO: could `done` atom be given a priority (e.g. negative) that forces it to be ignored by a preceding command looking for an arg?
+
+func parseProcedureDefinition(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+    // TO DO: implement
+    // 1. read quoted/unquoted name
+    // 2. read record, if given, or require some kind of delimiter (colon? comma?)
+    // 3. read group expression; need to decide what structures are appropriate for this, e.g. single line of comma-separated exprs with period terminator (which will require lexer/parser mods), multi-line `do...done` block. bear in mind too that we currently don't have a clearly defined way to express return type; e.g. might define operator as `to SIG: EXPR [returning TYPE]`, though need to consider how well that'd work with single-line exprs (which'd want to put a period after TYPE, not before `returning`)
+    print("TO DO: procedures not yet implemented")
+    // Q.
+    return gNoValue
+}
+
 
 func parseAtomDoBlock(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
     var result = [Value]()
-    while parser.lexer.lookaheadBy(1).type != .Operator && parser.lexer.lookaheadBy(1).value != "done" {
+    let lexer = parser.lexer
+    while lexer.currentToken.type != .EndOfCode {
+        while lexer.lookaheadBy(1).type == .LineBreak { // eat any linebreaks before testing for `done`
+            lexer.advance()
+        }
+        let nextToken = lexer.lookaheadBy(1)
+        if nextToken.type == .Operator && nextToken.value == "done" { break }
         // TO DO: how best to implement this parse loop? currently this fails if there's a linebreak before `done` as unlike parseExpression this does not automatically skip linebreak tokens (not that it should anyway, since that info should be preserved for display purposes)
-        // problem: linebreaks are significant tokens (TBH, it'd probably make more sense to refactor group expression parsing code to allow its reuse with parameterized end token; that way, things like linebreaks can be handled consistently in a single place as expr groups should always preserve user's original linebreaks for display purposes, whereas currently the parser eats them silently)
-        print("READING EXPR:", parser.lexer.lookaheadBy(1))
+//        print("READING EXPR AFTER \(lexer.currentToken):\n\t\t\(nextToken) ...")
         let value = parser.stripPeriod(try parser.parseExpression())
         result.append(value)
-        print("READ EXPR:", value)
+//        print("READ EXPR:", value)
     }
-    try parser.lexer.skip(.Operator) // TO DO: should probably specify [optional] value too, just to make sure
-    print("NOW ON \(parser.lexer.currentToken)")
-    return CommandValue(name: operatorName, data: result) // TO DO: how to represent (it's basically an expression group, but with alternate syntax)
+//    print("NOW ON \(parser.lexer.currentToken)")
+    lexer.advance() // move onto `done` token
+    if !(lexer.currentToken.type == .Operator && lexer.currentToken.value == "done") {
+        throw SyntaxError(description: "Expected end of `do...done` block but found \(lexer.currentToken)")
+    }
+    return ExpressionGroupValue(data: result) // TO DO: annotate to indicate it uses `do...done` rather than `(...)` syntax?
 }
 
 
 func parsePostfixDoBlock(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
     // TO DO: ditto, then attach it to leftExpr (how best to do this? and should it only apply to commands [including names], or would the be uses in attaching it to other things as well?)
     let doBlock = try parseAtomDoBlock(parser, leftExpr: leftExpr, operatorName: operatorName, precedence: precedence)
-    print("READ DO BLOCK:", doBlock)
+    print("TO DO: ATTACH POSTFIX DO BLOCK:\n\t", doBlock, "\n\tTO:", leftExpr)
     return leftExpr
 }
 
 
-
-
-/*
-// TO DO: when parsing param record, `to` operator should check result itself to ensure all items are name and/or name:typespec pair literals [with or without annotations attached] (or should typed params be written as `name AS typespec` ops? The `to` [define procedure] command could accept either, so it's basically a question of which users find easier; suspect colon-pairs, but need to decide.)
-
-    func parseProcedureDefinition(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value { // returns CommandValue
-        switch token.type {
-        case .QuotedName: // '...' // an explicitly delimited name literal
-            // if next significant token is another expr, treat it as an RH operand (i.e. argument) and emit CommandValue, else return NameValue
-            return try parseArgument(NameValue(data: token.value))
-        case .UnquotedWord: // everything else that is not one of the above hardcoded token types; parseWord will deal with this
-            return try parseArgument(try self.parseUnquotedWord(), precedence: precedence)
-        default:
-            throw SyntaxError("Malformed command signature.")
-        }
-        if self.lookahead(1) == PunctuationLexer.TokenType.RecordLiteral {
-            arg = self.parseAtom()
-            // need to check record is correctly structured: each item must be a name, optionally wrapped in coercion (don't forget optional annotations too - these will be treated as arg descriptions) // TO DO: is this right/optimal?... actually, no, it's the command's record that needs to be checked, as if it has pairs then LH must be name
-        }
-
-    }
-*/
 
 
 
@@ -235,23 +233,28 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     (("or",      .Phrase,  .Full),  94, .Infix,   parseInfixOperator,  []),
     
     // cast
-    (("as",      .Phrase,  .Full),  80, .Infix,    parseCastOperator,   []),
+    ((gAsOperatorName, .Phrase, .Full), gAsOperatorPrecedence, .Infix, parseCastOperator, []), // note: "as" may also used as optional 'clause' to some 'binary' operators (really multifix operators, e.g. `A is B as C`)
     
     // reference
     (("of",       .Phrase, .Full), 800, .Infix,   parseInfixOperator,  []), // TO DO: what precedence?
-    (("thru",     .Phrase, .Full),  50, .Infix,   parseInfixOperator,  [("through", .Phrase, .Full)]), // range constructor // TO DO: optional `by` clause?
-    (("where",    .Phrase, .Full),  50, .Infix,   parseInfixOperator,  [("whose", .Phrase, .Full)]),  // filter clause
+    (("thru",     .Phrase, .Full),  50, .Infix,   parseInfixOperator,  [("through", .Phrase, .Full), ("…", .Symbol, .Full)]), // range constructor; note: symbolic equivalent (ellipsis) is currently included for experimentation only (also, the formatter is not smart enough to preserve the symbolic form where used; thus it'd need to be defined as another operator with its own [aliased] proc for its syntax to be preserved when pretty printed) // TO DO: optional `by` clause for specifying step size?
+    (("where",    .Phrase, .Full),  50, .Infix,   parseInfixOperator,  [("whose", .Phrase, .Full)]),  // filter clause; TO DO: RH operand is basically a DSL for constructing queries, albeit using existing operator definitions only (only the procs would be remapped by a sub-context created by 'whose' proc for purpose of evaluating that operand [note that 'where' proc would define its RH operand's type as `test expression`/`Boolean expression` [depending on how we eventually implement]])
+    // TO DO: what about `named` and `id` prefix ops for constructing by-name and by-id selectors?
     
     // eval clauses
     (("catching", .Phrase, .Full),  50, .Infix,   parseInfixOperator,  []), // evaluate LH operand; on error, evaluate RH operand
     (("else",     .Phrase, .Full),  50, .Infix,   parseInfixOperator,  []), // evaluate LH operand; if it returns 'did nothing', evaluate RH operand
     
+    // define multi-line expression groups
+    // note that `do` and `done` are left-auto-delimited and right-auto-delimited respectively; being intended for writing multi-line expression groups, they should normally be followed/preceded by LineBreak tokens that will explicitly delimit them on the other side. This reduces chance of conflicts when used within a longer
     // expression blocks
-    (("do",       .Phrase, .Full),  50, .Atom,    parseAtomDoBlock,    []),
-    (("do",       .Phrase, .Full),  50, .Postfix, parsePostfixDoBlock, []),
-    (("done",     .Phrase, .Full),   0, .Atom,    throwMisplacedToken, []), // `do` block parsefuncs use `done` as terminator; anywhere else is a syntax error (note: this won't work if parsing per-line; TO DO: would be better to use same approach as for punctuation-based blocks where imbalances are counted [note: the latter currently don't do this either, but there's a TODO for that too]) // TO DO: suspect `done` needs to be right-auto-delimited only, otherwise `do command done` will result in `done` being absorbed as argument to `command`; similarly, `do` could be troublesome as it's a short word likely to appear in regular command names, so again probably want's to be [left/right?]-auto-delimited only (need to consider common use cases, e.g. `if {} do ... done else do ... done`, and how well it jives with commands and other operators, and also with good [single-/multi-line] code formatting practice, which pretty printer in particular will have to do a very good job of otherwise it'll annoy users)
+    (("do",       .Phrase, .Left),  50, .Atom,    parseAtomDoBlock,    []),
+    (("do",       .Phrase, .Left),  50, .Postfix, parsePostfixDoBlock, []),
+    (("done",     .Phrase, .Right),  0, .Atom,    throwMisplacedToken, []), // note: `do` block parsefuncs look for `.Operator(done)` to indicate end of block; if `done` keyword is encountered anywhere else, `throwMisplacedToken` automatically reports a syntax error
     
-    // TO DO: `to` operator for defining new procs
+    // define native procedure
+    // `to` operator provides cleaner syntax for defining new procs; as a commonly-used word it is auto-right-delimited only to reduce chance of conflicts when used within a longer unquoted name (e.g. `go back to start`), so must appear at start of an expression to act as operator.
+    (("to",     .Phrase, .Right),   0, .Prefix,   parseProcedureDefinition, []),
 ]
 
 
