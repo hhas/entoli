@@ -5,7 +5,11 @@
 //
 //
 
-import Darwin
+import Darwin // pow()
+
+
+// TO DO: what about UInt? how important to support that too? it's possible entoli integers could support UInt.min..<UInt.max as maximum integer range by storing negation as a flag, though that could make math significantly more painful)
+// TO DO: Int is 32-bit on non-64-bit systems, and [U]Int64 [presumably] isn't available, so need to rejig Scalar<->UInt[32/64] code to take that into account; also need to give some thought as to how to ensure 32-bit compatibility throughout (annoyingly, Swift stdlib doesn't define a standard generics-friendly protocol for instantiating all Integer and FloatingPoint types, so each needs to be implemented separately just to keep type system happy)
 
 
 // TO DO: how to modularize this numerical parsing (e.g. as composable/chainable funcs) to allow easy construction of more complex pattern matching (e.g. canonical dates and times); also, how should complex structures such as dates be detected and matched? (ideally they'd be another form of suffix, being pattern matched on separator char, though whether such funcs should be passed for tail calling with accummulated data as arg or nested in composition remains to be decided) (note that while new function breakdown is better for reuse, it still isn't composable as there isn't a single standard API across them all: that would require e.g. passing a struct containing whatever info has been accummulated so far so that each subsequent func can decide what to do next)
@@ -16,12 +20,31 @@ import Darwin
 
 // TO DO: once typespecs are implemented, these functions may become static methods on numeric typespecs
 
-// note: in typespecs, TextValues that aren't numbers could be annotated as Numeric.NotNumber the first time a numeric scan fails, eliminating need to rescan should that value be [unsuccessfully] coerced again
+// note: in typespecs, Texts that aren't numbers could be annotated as Numeric.NotNumber the first time a numeric scan fails, eliminating need to rescan should that value be [unsuccessfully] coerced again
 
 // TO DO: manipulating currency as doubles is not ideal; while it probably doesn't hurt to store numerical value as Scalar.FloatingPoint representation, coercion handlers and commands that deal specifically with currency values may want to ignore that and use [e.g.] NSDecimal instead
 
 
-/**********************************************************************/
+// Q. regarding chainable parsefuncs, these would need to accept and return (ScriptChars,ScriptIndex,Result), where Result is a struct/class/whatever; the challenge is how to describe that Result, e.g. using multiple protocols, each specific to a particular parsefunc, that allow parsefunc to transform existing result and or attach additional info to it without knowing any details of how it's actually implemented (Q. how to type it, e.g. generic funcs? thus Result's type going in and out would be <ReturnType where ReturnType: SpecificProtocol>)
+
+
+// TO DO: how practical to support localization in code? (it'd require an explicit locale declaration at top of file to eliminate guesswork, and supported locales would likely have to be hardcoded as comma/period overloading can impact lexer/parser behavior)
+
+
+// TO DO: if canonical time has `HH:MM[:SS][TZ]` format (which it pretty much needs to), parser will need to take care not to confuse that for pair(s); as with `YYYY-MM-DD` dates, it's a case of numeric parsefunc looking for the longest match, and yielding to standard parser only if that exact form isn't found (thus even a minor, fairly natural change such as parenthesizing or spacing disrupts the 'special' form; BTW, formatter will need to take this into account too, and ensure it never outputs ambiguous forms, thus all of these numeric forms will need to be fixed and hardcoded in core, even if they're implemented internally as pluggable parsefuncs)
+
+
+//**********************************************************************
+// TO DO: the following are shared by both numeric-parser and lexer; where & how best to define? (e.g. on Script[Value]?)
+
+
+typealias ScriptChars = String.CharacterView
+typealias ScriptIndex = ScriptChars.Index
+typealias ScriptRange = Range<ScriptIndex> // position of this token within the original source code (note: this may be different size to Token.value due to white space and operator name normalization)
+
+
+
+//**********************************************************************
 
 
 let gNumericDigits           = Set("01234567890".characters)
@@ -40,99 +63,15 @@ let gHexadecimalMap: [Character:UInt8] = ["0":0, "1":1, "2":2, "3":3, "4":4,
                                           "a":10, "b":11, "c":12, "d":13, "e":14, "f":15]
 
 
-/**********************************************************************/
-
-
-typealias NumericUnit = String // eventually this will be object/struct (prob. not enum as it needs to be extensible) describing measurement system, unit name, unit aliases, unit conversions
-
-
-
-// TO DO:
-
-struct NumericUnits {
-    // caution: while both prefixes and suffixes can be anything, not all can be written as unquoted text, which is the preferred form
-    let prefixes: [String:NumericUnit] // keys must be dedicated symbols to avoid collisions with unquoted names, e.g. "$", "£", "€"
-    let suffixes: [String:NumericUnit] // keys can be anything as long as they don't contain reserved characters, e.g. "kg", "g", "mg", "°C"
-}
-
-let gDefaultNumericUnits = NumericUnits(prefixes: [:], suffixes: [:])
-
-
-/**********************************************************************/
-
-
-enum Scalar { // TO DO: what about including normalized representation, either here or in Numeric enum? (for display purposes entire representation wants to be in outermost; for decomposition it wants to be split into each)
-    case Integer(Int)
-    case FloatingPoint(Double)
-    case Overflow(String) // string is original representation
-    // TO DO: date, time, what else? (note: am inclined to hardcode these)
-    case UTF8EncodedString(String) // sequence of one or more UTF8 codepoints, e.g. `0u41+9+E2889E` -> "A\t∞"
-    case Malformed(String, NumericError) // invalid codepoint (i.e. out of range)
-    
-    // TO DO: could this implement reader?
-    
-    static func makeInt(code: ScriptChars, isNegative: Bool, radix: Int = 10) -> Scalar {
-        if let number = Int(String(code), radix: radix) {
-            return .Integer(isNegative ? -number : number)
-        } else {
-            return .Overflow(String(code))
-        }
-    }
-    
-    static func makeDouble(code: ScriptChars, isNegative: Bool) -> Scalar {
-        if let number = Double(String(code)) {
-            return .FloatingPoint(isNegative ? -number : number)
-        } else {
-            return .Overflow(String(code))
-        }
-    }
-    
-    var asInt: Int? {
-        switch self {
-        case .Integer(let n):       return n
-        case .FloatingPoint(let n): return n % 1 == 0 ? Int(n) : nil
-        default:                    return nil
-        }
-    }
-    
-    var asDouble: Double? {
-        switch self {
-        case .Integer(let n):       return Double(n)
-        case .FloatingPoint(let n): return n
-        case .Overflow:             return Double.infinity // TO DO: should this return nil, same as `asInt`?
-        default:                    return nil
-        }
-    }
-    
-    // what about other representations? e.g. stringValue might convert CodePoint to String, but might also return literal representation of int/double too
-}
-
-typealias Unit = String
-
-
-enum Numeric {
-    case Number(Scalar)
-    case Text(String) // unwrap Scalar.UTF8EncodedString
-    case Quantity(Unit?, Scalar, Unit?) // note: one or both Unit values will be non-nil; e.g. `$` prefix, `kg` suffix; note that `(`, `)` are valid prefix and suffix (negation) in accountancy representation
-    // TO DO: Vector? (TBH, that can be added if/when the need arises, e.g. as Array<Scalar>; as with dates, times, and other numerical data, the best representation will be determined by the implemented solution)
-    case Malformed(String, NumericError) // String is word; NumericError indicates problem
-}
-
-enum NumericError { // TO DO: decide how best to implement (e.g. read word to completion, and include string representation and code range in error)
-    case UnknownUnit // unknown unit suffix (note that unknown prefixes will result in word being read as unquoted name as there's no way to distinguish a non-digit char followed by digit chars from a valid name; it's contingent upon whoever defines unit prefixes not to use characters that are liable to appear at start of proc names, e.g. `a-z`)
-    case InvalidCodePoint
-    case Other
-}
-
-
-
-/**********************************************************************/
-// scan the given code from the specified index, to determine if it starts with a numeric word
+//**********************************************************************
+// parsefuncs (these scan the given code from the specified index, to determine if it starts with a numeric word)
  
  /*
  Notes:
  
  - read funcs should be called in the following order:
+    
+     readUTF8EncodedTextLiteral
  
      readNumberSign
      readUnitPrefix
@@ -177,6 +116,49 @@ private struct CodePointReader: GeneratorType { // used by readHexadecimalNumber
 }
 
 
+// TO DO: gut instinct is to split out readUTF8EncodedTextLiteral as first func to call; we gain nothing really by overloading here (a separate method will duplicate the first few lines, but that's nothing overall and will avoid stinking up Scalar type with String stuff)
+
+
+
+
+func readUTF8EncodedTextLiteral(code: ScriptChars, startIndex: ScriptIndex) -> (Numeric, ScriptIndex)? { // startIndex is for the entire literal (`0u...`)
+    // note: as with readNumber, this function is opportunistic and can be safely called to determine if a literal is a hex value and read and return it if it is, or return nil if not
+    
+    if code[startIndex] != "0" { return nil }
+    var idx = startIndex.successor()
+    let codeLength = code.endIndex
+    if idx == codeLength || !gCodePointPrefix.contains(code[idx]) { return nil }
+    let idx2 = idx.successor()
+    if idx2 == code.endIndex || !gHexadecimalDigits.contains(code[idx2]) { return nil } // check prefix is followed by a hex digit
+    // we don't know if there's an even or odd no. of digits until after they've all been read, so read each char as 4-bit int...
+    var subCodePoints = [UInt8]()
+    repeat {
+        var tmp = [UInt8]()
+        idx = idx.successor()
+        while idx < code.endIndex && gHexadecimalDigits.contains(code[idx]) { // each sequence of contiguous hex digits represents a single codepoint
+            tmp.append(gHexadecimalMap[code[idx]]!)
+            idx = idx.successor()
+        }
+        if tmp.count % 2 != 0 { tmp.insert(0, atIndex: 0) } // ...then pad as needed to ensure an even number of items when done...
+        subCodePoints.appendContentsOf(tmp) // ...and append to collection
+    } while idx < code.endIndex && gCodePointSeparator.contains(code[idx]) // multiple codepoints are written as hex digit sequences separated by `+` chars (note: UTF16/UTF32 codepoints don't need explicit separators as they're fixed length, but UTF16 has endian nastiness and UTF32 is very verbose, and UTF8 is lingua franca)
+    var decoder = UTF8()
+    var codePoints = CodePointReader(subCodePoints: subCodePoints)
+    var result = String.UnicodeScalarView()
+    var isChar = true
+    while isChar {
+        switch decoder.decode(&codePoints) {
+        case .Result(let c):
+            result.append(c)
+        case .EmptyInput:
+            isChar = false
+        case .Error:
+            return (.Invalid(String(code[startIndex..<idx]), .InvalidCodePoint), idx)
+        }
+    }
+    return (.UTF8EncodedString(String(result)), idx)
+}
+
 
 
 
@@ -186,54 +168,14 @@ func readHexadecimalNumber(code: ScriptChars, startIndex: ScriptIndex, isNegativ
     let codeLength = code.endIndex
     let typeCodeIndex = startIndex.successor()
     if typeCodeIndex == codeLength || !gAllHexPrefixes.contains(code[typeCodeIndex]) { return nil } // check for second char in prefix
-    let firstHexDigitIndex = typeCodeIndex.successor()
-    if firstHexDigitIndex == code.endIndex || !gHexadecimalDigits.contains(code[firstHexDigitIndex]) { // check prefix is followed by a hex digit
-        return (Scalar.Integer(0), typeCodeIndex) // otherwise it's just a `0` with an `X`/`U` suffix
-    }
+    var idx = typeCodeIndex.successor()
+    if idx == code.endIndex || !gHexadecimalDigits.contains(code[idx]) { return (Scalar.Integer(0), typeCodeIndex) } // check prefix is followed by a hex digit otherwise it's just a `0` with an `X`/`x` suffix
     var chars = String.CharacterView()
-    if gHexadecimalPrefix.contains(code[typeCodeIndex]) { // read remaining chars as [signed] hexadecimal integer between Int.min and Int.max
-        var idx = firstHexDigitIndex
-        if isNegative { chars.append("-") } // re-add sign
-        while idx < code.endIndex && gHexadecimalDigits.contains(code[idx]) {
-            chars.append(code[idx])
-            idx = idx.successor()
-        }
-        if let value = Int(String(chars), radix: 16) {
-            return (Scalar.Integer(value), idx)
-        } else {
-            return (Scalar.Overflow(String(code[firstHexDigitIndex..<idx])), idx)
-        }
-    } else { // read remaining chars as one or more hex-encoded UTF8 codepoints
-        if isNegative { return nil } // TO DO: how best to deal with `-` prefix? e.g. `-0u30` isn't really valid; for now, the word will be read as `-0` integer followed by [presumably unknown] unit suffix `u30`
-        var idx = typeCodeIndex
-        // we don't know if there's an even or odd no. of digits until after they've all been read, so read each char as 4-bit int...
-        var subCodePoints = [UInt8]()
-        repeat {
-            var tmp = [UInt8]()
-            idx = idx.successor()
-            while idx < code.endIndex && gHexadecimalDigits.contains(code[idx]) { // each sequence of contiguous hex digits represents a single codepoint
-                tmp.append(gHexadecimalMap[code[idx]]!)
-                idx = idx.successor()
-            }
-            if tmp.count % 2 != 0 { tmp.insert(0, atIndex: 0) } // ...then pad as needed to ensure an even number of items when done...
-            subCodePoints.appendContentsOf(tmp) // ...and append to collection
-        } while idx < code.endIndex && gCodePointSeparator.contains(code[idx]) // multiple codepoints are written as hex digit sequences separated by `+` chars (note: UTF16/UTF32 codepoints don't need explicit separators as they're fixed length, but UTF16 has endian nastiness and UTF32 is very verbose, and UTF8 is lingua franca)
-        var decoder = UTF8()
-        var codePoints = CodePointReader(subCodePoints: subCodePoints)
-        var result = String.UnicodeScalarView()
-        var isChar = true
-        while isChar {
-            switch decoder.decode(&codePoints) {
-            case .Result(let c):
-                result.append(c)
-            case .EmptyInput:
-                isChar = false
-            case .Error:
-                return (.Malformed(String(code[startIndex..<idx]), .InvalidCodePoint), idx)
-            }
-        }
-        return (.UTF8EncodedString(String(result)), idx)
+    while idx < code.endIndex && gHexadecimalDigits.contains(code[idx]) {
+        chars.append(code[idx])
+        idx = idx.successor()
     }
+    return (try! Scalar(int: chars, isNegative: isNegative, radix: 16), idx) // note: parsefunc has already verified it's valid so this should never throw exception unless there's a bug
 }
 
 
@@ -261,13 +203,13 @@ func readDecimalNumber(code: ScriptChars, startIndex: ScriptIndex, allowExponent
             repeat { // it's a decimal number, so scan to end of contiguous digits (fractional part)
                 idx = idx.successor()
             } while idx < codeLength && gNumericDigits.contains(code[idx])
-            scalar = Scalar.makeDouble(code[firstDigitIndex..<idx], isNegative: isNegative)
+            scalar = try! Scalar(double: code[firstDigitIndex..<idx], isNegative: isNegative)
         } else { // no digit after period (i.e. the period is an expression separator, not decimal separator), so it's a suffix-less integer
             idx = idx.predecessor()
-            return (Scalar.makeInt(code[firstDigitIndex..<idx.predecessor()], isNegative: isNegative), idx) // ...and return it, as we're done
+            return (try! Scalar(int: code[firstDigitIndex..<idx.predecessor()], isNegative: isNegative), idx) // ...and return it, as we're done
         }
     } else {
-        scalar = Scalar.makeInt(code[firstDigitIndex..<idx], isNegative: isNegative)
+        scalar = try! Scalar(int: code[firstDigitIndex..<idx], isNegative: isNegative)
     } // else it's an integer/double with an exponent
 
     if idx < codeLength && allowExponent && gExponentSeparator.contains(code[idx]) { // check for possible exponent (if allowed)
@@ -277,28 +219,20 @@ func readDecimalNumber(code: ScriptChars, startIndex: ScriptIndex, allowExponent
             idx = endIndex
             var exponent: Double = 0
             var result: Double = 0
-            var error: NumericError? = nil
+            var hasOverflow: Bool = false
             switch exponentScalar {
             case .Integer(let e):        exponent = pow(10.0, Double(e))
             case .FloatingPoint(let e):  exponent = pow(10.0, e)
-            case .Overflow:              exponent = Double.infinity
-            case .Malformed(_, let e):   error = e
-            default:                     error = .Other // (in practice this never happens as .UTF8EncodedString is only returned by readHexadecimalNumber)
+            case .Overflow:              hasOverflow = true
             }
-            if error == nil {
+            if !hasOverflow {
                 switch scalar {
                 case .Integer(let n):        result = Double(n) * exponent
                 case .FloatingPoint(let n):  result = n * exponent
-                case .Overflow:              result = Double.infinity
-                case .Malformed(_, let e):   error = e
-                default:                     error = .Other // ditto
+                case .Overflow:              hasOverflow = true
                 }
             }
-            if error == nil {
-                scalar = result == Double.infinity ? .Overflow(String(code[startIndex..<endIndex])) : .FloatingPoint(result)
-            }else {
-                scalar = .Malformed(String(code[startIndex..<endIndex]), error!)
-            }
+            scalar = hasOverflow ? .Overflow(String(code[startIndex..<endIndex]), Double.self)  : .FloatingPoint(result)
         }
     }
     return (scalar, idx)
@@ -317,30 +251,41 @@ func isNumericWord(code: ScriptChars, startIndex: ScriptIndex, numericUnits: Num
 
 
 
-func readNumericWord(code: ScriptChars, startIndex: ScriptIndex, numericUnits: NumericUnits = gDefaultNumericUnits) -> (value: Numeric, endIndex: ScriptIndex)? {
+// TO DO: pass optional flag indicating if value should be decimal number only, dec or hex, and/or UTF8-encoded text (TBH, would be better if this was all determined by chaining modular parsefuncs, allowing any combination of acceptable forms to be specified, including more complex forms such as dates and times)
+
+// TO DO: if no match, return (.NotNumber, startIndex) instead of nil? (would provide a bit more consistency, and allows Text to be annotated as non-numeric for future reference)
+
+func readNumericWord(code: ScriptChars, startIndex: ScriptIndex, numericUnits: NumericUnits = gDefaultNumericUnits) -> (value: Numeric, endIndex: ScriptIndex)? { // returns `nil` if not a number
+    // note: this does not accept leading whitespace and ignores trailing whitespace
     // note: this does *not* read to end of word as the rest of word may include symbol operators, e.g. `2.5cm*10` which need to be processed separately; instead, it reads to end of number/unit suffix and returns the index of the next char; the lexer should then continue to read, and report an "unknown suffix/malformed numeric" error if it doesn't find either a reserved char or a valid operator; in the case of a string->number typespec, it should scan to end of string, checking that only whitespace (which can be safely ignored) remains
+    if let result = readUTF8EncodedTextLiteral(code, startIndex: startIndex) { return result } // returns either .UTF8EncodedString (or .Invalid if malformed) or nil if no match was made
     var (isNegative, idx) = readNumberSign(code, startIndex: startIndex)
     // TO DO: readUnit using numericUnits.prefixes
     let scalar: Scalar
-    if let (result, endIndex) = readHexadecimalNumber(code, startIndex: startIndex, isNegative: isNegative)
-        ?? readDecimalNumber(code, startIndex: startIndex, isNegative: isNegative) {
-            scalar = result
-            idx = endIndex
+    if let (result, endIndex) = readHexadecimalNumber(code, startIndex: startIndex, isNegative: isNegative) ?? readDecimalNumber(code, startIndex: startIndex, isNegative: isNegative) {
+        scalar = result
+        idx = endIndex
     } else {
         return nil
     }
     // TO DO: readUnit using numericUnits.suffixes
     let numeric: Numeric
     switch scalar {
-    case .UTF8EncodedString(let s): numeric = .Text(s) // TO DO: error if units or isNegative
-    case .Malformed(_, let e):      numeric = .Malformed(String(code[startIndex..<idx]), e)
-    default:                        numeric = .Number(scalar)
+    case .Overflow(_, let t):   numeric = .Invalid(String(code[startIndex..<idx]), .Overflow(t))
+    default:                    numeric = .Number(scalar)
     }
     return (numeric, idx)
 }
 
 
+// utility func
+
+let gAnyWhiteSpace = " \t\n\r".characters
+
+func skipWhiteSpace(code: ScriptChars, var startIndex idx: ScriptIndex) -> ScriptIndex { // scans chars, starting at startIndex, until it finds first non-whitespace char (or code.endIndex) and returns its index
+    while idx < code.endIndex && gAnyWhiteSpace.contains(code[idx]) { idx = idx.successor() }
+    return idx
+}
 
 
 
-    

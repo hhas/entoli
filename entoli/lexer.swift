@@ -16,7 +16,7 @@
 private let DEBUG = false
 
 
-/**********************************************************************/
+//**********************************************************************
 
  
 private struct PartialOperatorMatch<T:Hashable> {
@@ -34,7 +34,7 @@ private struct PartialOperatorMatch<T:Hashable> {
 }
 
 
-/**********************************************************************/
+//**********************************************************************
 
 
 class Lexer {
@@ -79,7 +79,7 @@ class Lexer {
     static let reservedCharacters = Set(quoteDelimiters.keys).union(Set(annotationDelimiters.keys))
         .union(Set(punctuation.keys)).union(Set(nonBreakingWhiteSpace)) // note: VocabularyTokenizer should never overload or redefine these tokens; e.g. to read an unquoted decimal number, it should look for digit[s]+ExpressionSeparator+digit[s]
     
-    /**********************************************************************/
+    //**********************************************************************
     // Initialization
     
     let code: ScriptChars
@@ -99,7 +99,7 @@ class Lexer {
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
     // supporting methods used by readVocabulary
     
     private typealias PartialPhraseOperatorMatch = PartialOperatorMatch<Operators.Phrase.Element>
@@ -228,7 +228,7 @@ class Lexer {
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
     // Vocabulary reader (used by main tokenizer function to process unquoted word sequences)
     
     
@@ -392,7 +392,7 @@ class Lexer {
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
      // Tokenizer
     
     
@@ -470,7 +470,7 @@ class Lexer {
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
      // Public interface
     
     

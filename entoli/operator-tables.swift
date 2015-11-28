@@ -5,6 +5,9 @@
 //
 
 
+// note: given need to load operator tables during parsing, it makes sense for non-trivial 'scripts' to be defined as a folder (probably with same filename sequence as single text file), each of which is parsed using whatever operators are specified by file's top-level imports, but all of which are evaluated in same namespace
+
+
 // caution: symbol-based operator names, unlike other names, are case-sensitive; not sure if this should be a 'feature', though given that symbol names should never contain alphanumerics hopefully it'll end up being a non-issue anyway
 
 // TO DO: what about symbols such as `π` (`pi`) or `∅` (`empty set`)? these would need to be defined as atoms, not commands, to ensure they don't try to take next token as argument (their long ASCII names might be defined as either atomic phrase, or left as commands that throw error if given an argument - and assuming they're available during editing could give a warning, or autocorrect, even then).
@@ -19,33 +22,45 @@
 
 // TO DO: should `no value`, `did nothing` be defined as Atom ops or commands? (Atoms would be safer in that these _never_ take an arg; not sure if they should self-delimit though, and given they're really only intended as return values it's not very useful if they did, so probably best use .None)
 
+// note: entering unicode operators (e.g. for set operations) is a client-side problem; rather than defining phrase-based aliases for all [non-ASCII] symbolic operators, implement input assistance in editor where a Cmd-key press switches text entry to mnemonic input mode that allows user to type some or all of unicode character's standard name, fuzzy matching it against names of known operator symbols a-la auto-completion (basically a streamlined, inline variation on the standard Emoji+Symbols palette, without the need to muck with actual palettes); TBH, such a fuzzy auto-suggest+complete mechanism could probably be generalized for all commands and operators (might want to review Raskin)
+
 
 // TO DO: `do EXPR using {NAME:VALUE,...}` operator for binding free names in expression and evaling it? Note: probably best way to allow proc objects to be manipulated as values is to use `as expression` operator, e.g. `my func: (uppercase of standard library) as expression`, though that still leaves questions on how best to invoke it and pass arguments. (It is also a little fuzzy on the meaning of "expression", since here the expression is the reference to the proc object, not the proc object itself. Furthermore, `uppercase as expression` would be expected to work the same. However, both are really capturing the command, not the proc name, and thus not the proc object itself; i.e. `uppercase` would be evaluated as an expression on use, and immediately fail because the command lacks the required argument. Thus it should probably be `as procedure`, to make sure it understands all we're giving it is the name/location of the proc object.) Simply writing `my func "hello"` would work if eval automatically treats all proc object lookups as immediately callable, thus any command name that isn't explicitly cast to expression would lookup and invoke the named procedure. FWIW, this fits with entoli's "say what you want" philosophy, which strongly favors [explicit] instruction-directed behavior rather than [implicit] type-directed behavior (with all the user assumptions about invisible - and largely runtime-specific - information that entails). One particular downside of this usage pattern: `my func` will not be usefully introspectable until the `uppercase of standard library` reference is resolved, which means it is much less useful to editor (at least until it can be evaluated, at which point the editor could even offer to add in signature info in form of an additional cast, or replacing the existing `as procedure` cast with a more precise one: `as procedure {SIGNATURE}`)
 
 // Q. could `EXPR as procedure {SIG}` usefully convert a single/group expression value to a procedure? (this'd certainly be the preferred method, given that entoli strongly favors casts over constructors in order to avoid double-purposed names [i.e. homonyms] as commonly found in AppleScript, e.g. `TEXT as file` vs `file TEXT`)
 
 
-extension CommandValue { // convenience constructors used by operator parsefuncs
+
+
+//**********************************************************************
+// standard operator argument names
+
+
+let gLeftOperandKeyString  = "left"
+let gRightOperandKeyString = "right"
+
+let gLeftOperandName = Name(gLeftOperandKeyString)
+let gRightOperandName = Name(gRightOperandKeyString)
+
+
+//**********************************************************************
+
+
+
+extension Command { // convenience constructors used by operator parsefuncs
     
-    static let _NameLeft    = NameValue(data: "left")
-    static let _NameRight   = NameValue(data: "right")
-    static let _EmptyRecord = RecordValue(data: [])
+    static let _NameLeft    = Name("left")
+    static let _NameRight   = Name("right")
     
-    convenience init(name: String) {
-        self.init(name: NameValue(data: name), data: CommandValue._EmptyRecord)
+    convenience init(_ name: String, leftOperand: Value) {
+        self.init(name, Pair(gLeftOperandName, leftOperand))
     }
-    convenience init(name: String, data: [Value]) {
-        self.init(name: NameValue(data: name), data: RecordValue(data: data))
+    convenience init(_ name: String, leftOperand: Value, rightOperand: Value) {
+        self.init(name, Pair(gLeftOperandName, leftOperand),
+                                     Pair(gRightOperandName, rightOperand))
     }
-    convenience init(name: String, leftOperand: Value) {
-        self.init(name: name, data: [PairValue(name: CommandValue._NameLeft, data: leftOperand)])
-    }
-    convenience init(name: String, leftOperand: Value, rightOperand: Value) {
-        self.init(name: name, data: [PairValue(name: CommandValue._NameLeft, data: leftOperand),
-                                     PairValue(name: CommandValue._NameRight, data: rightOperand)])
-    }
-    convenience init(name: String, rightOperand: Value) {
-        self.init(name: name, data: [PairValue(name: CommandValue._NameRight, data: rightOperand)])
+    convenience init(_ name: String, rightOperand: Value) {
+        self.init(name, Pair(gRightOperandName, rightOperand))
     }
 }
 
@@ -55,34 +70,34 @@ extension CommandValue { // convenience constructors used by operator parsefuncs
 // caution: postfix ops MUST label their operand `gNameRight` to avoid any possible confusion with prefix ops of the same name, as they cannot be distinguished by number of arguments alone (the above convenience constructors will label all operands automatically and are recommended for constructing commands for all unary and binary operators)
 
 func parseAtomOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: operatorName)
+    return Command(operatorName)
 }
 
 func parsePrefixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: operatorName, leftOperand: try parser.parseExpression(precedence))
+    return Command(operatorName, leftOperand: try parser.parseExpression(precedence))
 }
 
 func parseInfixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence))
+    return Command(operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence))
 }
 
 func parseRightInfixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence-1))
+    return Command(operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence-1))
 }
 
 func parsePostfixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: operatorName, rightOperand: leftExpr)
+    return Command(operatorName, rightOperand: leftExpr)
 }
 
 
 // custom parsefuncs
 
 
-func readTypeOperand(parser: Parser, precedence: Int) throws -> CommandValue { // precedence is that of `as` operator
+func readTypeOperand(parser: Parser, precedence: Int) throws -> Command { // precedence is that of `as` operator
     let expr = try parser.parseExpression(precedence) // TO DO: avoid hardcoded values
     switch expr { // TO DO: Value classes should implement cast methods, avoiding need for switches
-    case is CommandValue: return expr as! CommandValue
-    case is NameValue: return CommandValue(name: expr, data: CommandValue._EmptyRecord)
+    case is Command: return expr as! Command
+    case is Name: return Command(name: expr as! Name)
     default: throw SyntaxError(description: "Expected type command after `as` operator but found \(expr.dynamicType): \(expr)")
     }
 }
@@ -98,15 +113,14 @@ func parseGeneralComparisonOperator(parser: Parser, leftExpr: Value!, operatorNa
     var operands = [leftExpr!, rightOperand]
     if nextToken.type == .Operator && nextToken.value == gAsOperatorName { // TO DO: avoid hardcoded values
         parser.lexer.advance() // advance onto .Operator("as") token
-        operands.append(PairValue(name: NameValue(data: gAsOperatorName),
-                                  data: try readTypeOperand(parser, precedence: gAsOperatorPrecedence)))
+        operands.append(Pair(Name(gAsOperatorName), try readTypeOperand(parser, precedence: gAsOperatorPrecedence)))
     }
-    return CommandValue(name: operatorName, data: operands)
+    return Command(operatorName, Record(operands))
 }
 
 
 func parseCastOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return CommandValue(name: operatorName, leftOperand: leftExpr, rightOperand: try readTypeOperand(parser, precedence: precedence))
+    return Command(operatorName, leftOperand: leftExpr, rightOperand: try readTypeOperand(parser, precedence: precedence))
 }
 
 
@@ -116,9 +130,7 @@ func parseProcedureDefinition(parser: Parser, leftExpr: Value!, operatorName: St
     // 1. read quoted/unquoted name
     // 2. read record, if given, or require some kind of delimiter (colon? comma?)
     // 3. read group expression; need to decide what structures are appropriate for this, e.g. single line of comma-separated exprs with period terminator (which will require lexer/parser mods), multi-line `do...done` block. bear in mind too that we currently don't have a clearly defined way to express return type; e.g. might define operator as `to SIG: EXPR [returning TYPE]`, though need to consider how well that'd work with single-line exprs (which'd want to put a period after TYPE, not before `returning`)
-    print("TO DO: procedures not yet implemented")
-    // Q.
-    return gNoValue
+    throw NotImplementedError()
 }
 
 
@@ -142,7 +154,7 @@ func parseAtomDoBlock(parser: Parser, leftExpr: Value!, operatorName: String, pr
     if !(lexer.currentToken.type == .Operator && lexer.currentToken.value == "done") {
         throw SyntaxError(description: "Expected end of `do...done` block but found \(lexer.currentToken)")
     }
-    return ExpressionGroupValue(data: result) // TO DO: annotate to indicate it uses `do...done` rather than `(...)` syntax?
+    return ExpressionGroup(expressions: result) // TO DO: annotate to indicate it uses `do...done` rather than `(...)` syntax?
 }
 
 
@@ -179,6 +191,8 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     // note: `+` and `-` right-auto-delimit only (the presence/absence of explicit left-delimiter should be sufficient to distinguish inter-word hyphen from negation/subtraction operator); e.g. `-x` will be read as a prefix `-` (negation) operator with `x` operand, but `foo-bar` will be read as unquoted name where `-` is just an ordinary hyphen character in a hyphenated word (sidenote: `0-9` will still read as infix `-` (subtraction) operator since numbers always self-delimit). Aggressive normalization ("autocorrect") of user code as it is typed should avoid confusion, as symbols determined to be operators will have any "missing" whitespace automatically inserted on each side by pretty printer, and will be styled differently to non-operator chars in editor.
     
     // note: operator names are defined as tuples of form: (canonical/alias name, char/word-based literal, auto-delimit option)
+    
+    // 'calculation' operators
     
     // arithmetic
     (("^", .Symbol, .Full),   500, .Infix,  parseRightInfixOperator, []), // TO DO: what to use as exponent operator? (`^`, `exp`?)
@@ -226,11 +240,15 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     (("is equal to",           .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("eq",                    .Phrase, .Full),
                                                                                               ("is",                    .Phrase, .Left)]),
     
+    // TO DO: `contains`, `is in`, `starts with`, `ends with` operators, and complements (`does not contain`, etc)
+    
     // Boolean
     (("not",     .Phrase, .Right), 100, .Prefix,  parsePrefixOperator, []),
     (("and",     .Phrase,  .Full),  98, .Infix,   parseInfixOperator,  []),
     (("xor",     .Phrase,  .Full),  96, .Infix,   parseInfixOperator,  []), // note: `!=` only works as XOR if both operands are already Bools, whereas `xor` will coerce its operands as necessary, and is visually self-explanatory
     (("or",      .Phrase,  .Full),  94, .Infix,   parseInfixOperator,  []),
+    
+    // 'clause' operators (these *combine* expressions into more complex behaviors)
     
     // cast
     ((gAsOperatorName, .Phrase, .Full), gAsOperatorPrecedence, .Infix, parseCastOperator, []), // note: "as" may also used as optional 'clause' to some 'binary' operators (really multifix operators, e.g. `A is B as C`)
@@ -245,12 +263,14 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     (("catching", .Phrase, .Full),  50, .Infix,   parseInfixOperator,  []), // evaluate LH operand; on error, evaluate RH operand
     (("else",     .Phrase, .Full),  50, .Infix,   parseInfixOperator,  []), // evaluate LH operand; if it returns 'did nothing', evaluate RH operand
     
+    // 'grouping' operators (these group expressions, e.g. as block or procedure)
+    
     // define multi-line expression groups
     // note that `do` and `done` are left-auto-delimited and right-auto-delimited respectively; being intended for writing multi-line expression groups, they should normally be followed/preceded by LineBreak tokens that will explicitly delimit them on the other side. This reduces chance of conflicts when used within a longer
     // expression blocks
     (("do",       .Phrase, .Left),  50, .Atom,    parseAtomDoBlock,    []),
     (("do",       .Phrase, .Left),  50, .Postfix, parsePostfixDoBlock, []),
-    (("done",     .Phrase, .Right),  0, .Atom,    throwMisplacedToken, []), // note: `do` block parsefuncs look for `.Operator(done)` to indicate end of block; if `done` keyword is encountered anywhere else, `throwMisplacedToken` automatically reports a syntax error
+    (("done",     .Phrase, .Right),  0, .Atom,    throwMisplacedToken, []), // note: `do` block parsefuncs look for `.Operator(done)` to indicate end of block; if `done` keyword is encountered anywhere else, `throwMisplacedToken` automatically reports a syntax error // TO DO: still tempted to call this `end`
     
     // define native procedure
     // `to` operator provides cleaner syntax for defining new procs; as a commonly-used word it is auto-right-delimited only to reduce chance of conflicts when used within a longer unquoted name (e.g. `go back to start`), so must appear at start of an expression to act as operator.

@@ -8,6 +8,8 @@
 // note: on balance, I think making commands' bind infinitely tightly is probably best, as it's an easy rule for users to remember
 
 
+// TO DO: parser and/or pretty printer should probably wrap key:value pairs in parens if they appear outside of a list (which is legal, but don't want to confuse `"a":1` for `a:1`; just make sure behavior isn't affected [i.e. would be safer done in parser, wrapping KV Pairs in ExprGroup by default, then doing typecheck prior to inserting into list to determine if that wrapper should be removed again [which is painful way of doing it, but having to do checks everywhere except there would be even worse]])
+
 
 // TO KEEP SYNTAX RULES SIMPLE: numbers and units must start with optional `-`/`+` prefix followed by one of `0123456789`, and cannot contain whitespace, and they ALWAYS self-delimit.
 // (this leaves currency to be decided, probably by allowing currency symbols as additional prefixes)
@@ -59,7 +61,7 @@ class LeftOperandNotFoundError: SyntaxError {}
 class MalformedNumericError: SyntaxError {}
 
 
-/**********************************************************************/
+//**********************************************************************
 
 
 class Parser {
@@ -71,7 +73,7 @@ class Parser {
         self.lexer = lexer
     }
 
-    /**********************************************************************/
+    //**********************************************************************
     // TOKENS
     
     // TO DO: need to maintain cache of punctuation+vocabulary tokens
@@ -93,7 +95,7 @@ class Parser {
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
     // utility funcs; used to clean up collection items
     
     func stripComma(value: Value) -> Value { // used to tidy list items after parsing; TO DO: should this strip _all_ commas? or treat adjoining commas as syntax error/warning (e.g. [1,2,,4] is legal but suggests a typo)? or just leave as-is and leave user to clean up surplus commas in code if it bothers them
@@ -107,7 +109,7 @@ class Parser {
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
     // PARSE RECORD
      
     // TO DO: disallow numericals as record names as they should _always_ be treated as a hardcoded special form (as opposed to operators, which are extensible special form), e.g. {12:00} is a time value, not a name:value pair; note that `{a 0:...}` and `{0a:...}` should probably also be disallowed (or at least discouraged) as those names do not transfer well to command scope (requiring single-quoted to be read as names, not command/numeric unit respectively); probably just requires tweaking Lexer.readUnquotedName() so that readNextToken(ignoreVocabulary:true) only ignores operators, not numerics
@@ -126,7 +128,7 @@ class Parser {
             var isNamedPair: Bool = false
             switch token.type { // note: if item looks like a valid `name:value pair`, need to check pairs' precedence to make sure infix/postfix operators never bind entire pair where they're really intended to bind RH operand only (if they do bind entire pair, it shouldn't break following logic, but it will confuse users since what looks like a named arg is actually a positional one; possibly the safest option is for all operators to have higher precedence than punctuation, and enforce this in OperatorTable; though we will need to watch for 'stray' punctuation getting sucked up in LH operand when it's supposed to delimit it)
             case .RecordLiteralEnd:
-                return RecordValue(data: result) // double-check this leaves us at correct position
+                return Record(result) // double-check this leaves us at correct position
             case .EndOfCode:
                 throw EndOfCodeError(description: "[1a] End of code.")
             case .QuotedName, .UnquotedName: // item is of form `'NAME':...` or `NAME:...` 
@@ -137,7 +139,7 @@ class Parser {
             }
             let value: Value
             if isNamedPair {
-                value = self.stripComma(try self.parseOperation(NameValue(data: token.value)))
+                value = self.stripComma(try self.parseOperation(Name(token.value)))
             } else {
  //               print("...backtrack from \(self.lexer.currentTokenIndex): (\(self.lexer.currentToken))")
                 self.lexer.backtrackTo(backtrackIndex, flush: true)
@@ -147,7 +149,7 @@ class Parser {
  //               print("READ ITEM:", value)
             }
             // additional validity checks
-            if (value.dynamicType == PairValue.self) != isNamedPair { // note: this also disallows `name:value` pair if it's subsequently parsed as LH operand to a lower-precedence operator (technically, this would be a legal positional value, but visually it would be confusing so we disallow it; if users want to apply a low-precedence operator to pair's RH value, they'll need to explicitly parenthesize it)
+            if (value.dynamicType == Pair.self) != isNamedPair { // note: this also disallows `name:value` pair if it's subsequently parsed as LH operand to a lower-precedence operator (technically, this would be a legal positional value, but visually it would be confusing so we disallow it; if users want to apply a low-precedence operator to pair's RH value, they'll need to explicitly parenthesize it)
                 throw SyntaxError(description: "Bad record item (pairs within records must have a literal name): \(value)")
             }
             result.append(value)
@@ -156,12 +158,12 @@ class Parser {
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
     // PARSE COMMAND ARGUMENT
     
-    private func parseArgument(name: NameValue) throws -> Value {
+    private func parseArgument(name: Name) throws -> Value {
         // called by parseAtom after parsing a quoted/unquoted name
-        // given a NameValue, return a CommandValue if it's followed by a valid argument, otherwise return NameValue unchanged
+        // given a Name, return a CommandValue if it's followed by a valid argument, otherwise return Name unchanged
         // note: command name and argument will always bind more tightly to each other than to operators
         // note: this is right-associative, so `'foo' 'bar' 'baz'` will parse as `foo {bar {baz}}`
         if DEBUG {print("parseArgument (if any) for name: \(name)")}
@@ -174,24 +176,24 @@ class Parser {
         } catch is LeftOperandNotFoundError { // parseAtom() found an infix operator; return name and let parseOperation deal with it
             argument = nil
         }
-        if argument == nil { // name is not followed by a new expression, so it is either just a name or an argument-less command; in either case, return it unchanged as NameValue
+        if argument == nil { // name is not followed by a new expression, so it is either just a name or an argument-less command; in either case, return it unchanged as Name
             self.lexer.backtrackTo(backtrackIndex)
             if DEBUG {print("... no argument found, so parseArgument backtracked to \(self.lexer.currentToken)")}
             return name // TO DO: if next token is `do...done` block (a postfix structure), confirm that this gets attached to command correctly (note that its parsefunc will need to cast name to command first)
         } else {
-            if !(argument is RecordValue) { argument = RecordValue(data: [argument!]) } // non-record values are treated as first item in a record arg
-            // any pairs in argument record *must* have NameValue as LH operand (in theory, they could be treated as positional if LH is non-name, but this will likely cause user confusion), so check and throw syntax error if not (e.g. to pass a pair as a positional arg, just wrap in parens, though bear in mind how it's evaled will depend on context)
-            for (i, item) in (argument as! RecordValue).data.enumerate() {
-                if item is PairValue && !((item as! PairValue).name is NameValue) {
+            if !(argument is Record) { argument = Record([argument!]) } // non-record values are treated as first item in a record arg
+            // any pairs in argument record *must* have Name as LH operand (in theory, they could be treated as positional if LH is non-name, but this will likely cause user confusion), so check and throw syntax error if not (e.g. to pass a pair as a positional arg, just wrap in parens, though bear in mind how it's evaled will depend on context)
+            for (i, item) in (argument as! Record).fields.enumerate() {
+                if item is Pair && !((item as! Pair).key is Name) {
                     throw SyntaxError(description: "Malformed record argument for \(name) command: item \(i+1) is a name-value pair, but its left side is not a literal name: \(item)")
                 }
             }
-            return CommandValue(name: name, data: argument!) // TO DO: if next token is a postfix `do...done` block, confirm that this gets attached to command correctly (i.e. its parsefunc should coerce its LH operand to Command, then add parsed block to it)
+            return Command(name: name, argument: argument!) // TO DO: if next token is a postfix `do...done` block, confirm that this gets attached to command correctly (i.e. its parsefunc should coerce its LH operand to Command, then add parsed block to it)
         }
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
     // PARSE EXPRESSION
     
     private func parseAtom(precedence: Int = 0) throws -> Value? { // parse atom or prefix op (i.e. no left operand)
@@ -215,7 +217,7 @@ class Parser {
                 result.append(value)
             }
             try self.lexer.skip(.ListLiteralEnd) // TO DO: skip is only really needed to throw error if code terminates without closing `]`
-            return ListValue(data: result)
+            return List(items: result)
         case .RecordLiteral: // {...}; a sequence of values and/or name-value pairs; mostly used to pass proc args
             return try self.parseRecord()
         case .ExpressionGroupLiteral: // (...)
@@ -225,26 +227,30 @@ class Parser {
                 result.append(value)
             }
             try self.lexer.skip(.ExpressionGroupLiteralEnd)
-            return ExpressionGroupValue(data: result)
+            return ExpressionGroup(expressions: result)
             // atomic literals
         case .QuotedText: // "..." // a text (string) literal
-            return TextValue(data: token.value)
+            return Text(token.value)
         case .QuotedName: // '...' // an explicitly delimited name literal
-            // if next significant token is another expr, treat it as an RH operand (i.e. argument) and emit CommandValue, else return NameValue
-            return try self.parseArgument(NameValue(data: token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
+            // if next significant token is another expr, treat it as an RH operand (i.e. argument) and emit CommandValue, else return Name
+            return try self.parseArgument(Name(token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
             // VOCABULARY TOKENS
         case .NumericWord:
             guard let numericInfo = token.numericInfo else { throw SyntaxError(description: "BUG: Numeric data is missing") } // note: this should never happen
             switch numericInfo {
-            case .Malformed(let word, let error):
+            case .Invalid(let word, let error):
                 throw SyntaxError(description: "Malformed numeric literal (\(error)): `\(word)`")
+            case .UTF8EncodedString(let string): // UTF8-encoded text literal, `0u...`
+                let result = Text(string)
+                result.annotations.append(token.value) // if .UTF8EncodedText, use that as text value and annotate with original UTF8-encoded literal for display purposes // TO DO: cleaned-up literal should prob. be supplied by .Text
+                return result
             default:
-                let result = TextValue(data: token.value)
+                let result = Text(token.value)
                 result.annotations.append(numericInfo) // TO DO: how to implement annotation API?
                 return result
             }
         case .UnquotedName:
-            return try self.parseArgument(NameValue(data: token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
+            return try self.parseArgument(Name(token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
         case .Operator:
             if true {print("\nparseAtom got Operator: \(token.prefixOperator) \(token.infixOperator)")}
             guard let operatorDefinition = token.prefixOperator else {
@@ -281,11 +287,10 @@ class Parser {
                 return ExpressionSeparator(data: leftExpr) // as with linebreak token, period token (`.`) indicates end of expression (e.g. `1. - 2` is two expressions, not an operation), so is a no-op // TO DO: is it safe to return leftExpr without preserving period? any use cases where that would cause problems?
             case .ItemSeparator: // comma separator is normally used to separate list and record items; here it acts as an expression separator, though period separators are strongly preferred to avoid confusion
                 return ItemSeparator(data: leftExpr) // ditto
-            case .PairSeparator: // colon pair
-                leftExpr = PairValue(name: leftExpr, data: try self.parseExpression(TokenType.PairSeparator.precedence-1))
-            case .PipeSeparator: // semicolon pair
-                // TO DO: would it be better to append RH expr to LH expr? (i.e. evaling LH expr would cause it to eval remaining piped commands as well, returning final result) or is it simplest just to have an object that specifically does this? (one issue with chaining [command] values is whether to go left-to-right or right-to-left; not that PipeValue exactly solves that)
-                leftExpr = PipeValue(leftExpr: leftExpr, rightExpr: try self.parseExpression(TokenType.PipeSeparator.precedence))
+            case .PairSeparator: // found colon separator for key:value pair
+                leftExpr = Pair(leftExpr, try self.parseExpression(TokenType.PairSeparator.precedence-1))
+            case .PipeSeparator: // found semicolon separator, indicating leftExpr should be used as first field in RH command's arg list (which in turn requires that RH actually be a command, something further complicated by RH being parenthesizable) // TO DO: FIX; transform `foo{...};bar{...}` into `bar{foo{...},...}`, annotating `foo` command with formatting preference (i.e. `;` should be purely syntactic sugar, with no semantic representation); also note that rightExpr must be a command (possibly in parens) and `;` needs to bind to it like glue, much as command-arg pairs already do (i.e. no operator should have higher precedence)
+                leftExpr = Pipe(leftExpr, try self.parseExpression(TokenType.PipeSeparator.precedence)) // TO DO: eliminate `Pipe` type
                 // VOCABULARY TOKENS
             case .Operator:
                 if DEBUG {print("\nparseOperation got Operator: \(token.prefixOperator) \(token.infixOperator)")}
@@ -312,7 +317,7 @@ class Parser {
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
     // parse a single expression (i.e. a single atom or prefix operation, followed by zero or more infix and/or postfix operations on it)
     
     
@@ -332,7 +337,7 @@ class Parser {
     }
     
     
-    /**********************************************************************/
+    //**********************************************************************
     // PARSE SCRIPT
     
     
@@ -343,7 +348,7 @@ class Parser {
             if DEBUG {print("TOP-LEVEL parse() completed expr: \(result.last)")}
             self.lexer.flush()
         }
-        return EntoliScript(data: result)
+        return EntoliScript(expressions: result)
     }
 }
 

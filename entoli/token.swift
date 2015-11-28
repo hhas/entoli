@@ -5,7 +5,7 @@
 //
 
 
-/**********************************************************************/
+//**********************************************************************
 // operator definition
 
 
@@ -52,12 +52,8 @@ typealias OperatorDefinition = (name: OperatorName, precedence: Int, form: Opera
 typealias OperatorDefinitions = (prefixDefinition: OperatorDefinition?, infixDefinition: OperatorDefinition?)
 
 
-/**********************************************************************/
+//**********************************************************************
 // token
-
-typealias ScriptChars = String.CharacterView
-typealias ScriptIndex = ScriptChars.Index
-typealias ScriptRange = Range<ScriptIndex> // position of this token within the original source code (note: this may be different size to Token.value due to white space and operator name normalization)
 
 
 let gOperatorDefinedPrecedence = -2

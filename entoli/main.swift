@@ -34,7 +34,9 @@ let source: String
 
 //source = " guess: random number {1 thru 10} as lazy. "
 
-source = " to foo bar {} do \n this, that, the other 42 \n done."
+//source = " to foo bar {} do \n this, that, the other 42 \n done."
+
+source = " [a:1], (b:2), {c:3}, d:4, \"e\":5  "
 
 let lexer = Lexer(code: source)
 
@@ -87,5 +89,42 @@ do {
 //for d in (opt.operatorDefinitionsByWord) {print(d.0)}
 
 //print(ops.infixDefinitions["is"])
+
+
+
+do {
+    
+    let value = Text("2")
+    
+    //print(a)
+    
+    //print(try a.toScalar())
+    
+    let env = Scope()
+    
+    try loadLibrary(env)
+    /*
+    print("EVALED:", try value.evaluate(env, returnType: TextCoercion()))   // -> "2" (Text)
+    print("EVALED:", try value.evaluate(env, returnType: StringCoercion())) // -> "2" (String)
+    print("EVALED:", try value.evaluate(env, returnType: IntCoercion()))    // -> 2   (Int)
+    print("EVALED:", try value.evaluate(env, returnType: DoubleCoercion())) // -> 2.0 (Double)
+    
+    let command = Command("+", value, Text("3"))
+    let result = try env.callProcedure(command, returnType: AnyCoercion(), commandScope: env)
+    print("CMD:", command, "RES:", result) // -> `'+' {"2", "3"}` -> Text("5.0")
+    
+    print(try env.callProcedure(Command("nothing"), returnType: AnyCoercion(), commandScope: env)) // -> 'nothing'
+    
+    try env.store(Name("wibble")) // define a named "constant" (i.e. a name that evals to itself)
+    print(try env.callProcedure(Command("wibble"), returnType: AnyCoercion(), commandScope: env)) // -> 'wibble'
+    
+    */
+    
+    print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: IntCoercion())))   // -> Thunk("2", IntCoercion)
+    print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: IntCoercion())).evaluate(env, returnType: gAnyCoercion)) // incorrect; currently returns Text
+    
+} catch { print(error) }
+
+
 
 
