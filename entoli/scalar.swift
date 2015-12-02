@@ -167,31 +167,39 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
 // generic helper functions for basic arithmetic and numerical comparisons
 
 
-func scalarArithmeticOperation(lhs: Scalar, _ rhs: Scalar, intOperator: (Int,Int)->(Int,Bool), doubleOperator: (Double,Double)->Double) throws -> Scalar {
+func scalarArithmeticOperation(lhs: Scalar, _ rhs: Scalar, intOperator: ((Int,Int)->(Int,Bool))?, doubleOperator: (Double,Double)->Double) throws -> Scalar {
     switch (lhs, rhs) {
     case (.Integer(let leftOp), .Integer(let rightOp)):
-        let (result, isOverflow) = intOperator(leftOp, rightOp)
-        // TO DO: how best to deal with integer overflows? switch to Double automatically? (i.e. loses precision, but allows operation to continue)
-        return isOverflow ? .Overflow(String(doubleOperator(try lhs.toDouble(), try rhs.toDouble())), Int.self) : Scalar(result)
-    default:
+        if let op = intOperator {
+            let (result, isOverflow) = op(leftOp, rightOp)
+            // TO DO: how best to deal with integer overflows? switch to Double automatically? (i.e. loses precision, but allows operation to continue)
+            return isOverflow ? .Overflow(String(doubleOperator(try lhs.toDouble(), try rhs.toDouble())), Int.self) : Scalar(result)
+        } else {
+            return try Scalar(doubleOperator(lhs.toDouble(), rhs.toDouble()))
+        }
+    default: // TO DO: this should be improved so that if one number is Int and the other is a Double that can be accurately represented as Int then Int-based operation is tried first; if that overflows then fall back to using Doubles; note that best way to do this may be to implement Scalar.toBestRepresentation() that returns .Integer/.FloatingPoint after first checking if the latter can be accurately represented as an Integer instead
         return try Scalar(doubleOperator(lhs.toDouble(), rhs.toDouble()))
     }
 }
 
 func scalarComparisonOperation(lhs: Scalar, _ rhs: Scalar, intOperator: (Int,Int)->Bool, doubleOperator: (Double,Double)->Bool) throws -> Bool {
     switch (lhs, rhs) {
-    case (.Integer(let leftOp), .Integer(let rightOp)):    return intOperator(leftOp, rightOp)
-    default:                                        return try doubleOperator(lhs.toDouble(), rhs.toDouble())
+    case (.Integer(let leftOp), .Integer(let rightOp)):
+        return intOperator(leftOp, rightOp)
+    default:
+        return try doubleOperator(lhs.toDouble(), rhs.toDouble()) // TO DO: as above, use Int-based comparison where possible (casting an Int to Double is lossy in 64-bit, which may affect correctness of result when comparing a high-value Int against an almost equivalent Double)
+        // TO DO: when comparing Doubles for equality, use almost-equivalence as standard? (e.g. 0.7*0.7=0.49 will normally return false due to rounding errors in FP math, which is likely to be more confusing to users than if the test is fudged)
     }
 }
 
 
 //**********************************************************************
-// arithmetic and comparison operators
+// Arithmetic and comparison operators are defined on Scalar so that primitive procs can perform basic
+// numerical operations without having to check or care about underlying representations (Int or Double).
 
 
-typealias ScalarArithmeticFunc = (Scalar, Scalar) throws -> Scalar
-typealias ScalarComparisonFunc = (Scalar, Scalar) throws -> Bool
+typealias ScalarArithmeticFunction = (Scalar, Scalar) throws -> Scalar
+typealias ScalarComparisonFunction = (Scalar, Scalar) throws -> Bool
 
 
 func +(lhs: Scalar, rhs: Scalar) throws -> Scalar {
@@ -204,14 +212,24 @@ func *(lhs: Scalar, rhs: Scalar) throws -> Scalar {
     return try scalarArithmeticOperation(lhs, rhs, intOperator: Int.multiplyWithOverflow, doubleOperator: *)
 }
 func /(lhs: Scalar, rhs: Scalar) throws -> Scalar {
-    return try scalarArithmeticOperation(lhs, rhs, intOperator: Int.divideWithOverflow, doubleOperator: /)
+    return try scalarArithmeticOperation(lhs, rhs, intOperator: nil, doubleOperator: /)
 }
 func %(lhs: Scalar, rhs: Scalar) throws -> Scalar {
-    return try scalarArithmeticOperation(lhs, rhs, intOperator: Int.remainderWithOverflow, doubleOperator: %)
+    return try scalarArithmeticOperation(lhs, rhs, intOperator: nil, doubleOperator: %)
 }
 func pow(lhs: Scalar, rhs: Scalar) throws -> Scalar {
     return Scalar(try pow(lhs.toDouble(), rhs.toDouble()))
 }
+func integerDivision(lhs: Scalar, rhs: Scalar) throws -> Scalar {
+    switch (lhs, rhs) {
+    case (.Integer(let leftOp), .Integer(let rightOp)):
+        return Scalar(leftOp / rightOp)
+    default:
+        let n = try (lhs / rhs).toDouble()
+        return Scalar((n >= Double(Int.min) && n <= Double(Int.max)) ? Int(n) : lround(n))
+    }
+}
+
 
 
 func <(lhs: Scalar, rhs: Scalar) throws -> Bool {

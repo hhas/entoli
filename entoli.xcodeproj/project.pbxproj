@@ -37,6 +37,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		4F4D2FD31C0C6291001AB1E0 /* TODO.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = TODO.txt; sourceTree = "<group>"; };
 		4F5439431C0A169500DA3D8D /* coercions.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = coercions.swift; sourceTree = "<group>"; };
 		4F5439441C0A169500DA3D8D /* datatypes.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = datatypes.swift; sourceTree = "<group>"; };
 		4F5439451C0A169500DA3D8D /* environment.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = environment.swift; sourceTree = "<group>"; };
@@ -110,6 +111,7 @@
 		4FFD82A41BD2D57B00677DC4 = {
 			isa = PBXGroup;
 			children = (
+				4F4D2FD31C0C6291001AB1E0 /* TODO.txt */,
 				4FFD82AF1BD2D57C00677DC4 /* entoli */,
 				4FFD82AE1BD2D57C00677DC4 /* Products */,
 			);

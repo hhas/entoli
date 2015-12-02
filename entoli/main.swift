@@ -36,7 +36,10 @@ let source: String
 
 //source = " to foo bar {} do \n this, that, the other 42 \n done."
 
-source = " [a:1], (b:2), {c:3}, d:4, \"e\":5  "
+//source = " [a:1], (b:2), {c:3}, d:4, \"e\":5  "
+
+source = " (2 + 3 * 4 - 1.5) div 1" // -> Text("12")
+
 
 let lexer = Lexer(code: source)
 
@@ -53,11 +56,12 @@ if test1 != 0 {
     } while lexer.currentToken.type != gEndOfCodeToken.type //&& i<4
 }
 
+let p = Parser(lexer: lexer)
 
-let test2 = 1
+
+let test2 = 0
 
 if test2 != 0 {
-    let p = Parser(lexer: lexer)
     do {
         let result = try p.parseScript()
         print("\n\n================================================\n", result)
@@ -94,7 +98,8 @@ do {
 
 do {
     
-    let value = Text("2")
+    let value = try p.parseScript()
+    //let value = Text("2")
     
     //print(a)
     
@@ -103,6 +108,9 @@ do {
     let env = Scope()
     
     try loadLibrary(env)
+    
+    print("EVALED:", try value.evaluate(env, returnType: AnyCoercion()))
+    
     /*
     print("EVALED:", try value.evaluate(env, returnType: TextCoercion()))   // -> "2" (Text)
     print("EVALED:", try value.evaluate(env, returnType: StringCoercion())) // -> "2" (String)
@@ -120,8 +128,8 @@ do {
     
     */
     
-    print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: IntCoercion())))   // -> Thunk("2", IntCoercion)
-    print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: IntCoercion())).evaluate(env, returnType: gAnyCoercion)) // incorrect; currently returns Text
+ //   print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: IntCoercion())))   // -> Thunk("2", IntCoercion)
+ //   print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: IntCoercion())).evaluate(env, returnType: gAnyCoercion)) // incorrect; currently returns Text
     
 } catch { print(error) }
 
