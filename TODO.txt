@@ -1,14 +1,22 @@
 
 
 
-// hideous call chain:
-
 // given a value and required result type -> EVALUATE -> result of type Coercion.SwiftType
 //
 //    Scope.evaluate() -> Coercion._coerce_() -> Value._expandAs...()_ // for simple values
 //
 //    Scope.evaluate() -> ThunkCoercion._coerce_() -> Thunk(); Thunk.evaluate() -> Coercion.intersect() -> Coercion._coerce_() -> Value._expandAs...()_ // for thunks
 //
+
+
+
+`to` operator (define procedure) syntax is thorny:
+
+to munge {bar: text, baz: list of number} returning list of text: blah, blah, blah.
+
+to munge {bar: text, baz: list of number} as list of text: blah, blah, blah.
+
+
 
 
 

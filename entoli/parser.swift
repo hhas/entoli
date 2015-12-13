@@ -5,60 +5,7 @@
 //
 
 
-// note: on balance, I think making commands' bind infinitely tightly is probably best, as it's an easy rule for users to remember
-
-
-// TO DO: parser and/or pretty printer should probably wrap key:value pairs in parens if they appear outside of a list (which is legal, but don't want to confuse `"a":1` for `a:1`; just make sure behavior isn't affected [i.e. would be safer done in parser, wrapping KV Pairs in ExprGroup by default, then doing typecheck prior to inserting into list to determine if that wrapper should be removed again [which is painful way of doing it, but having to do checks everywhere except there would be even worse]])
-
-
-// TO KEEP SYNTAX RULES SIMPLE: numbers and units must start with optional `-`/`+` prefix followed by one of `0123456789`, and cannot contain whitespace, and they ALWAYS self-delimit.
-// (this leaves currency to be decided, probably by allowing currency symbols as additional prefixes)
-
-// TO DO: any reason why DDs can't apply themselves as symbol operator parsefuncs?
-
-// Q. what is relationship between type specifiers (run-time coercions, specifically those that coerce from text to Swift primitives) and data detectors (parse-time readers)? bear in mind that if a DD can read a string, it can read either code or Text, so there's probably a lot of commonality in their core behavior
-
-// Q. are there any use-cases where DDs wouldn't start with number (specifically, one of `-+0-9`)? (e.g. 42, 3.5kg, -123e4, +0.9, 0x1A2, 0u000A, 2015-06-12, 12:22:45 +0100)? Currency ($9.99) is one, any others?
-
-// Q. should numbers be detected in lexer? or can/should they be handled as part of unquoted word parsing (after all, it analyzes each word as it goes, and will be doing so in detail once in-word symbol operator matching is also implemented)? -- still think numbers might be matchable using symbols approach, though might require a little more flexibility as it does need ability to reach out and lookahead/parse additional tokens, e.g. periods with no surrounding whitespace and one or more digits thereafter (i.e. decimal number) -- TBH, it's a bit like per-char parsing needs ability to specify scanning fixed or open-ended ranges of digits, with additional parsefuncbeing called at end depending on what's next
-
-
-// TO DO: how to parameterize keywordOperators? (e.g. should there be standard ops tables that are cloned by init each time a new Parser instance is created; this still leaves question of how to add/remove opdefs, which is probably something that needs to be done in top-level parse() loop as it has limited ability to analyze/execute completed top-level expressions)
-
-
-
-
-// note: there's probably not much point worrying about preserving original whitespace vs automatically cleaning it up until code is sufficiently complete to allow testing; for now, just ignore issue entirely (it'll simplify implementation since e.g. parseName won't have to preserve original code substrings as well as generate canonical names - plus bear in mind that capturing code ranges in Values is useless in practice as any code edit invalidates all subsequent ranges)
-
-// next problem: using recursion likely makes incremental parsing problematic
-
-
-// note: another possibility for matching ops defined as both prefix and infix/postfix (e.g. `-`) is to rely on proc overloading, and have record arg with explicit keys (this'd avoid defining disambiguated names, e.g. `neg`, that aren't already visible, though arguably is a misuse of overloading in that behaviors are not simply variations on each other but quite different, e.g. negation vs subtraction)
-
-
-// TO DO: when parsing ListLiteral, if all items are pairs, make this an associative list (note: need to decide rules by which ordered lists [Array], associative lists [Dict], and unique lists [Set] are tagged and/or coercion-locked as that type; this will largely be determined by usage, e.g. once an array operation is performed, the list should thereafter act as array and refuse to coerce to dict or set - though explicit casting should still be allowed; of course, a lot depends on whether lists are mutable or immutable, and that policy/mechanism has yet to be decided)
-
-import Darwin
-
 private let DEBUG = false
-
-
-
-class SyntaxError: ErrorType, CustomStringConvertible {
-
-    let description: String
-    
-    init(description: String = "Syntax error.") { // TO DO: also needs range + source
-        self.description = description
-    }
-
-} // TO DO: how to store error info? (ideally, should be NSError-compatible without being dependent on it)
-
-class EndOfCodeError: SyntaxError {}
-
-class LeftOperandNotFoundError: SyntaxError {}
-
-class MalformedNumericError: SyntaxError {}
 
 
 //**********************************************************************
@@ -78,7 +25,7 @@ class Parser {
     
     // TO DO: need to maintain cache of punctuation+vocabulary tokens
     
-    var currentToken: Token { return self.lexer.currentToken } // current token // TO DO: currently unused by Parser; might be used by other code, e.g. for error reporting (e.g. throwMisplacedToken() in operator-tables.swift), but this is probably not ideal
+    var currentToken: Token { return self.lexer.currentToken } // current token // TO DO: currently unused by Parser; might be used by other code, e.g. for error reporting (e.g. parseMisplacedToken() in operator-tables.swift), but this is probably not ideal
     
     
     private var precedenceForNextToken: Int { // used by parseOperation() to determine if leftExpr binds more tightly to its right (i.e. the infix/postfix operator [if any] currently being processed) than its left (the previous prefix/infix operator [if any])
@@ -180,7 +127,11 @@ class Parser {
             self.lexer.backtrackTo(backtrackIndex)
             if DEBUG {print("... no argument found, so parseArgument backtracked to \(self.lexer.currentToken)")}
             return name // TO DO: if next token is `do...done` block (a postfix structure), confirm that this gets attached to command correctly (note that its parsefunc will need to cast name to command first)
-        } else {
+        } else { // TO DO: also, what if `nothing` literal is found?
+           
+            if let expr = argument as? ExpressionGroup { // note: if argument literal is `()` (which is synonymous with `nothing`, as that's what it returns when evaled, and not something the user would intend here as it's simpler just to omit the argument entirely), the parser automatically 'corrects' it by replacing it with an empty record (which is also equivalent to omitting argument entirely). This should avoid runtime errors due to users habitually typing `foo()` instead of `foo{}` (note: to explicitly pass nothing, use `foo{nothing}`, which is functionally identical to `foo{}` or `foo`). OTOH, `foo(1)`, `foo(1,2,3)` is not 'auto-corrected' as its intent is ambiguous (the user may have intended it to be a group whose result is passed as single argument to `foo`), but will be visibly incorrect when formatted as `foo{(1)}`, `foo{(1,2,3)}`; it might also be worth parser/formatter flagging it as questionable when performing a syntax check (though am inclined not to do that in parser itself)
+                if expr.expressions.count == 0 { argument = gNullRecord }
+            }
             if !(argument is Record) { argument = Record([argument!]) } // non-record values are treated as first item in a record arg
             // any pairs in argument record *must* have Name as LH operand (in theory, they could be treated as positional if LH is non-name, but this will likely cause user confusion), so check and throw syntax error if not (e.g. to pass a pair as a positional arg, just wrap in parens, though bear in mind how it's evaled will depend on context)
             for (i, item) in (argument as! Record).fields.enumerate() {
@@ -196,7 +147,7 @@ class Parser {
     //**********************************************************************
     // PARSE EXPRESSION
     
-    private func parseAtom(precedence: Int = 0) throws -> Value? { // parse atom or prefix op (i.e. no left operand)
+    func parseAtom(precedence: Int = 0) throws -> Value? { // parse atom or prefix op (i.e. no left operand)
         let previousIndex = self.lexer.currentTokenIndex
         self.lexer.advance() // TO DO: confirm this always considers vocab
         if DEBUG {print("\nPARSE_ATOM advanced from \(previousIndex) to \(self.lexer.currentTokenIndex): \(self.lexer.currentToken)")}
@@ -220,10 +171,17 @@ class Parser {
             return List(items: result)
         case .RecordLiteral: // {...}; a sequence of values and/or name-value pairs; mostly used to pass proc args
             return try self.parseRecord()
-        case .ExpressionGroupLiteral: // (...)
+        case .ExpressionGroupLiteral: // (...) // TO DO: need to extract following logic into a shared parsefunc that can be used by `do` block parsefunc too
             var result = [Value]()
             while self.lexer.lookaheadBy(1).type != .ExpressionGroupLiteralEnd {
-                let value = self.stripPeriod(try self.parseExpression())
+                var value = self.stripPeriod(try self.parseExpression())
+                if let name = value as? Name { // convert a name to an arg-less command
+                    value = Command(name: name)
+                } else if let pair = value as? Pair { // convert a named pair to a `store [value]` command
+                    if let name = pair.key as? Name {
+                        value = makeStoreValueCommand(pair.value, named: name) // TO DO: annotate for formatter
+                    }
+                }
                 result.append(value)
             }
             try self.lexer.skip(.ExpressionGroupLiteralEnd)
@@ -242,7 +200,7 @@ class Parser {
                 throw SyntaxError(description: "Malformed numeric literal (\(error)): `\(word)`")
             case .UTF8EncodedString(let string): // UTF8-encoded text literal, `0u...`
                 let result = Text(string)
-                result.annotations.append(token.value) // if .UTF8EncodedText, use that as text value and annotate with original UTF8-encoded literal for display purposes // TO DO: cleaned-up literal should prob. be supplied by .Text
+                result.annotations.append(token.value) // TO DO: might be better just to indicate text value was created from an `0u...` literal, and leave formatter to generate "0u..." representation if/when needed
                 return result
             default:
                 let result = Text(token.value)
@@ -255,7 +213,7 @@ class Parser {
             if true {print("\nparseAtom got Operator: \(token.prefixOperator) \(token.infixOperator)")}
             guard let operatorDefinition = token.prefixOperator else {
                 self.lexer.backtrackTo(previousIndex)
-                if token.infixOperator == nil { print("BUG in parseAtom: .Operator token contains neither prefix nor infix definition!"); exit(1) }
+                assert(token.infixOperator != nil, "BUG in Parser.parseAtom(): .Operator token contains neither prefix nor infix definition: \(token)")
                 throw LeftOperandNotFoundError(description: "parseAtom() encountered an infix operator: \(token.infixOperator!)") // note: when speculatively parsing a command argument, this indicates the command has no argument so will be used as leftExpr; elsewhere it's a syntax error
             }
             let result = try operatorDefinition.parseFunc(self, leftExpr: nil, operatorName: operatorDefinition.name.text, precedence: precedence)
@@ -271,7 +229,7 @@ class Parser {
         }
     }
     
-    private func parseOperation(var leftExpr: Value, precedence: Int = 0) throws -> Value { // parse infix/postfix
+    func parseOperation(var leftExpr: Value, precedence: Int = 0) throws -> Value { // parse infix/postfix
         if DEBUG {print("\n\nENTERED parseOperation on \(self.lexer.currentTokenIndex), leftExpr=(\(leftExpr), \(precedence)) \n\t\ttoken=\(self.lexer.currentToken)\n\t\tnext=\(self.lexer.lookaheadBy(1))\n\n")}
         while precedence < self.precedenceForNextToken {
             let previousIndex = self.lexer.currentTokenIndex
@@ -289,15 +247,24 @@ class Parser {
                 return ItemSeparator(data: leftExpr) // ditto
             case .PairSeparator: // found colon separator for key:value pair
                 leftExpr = Pair(leftExpr, try self.parseExpression(TokenType.PairSeparator.precedence-1))
-            case .PipeSeparator: // found semicolon separator, indicating leftExpr should be used as first field in RH command's arg list (which in turn requires that RH actually be a command, something further complicated by RH being parenthesizable) // TO DO: FIX; transform `foo{...};bar{...}` into `bar{foo{...},...}`, annotating `foo` command with formatting preference (i.e. `;` should be purely syntactic sugar, with no semantic representation); also note that rightExpr must be a command (possibly in parens) and `;` needs to bind to it like glue, much as command-arg pairs already do (i.e. no operator should have higher precedence)
-                leftExpr = Pipe(leftExpr, try self.parseExpression(TokenType.PipeSeparator.precedence)) // TO DO: eliminate `Pipe` type
+            case .PipeSeparator: // found semicolon separator, indicating leftExpr should be used as first field in RH command's arg list (which in turn requires that RH actually be a command, something further complicated by RH being parenthesizable) 
+                // transform `foo{...};bar{...}` into `bar{foo{...},...}`, annotating `foo` command with formatting preference (i.e. `;` should be purely syntactic sugar, with no semantic representation); also note that rightExpr must be a command (possibly in parens) and `;` needs to bind to it like glue, much as command-arg pairs already do (i.e. no operator should have higher precedence)
+                // TO DO: if rightExpr is parenthesized command, e.g. `(cmd)`, decide if this should be a syntax error (i.e. `;` _must_ be immediately followed by next command's name), or if it should be temporarily unwrapped for purposes of inserting arg; might make sense to annotate it as wrapped so that it [re]formats as `(cmd;cmd)`; another option is to implement `toCommand` or similar on values so that parser can convert any value to command by calling that without worrying about details (the resulting Command could be annotated so that formatter knows to print it in parens) - bear in mind general philosophy of begging forgiveness rather than asking permission, which would suggest it's better to convert automatically and display 'correction' to user rather than reject
+                // TO DO: another problem: if RH expr is an operator, it already has all its [leading] arguments; thus, the preceding `;` must be reported as a syntax error; when creating command from operator, might want to annotate it so that no more ops can be added [prefixed?] (caveat do block suffix?), or just annotated to indicate it was created from an operator literal, allowing that annotation to be checked for here and an error raised if found.
+                var rightExpr = try self.parseExpression(TokenType.PipeSeparator.precedence)
+                if let name = rightExpr as? Name {
+                    rightExpr = Command(name: name)
+                }
+                guard let command = rightExpr as? Command else {
+                    throw SyntaxError(description: "Expected command after `;` but found \(rightExpr.typename): \(rightExpr)")
+                }
+                leftExpr = Command(name: command.name, argument: Record([leftExpr] + command.argument.fields))
+                leftExpr.annotations.append("PipedArgument") // TO DO: suspect annotations will be dict with [mostly] constant keys, probably grouping by purpose (e.g. `gPipedArgument` flag would be added to `gFormatting` set/sub-dict; the only caveat being that nested dicts, while easier to view/search for arbitrary keys, add complexity to implementation... TBH, one could just about argue for using a linked list)
                 // VOCABULARY TOKENS
             case .Operator:
                 if DEBUG {print("\nparseOperation got Operator: \(token.prefixOperator) \(token.infixOperator)")}
                 guard let operatorDefinition = token.infixOperator else { // found a prefix operator, so end this expression and process it on next pass
-                    
-                    if token.prefixOperator == nil { print("BUG in parseOperation: .Operator token contains neither prefix nor infix definition"); exit(1) }
-                    
+                    assert(token.infixOperator != nil, "BUG in Parser.parseOperation(): .Operator token contains neither prefix nor infix definition: \(token)")
                     self.lexer.backtrackTo(previousIndex)
                     if DEBUG {print("... and returned leftExpr: \(leftExpr)")}
                     return leftExpr

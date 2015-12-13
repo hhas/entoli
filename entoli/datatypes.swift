@@ -5,6 +5,8 @@
 //
 //
 
+// TO DO: should `description` return entoli literal representation and `debugDescription` return Swift literal representation? (e.g. would make error messages easier to build)
+
 // note: KISS; standard AST-walking eval doesn't need to be (and shouldn't be) optimized, and consistency+absence of 'shortcuts' will avoid creating hidden behavioral 'holes' that tools such as interactive viewers and code generators can't analyse (e.g. expression group should always coerce items to commands, even though it's not very efficient, as that method call can be sniffed by value-like objects as well as values)
 
 // `foo as anything` calls `foo` proc and returns result; `foo as expression` returns `foo` command; `foo as procedure` looks up `foo` name and returns closure
@@ -19,9 +21,10 @@
 // note: value-to-value conversion methods have `as` prefix and should be supported on all objects (throwing a CoercionError if not appropriate)
 // methods to convert standard types to special types (including non-values) have `to` prefix, e.g. `toScalar`; these appear only on objects to which they apply
 
-// TO DO: all values should have a slot containing Coercion object describing their canonical type (e.g. Text contains TextCoercion, List contains ListCoercion(gAnyCoercion))
+// TO DO: all values should have a slot containing Coercion object describing their canonical type (e.g. Text contains TextCoercion, List contains ListCoercion(gValueCoercion))
 
     // TO DO: a named pair _must_ evaluate as `store`, except in list, record, pair value (in a record it emulates this, with the value being added directly to proc's scope)
+
 
 class Value: CustomStringConvertible { // TO DO: should this be named Expression, or have Expression protocol? (i.e. are there any Value classes that *can't* be evaluated as atomic/group expressions?)
     
@@ -31,35 +34,41 @@ class Value: CustomStringConvertible { // TO DO: should this be named Expression
         
     var description: String {return "\(self.dynamicType)(...)"} // TO DO: subclasses should override to return their Swift literal representation
     
+    var typename: String {return String(self.dynamicType) } // TO DO: this should return native entoli type name (`text`, `name`, `expression`, etc)
+    
     // evaluation
     //
     // note: _expandAs... methods are used by Coercions to convert between standard entoli Values (text,name,command,pair,list,record), resolving any unevaluated expressions as necessary
     // TO DO: rather than throw, should most/all of these call _expandAsType_ catchall, which can then throw CoercionError by default; this would allow e.g. GroupExpression to override _expandAsType_() rather than evaluate(), which might be safer
     
-    func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value { // subclasses must override // TO DO: needed? or is it more appropriate to store a canonical coercion object in each concrete value and call that? (bear in mind that canonical is different to assigned, e.g. `list of any` vs `4-item list of numbers from 0 to 100`) // A. needed, since Coercion and opaque values will simply return self
-        throw CoercionError(value: self, coercion: returnType, description: "(this is almost certainly an implementation bug)")
+    func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value {
+        print("Can't expand value:", self, "to any:", returnType, "(this is an implementation bug)"); throw NotImplementedError() // TO DO
     }
     func _expandAsText_(env: Scope, returnType: Coercion) throws -> Text {
-        throw CoercionError(value: self, coercion: returnType) // TO DO: needs fromType, toType, value to produce full error info+message
+        throw CoercionError(value: self, coercion: returnType)
     }
     func _expandAsName_(env: Scope, returnType: Coercion) throws -> Name {
         throw CoercionError(value: self, coercion: returnType)
     }
-    func _expandAsPair_<KeyType: FullCoercion, ValueType: FullCoercion where KeyType.SwiftType: Value, ValueType.SwiftType: Value>(
-                                                                                env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair {
-        throw CoercionError(value: self, coercion: returnType, description: "Can't coerce to pair")
+    // TO DO: need _expandAsTuplePair_, and implement _expandAsPair_ based on that
+    func _expandAsPair_<KeyType: FullCoercion, ValueType: FullCoercion where KeyType.SwiftType: Value, ValueType.SwiftType: Value>
+                                                            (env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair {
+            throw CoercionError(value: self, coercion: returnType)
     }
-    func _expandAsArray_<ItemType: FullCoercion where ItemType: Coercion>(env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] {
-        return [try self.evaluate(env, returnType: itemType)]
+    func _expandAsArray_<ItemType: FullCoercion where ItemType: Coercion>
+                                                            (env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] {
+            return [try self.evaluate(env, returnType: itemType)]
     }
-    func _expandAsList_<ItemType: FullCoercion where ItemType: Coercion, ItemType.SwiftType: Value>(env: Scope, itemType: ItemType, returnType: Coercion) throws -> List {
-        return List(items: try self._expandAsArray_(env, itemType: itemType, returnType: returnType), itemType: itemType)
+    func _expandAsList_<ItemType: FullCoercion where ItemType: Coercion, ItemType.SwiftType: Value>
+                                                            (env: Scope, itemType: ItemType, returnType: Coercion) throws -> List {
+            return List(items: try self._expandAsArray_(env, itemType: itemType, returnType: returnType), itemType: itemType)
     }
-    func _expandAsRecord_(env: Scope, returnType: Coercion) throws -> Record { // TO DO: what about passing `type:RecordSignature?` or is it simpler to convert to record first, then call Record.toRecordSignature to map fields to template? (since no. of fields are small, it probably doesn't make all that much difference); note: main problem with passing signature is that all fields need to be native types
+    func _expandAsRecord_(env: Scope, returnType: Coercion) throws -> Record {
+        // TO DO: what about passing `type:RecordSignature?` or is it simpler to convert to record first, then call Record.toRecordSignature to map fields to template? (since no. of fields are small, it probably doesn't make all that much difference); note: main problem with passing signature is that all fields need to be native types
         return Record(self)
     }
-    func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command { // names and commands can coerce to commands; named pairs can also convert (though that should only be done in expression eval scopes where name:value is a shortcut for `store`)
-        throw CoercionError(value: self, coercion: returnType) // TO DO: am inclined to have it expandAsAny
+    func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command { // names and commands can coerce to commands (TO DO: while named pairs should convert to `store` commands in certain evaluation scopes, this is the parser's job, not runtime's)
+        throw CoercionError(value: self, coercion: returnType)
     }
     
     // Value.evaluate() is the standard entry point for evaluating any given value
@@ -73,6 +82,7 @@ class Value: CustomStringConvertible { // TO DO: should this be named Expression
 //**********************************************************************
 //
 
+// note: suspect special names will only work as Name subclasses (or as dedicated subclass[es] of Value) if they're also defined as operators
 
 class NullValue: Name { // TO DO: need to think about how 'constant' names work; need to be defined as [.StoredValue] command in appropriate scope that returns Name; also need to decide if any of these 'constants' are important enough to define as atoms (probably not, as that'd create inconsistency between constant names that are defined as built-ins vs those defined by libraries, e.g. scriptable apps)
     
@@ -86,25 +96,24 @@ class NullValue: Name { // TO DO: need to think about how 'constant' names work;
     
     // ugh; given that `nothing` serves a special role (default argument handling), should it be a unique class and defined as operator? (main concern is that it must never be masked by a command; probably need a set of "forbidden names" in Scope.store())
     
-    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value {
-        throw NullCoercionError()
-    }
-    let _expandAsText_ = _expandAsAny_
-    let _expandAsName_ = _expandAsAny_
+    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value { throw NullValueCoercionError(coercion: returnType) }
+    override func _expandAsText_(env: Scope, returnType: Coercion) throws -> Text { throw NullValueCoercionError(coercion: returnType) }
+    override func _expandAsName_(env: Scope, returnType: Coercion) throws -> Name { throw NullValueCoercionError(coercion: returnType) }
     
     // TO DO: simplify sig by grouping key and value types into tuple
-    override func _expandAsPair_<KeyType: FullCoercion, ValueType: FullCoercion where KeyType.SwiftType: Value, ValueType.SwiftType: Value>(
-                                                                                env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair {
-        throw NullCoercionError()
+    override func _expandAsPair_<KeyType: FullCoercion, ValueType: FullCoercion where KeyType.SwiftType: Value, ValueType.SwiftType: Value>
+                                                            (env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair {
+        throw NullValueCoercionError(coercion: returnType)
     }
-    override func _expandAsArray_<ItemType: FullCoercion where ItemType: Coercion>(env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] {
-        throw NullCoercionError()
+    override func _expandAsArray_<ItemType: FullCoercion where ItemType: Coercion>
+                                                            (env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] {
+        throw NullValueCoercionError(coercion: returnType)
     }
-    let _expandAsRecord_ = _expandAsAny_
-    let _expandAsCommand_ = _expandAsAny_
+    override func _expandAsRecord_(env: Scope, returnType: Coercion) throws -> Record { throw NullValueCoercionError(coercion: returnType) }
+    override func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command { throw NullValueCoercionError(coercion: returnType) }
 }
 
-let gNullValue = NullValue() // note: the main reason for this being a 'special' value rather than just, say, an empty record is so that it will throw NullCoercionErrors within Coercions which CoercionModifiers, e.g. `DefaultValue` can easily intercept and replace with default value (c.f. kiwi); however, see notes about about potential problems with reliably distinguishing special from non-special names
+let gNullValue = NullValue() // note: the main reason for this being a 'special' value rather than just, say, an empty record is so that it will throw NullValueCoercionErrors within Coercions which CoercionModifiers, e.g. `DefaultValue` can easily intercept and replace with default value (c.f. kiwi); however, see notes about about potential problems with reliably distinguishing special from non-special names
 
 
 //**********************************************************************
@@ -156,10 +165,8 @@ class Text: Value { // TO DO: how to annotate with numerics, units, dates, etc?
     
     // expansion
     
-    override func _expandAsText_(env: Scope, returnType: Coercion) throws -> Text {
-        return self
-    }
-    let _expandAsAny_ = _expandAsText_
+    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value { return self }
+    override func _expandAsText_(env: Scope, returnType: Coercion) throws -> Text { return self }
     
 }
 
@@ -184,26 +191,17 @@ class Name: Value {
     
     // expansion
     
-    override func _expandAsName_(env: Scope, returnType: Coercion) throws -> Name {
-        return self
-    }
-    let _expandAsAny_ = _expandAsName_
-    
-    // TO DO: one possibility for determining appropriate behavior for arg-less commands, is to disallow name->command coercion, and rely on parser to convert names that appear in 'command' contexts to commands; another is that converting a name to a name returns a LiteralName subclass that can't then eval as command instead (that does leave a slight question of how to intentionally cast it to a command)
-    
-    override func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command {
-        return Command(name: self, argument: gNullRecord)
-    }
-}
-
-class LiteralName: Name {
-    override func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command {
-        throw CoercionError(value: self, coercion: returnType, description: "Can't coerce an already-evaluated name to command.")
-    }
+    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value { return self }
+    override func _expandAsName_(env: Scope, returnType: Coercion) throws -> Name { return self }
+    override func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command { return Command(name: self, argument: gNullRecord) }
 }
 
 
-class Pair: Value { // note: `A:B:C` is right-associative
+//**********************************************************************
+// composites/collections
+
+
+class Pair: Value {
 
     let key: Value, value: Value
     
@@ -214,18 +212,17 @@ class Pair: Value { // note: `A:B:C` is right-associative
     
     // literal representations
     
-    override var description: String {
-        return "Pair(\(self.key), \(self.value))"
-        // return (self.value.dynamicType == Pair.self) ? "\(self.key): (\(self.value))" : "\(self.key): \(self.value)" // if pair's value is another pair, clarify right-association by parenthesizing it; TO DO: formatter should probably make all these decisions
-    }
+    // TO DO: `A:B:C` is right-associative; formatter may want to parenthesize RH pair for clarity
+        
+    override var description: String { return "Pair(\(self.key), \(self.value))" }
     
     // conversion
     
-    func toFieldSignature() throws -> FieldSignature { // Pair->FieldSignature only
+    func toFieldSignature() throws -> FieldSignature { // TO DO: this is no good, as value is [typically?] a command that must be evaluated to Coercion (and may itself be parenthesized), thus it needs to be evaled to obtain Coercion instance, which requires a fully prepared runtime env, so can only be done at the time the procedure is defined
         guard let key = self.key as? Name else {
             throw BadArgument(description: "Pair value does not have a valid name: \(self)")
         }
-        // TO DO: while name is literal, value is an expr that needs evaluated to Coercion (note: need to check expression[group]s aren't going to cause problems, or do anything they shouldn't, e.g. side effects; this is probably job for CoercionCoercion)
+        // TO DO: while name is literal, value is an expr that needs evaluated to Coercion (note: need to check expression[group]s aren't going to cause problems, or do anything they shouldn't, e.g. side effects; this is probably job for TypeCoercion)
         guard let value = self.value as? Coercion else {
             throw BadArgument(description: "Pair value does not have a valid type: \(self)")
         }
@@ -239,13 +236,8 @@ class Pair: Value { // note: `A:B:C` is right-associative
         return try Pair(self.key.evaluate(env, returnType: keyType), self.value.evaluate(env, returnType: valueType))
     }
     
-    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Pair {
-        return try self._expandAsPair_(env, keyType: gAnyCoercion, valueType: gAnyCoercion, returnType: returnType) // TO DO: what if key is Name? pretty sure it needs left as-is, otherwise applying two expands to a pair will change its key; FIX
-    }
-    
-    override func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command { // experimental: if name is Name, coercing to command will need to return `store {value: VALUE, name: NAME, [as: type of VALUE, editable: no]}` command, though bear in mind that this should only be done in command contexts; TO DO: another option is to have evalData and evalCommand methods (expand and perform? amongst other potential benefits, expression groups could throw error if expand is called and there isn't exactly one expression in group; on the downside, expanding a name would be inclined to return itself, whereas names should normally eval as arg-less commands [the only exception being named pairs, where names are preserved as-is])
-        guard let name = self.key as? Name else { throw BadArgument(description: "Pair value does not have a valid name: \(self)") }
-        return Command("store", Pair(Name("name"), name), Pair(Name("value"), self.value))
+    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value {
+        return try self._expandAsPair_(env, keyType: gValueCoercion, valueType: gValueCoercion, returnType: returnType) // TO DO: what if key is Name? pretty sure it needs left as-is, otherwise applying two expands to a pair will change its key; FIX
     }
     
     override func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
@@ -255,8 +247,6 @@ class Pair: Value { // note: `A:B:C` is right-associative
     
 }
 
-
-//**********************************************************************
 
 
 class List: Value { // TO DO: how best to constrain as array/dictionary/set? (parser hints, first usage); e.g. `[1, nothing, []]` might require an explicit `as list of anything` cast if standard behavior is to infer itemType from first item added (alternatively, it could just replace that first guess and force it to be looser as non-matching types are encountered; the question then being should only literals be able to do this, as opposed to values returned by commands or subsequently added to an editable list); conversely, `[1,2,3]` would require an explicit `as list of whole number` to restrict it beyond its automatically inferred `list of text` type
@@ -285,18 +275,18 @@ class List: Value { // TO DO: how best to constrain as array/dictionary/set? (pa
         return "List(" + items.map{$0.description}.joinWithSeparator(", ") + ")"
     }
     
-    // evaluation
+    // evaluation // TO DO: what about expanding as generator/lazy array, for use by primitive procs?
     
-    override func _expandAsArray_<ItemType: FullCoercion where ItemType: Coercion>(env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] {
-        return try self.items.map{try $0.evaluate(env, returnType: itemType)}
+    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value {
+        return try self._expandAsList_(env, itemType: gValueCoercion, returnType: returnType)
     }
     
-    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> List {
-        return try self._expandAsList_(env, itemType: gAnyCoercion, returnType: returnType)
+    override func _expandAsArray_<ItemType: Coercion where ItemType: FullCoercion>(env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] {
+        return try self.items.map{try $0.evaluate(env, returnType: itemType)} // TO DO: FIX: this seems to be invoking Value base class methods, not Text methods
     }
     
     override func _expandAsRecord_(env: Scope, returnType: Coercion) throws -> Record {
-        return Record(try self.items.map{try $0.evaluate(env, returnType: gAnyCoercion)})
+        return Record(try self.items.map{try $0.evaluate(env, returnType: gValueCoercion)})
     }
 }
 
@@ -325,11 +315,11 @@ class Record: Value { // roughly analogous to struct, though with different shar
         var fields = [FieldSignature]()
         for (i, field) in self.fields.enumerate() {
             if let pair = field as? Pair { // must be literal pair, so no eval
-                let fieldType = try pair.toFieldSignature() // TO DO: implement toFieldSignature on Name, returning name:AnyCoercion?
+                let fieldType = try pair.toFieldSignature() // TO DO: implement toFieldSignature on Name, returning name:ValueCoercion?
                 // TO DO: icky coercions; generic Pair would avoid these
                 fields.append(fieldType)
             } else if let name = field as? Name { // or literal name, so again no eval
-                fields.append(FieldSignature(name, gAnyCoercion))
+                fields.append(FieldSignature(name, gValueCoercion))
             } else {
                 throw BadArgument(description: "Field \(i+1) of record does not have a valid name: \(field)")
             }
@@ -338,22 +328,24 @@ class Record: Value { // roughly analogous to struct, though with different shar
     }
     
     // evaluation
+    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value {
+        return try self._expandAsRecord_(env, returnType: returnType)
+    }
     
     override func _expandAsArray_<ItemType: FullCoercion where ItemType: Coercion, ItemType.SwiftType: Value>(env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] { // TO DO: as with List._expandAsRecord_(), this may be a bit janky
         return try self.fields.map{try $0.evaluate(env, returnType: itemType)}
     }
     
     override func _expandAsRecord_(env: Scope, returnType: Coercion) throws -> Record {
-        return self
+        return Record(try self.fields.map{try $0.evaluate(env, returnType: gValueCoercion)})
     }
-    let _expandAsAny_ = _expandAsRecord_
 }
 
 
 //**********************************************************************
 
 
-private let gNullRecord = Record() // used by commands whose argument is omitted or `nothing`
+let gNullRecord = Record() // used by commands whose argument is omitted or `nothing`
 
 
 // TO DO: commands could (and should) have lighter-weight structure, storing name as String and args as [Value] (record access methods could be provided via protocol extension, or by having Command subclass Record); the one caveat being that normalized names are required for binding whereas non-normalized names should be retained for display -- for now, just KISS; implement public APIs as composing Value types (as that's the abstraction that symbolic metaprogramming uses), and worry about optimized APIs/internal representations later.
@@ -363,12 +355,13 @@ class Command: Value {
     
     let name: Name, argument: Record, key: String
     
-    // TO DO: 'consumePreviousResult' flag; also somewhere to attach postfixed `do` block (expression group)
+    // TO DO: how/where to attach postfixed `do` block (expression group)?
     
     init(name: Name, argument: Value = gNullRecord) { // TO DO: should `argument` be Record? (main concern is if a record value is passed as argument instead of being literal, it should be used as first argument, not the entire arg record; need to decide how best to do this)
         self.name = name
         self.key = name.string.lowercaseString
         // note: we're being a bit more aggressive about pushing arg to record upon instantiation rather than consumption; this might violate KISS and reduce potential for DSLs finding their own uses for existing datatypes
+        // TO DO: see also TODO in parseArgument regarding `()` and `nothing`
         self.argument = argument is Record ? argument as! Record : argument is NullValue ? gNullRecord : Record(argument)
     }
     
@@ -386,12 +379,10 @@ class Command: Value {
         return "Command(\(self.name), \(self.argument))" // note that if argument record contains a single [unnamed] numeric/quoted text value or list value (which are self-delimiting literals), it may display that value instead of the enclosing record for neatness; the default description() method should always display canonical form for reference/debugging use
     }
     
-    // expansion
+    // expansion // TO DO: what, if anything, needs to be done? (e.g. thunk)
     
-    override func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command {
-        return self
-    }
-    let _expandAsAny_ = _expandAsCommand_
+    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value { return self }
+    override func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command { return self }
     
     override func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         
@@ -405,23 +396,64 @@ class Command: Value {
 //**********************************************************************
 
 
-class Pipe: Value {// TO DO: needed? or should CommandValue have special (private) slot for this? or should parser - or, for that matter, Pipe itself - transform `foo;bar` to `bar{foo}`? (the transform is probably safest, and also simplest from code POV since it's one less type/feature, though it would be helpful to annotate the command to indicate its preferred formatting)
-    let leftExpr: Value, rightExpr: Value
+class Thunk: Value { // TO DO: memoize? (kinda depends on difference between `as lazy value` and `as expression`; if there's no memoization then there's no difference, and a new result is generated each time expand is called - which causes fun e.g. when value is `random number` command; otoh if there is memoization then the result needs to be generated and stored in thunk first time expand is called - which is also fun since side-effects mean that value may be different depending on timing of that first call; in addition, if there's memoization then a separate coercion may be needed to capture as expression [although arguably that's just a degenerate form of `as procedure`])
     
-    init(_ leftExpr: Value, _ rightExpr: Value) {
-        self.leftExpr = leftExpr
-        self.rightExpr = rightExpr
+    let value: Value
+    let env: Scope
+    let type: Coercion // TO DO: kludgy, since we can't currently union thunked and requested Coercions, so have to apply them in sequence
+    
+    init(value: Value, env: Scope, type: Coercion = gValueCoercion) {
+        self.value = value
+        self.env = env
+        self.type = type
     }
-    override var description: String { // TO DO: need to think about when formatter should wrap in parens for clarity
-        return "Pipe(\(self.leftExpr), \(self.rightExpr))"
+    
+    override var description: String {
+        return "Thunk(\(self.value), \(self.type))" // TO DO: this needs to escape any `"` chars within self.string by doubling them
+    }
+    
+    override func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+        if returnType.defersExpansion {
+            return try returnType._coerce_(self, env: self.env)
+        } else {
+            return try self.type.intersect(returnType, env: self.env)._coerce_(self.value, env: env)
+        }
     }
 }
 
 
 
+
+//**********************************************************************
+// values that describe user punctuation // TO DO: is there anywhere these aren't automatically stripped out? if not, just get rid of them (note: they're already stripped out in lists and records, and expression groups should probably discard them too in favor of using commas to separate expressions within a single group and periods to separate groups [although in practice this should probably be annotation-only as nested groups don't provide any benefit when evaluating, only when metaprogramming])
+
+
+class ExpressionSeparator: Value { // period separator, used to separate commands; for now, preserved as a postfix no-op, though might be better if commands always rendered with a period at end // TO DO: if using `!` and `?` as expression separators that also work as behavioural modifiers, this class will need updated to support those and Parser and ExpressionGroupValue will need to preserve them as well (alternatively, they should set behavioral flags on CommandValue; need to decide what approach works best, bearing in mind that they could be applied to non-commands too [although this might be considered a no-op and auto-corrected away])
+    let data: Value
+    
+    init(data: Value) {
+        self.data = data
+    }
+    override var description: String {
+        return "\(self.data). "
+    }
+}
+
+
+class ItemSeparator: ExpressionSeparator { // comma separator, used to separate list/record items; ditto
+    override var description: String {
+        return "\(self.data), "
+    }
+}
+
+
+//**********************************************************************
+// expression sequences
+
+
 // TO DO: think the only way to dodge bullets (and keep special-case syntax rules comprehensible) with Pairs is to subclass ExpressionGroup as `ExpressionBlock` and that as `EntoliScript` for `do` blocks and scripts, and have these special-case name:value pairs as store commands (probably best that they convert them to some form of `store` commands as they're parsed [e.g. flagging/wrapping/subclassing them so that they still format as pairs]; may be an idea to define `Store` as a Value/Pair/Command subclass, although that isn't ideal); a safer option might be for ExpressionBlock to recognize and convert them itself; that should avoid any awkward metaprogramming surprises (although one can argue that the formatter can and should make the decision on when to display a `store` command using name:value syntax instead, as much like operators it's acting here as syntactic sugar for the underlying command+proc)
 
-class ExpressionGroup: Value { // TO DO: can/should these be omitted where not needed? also, need to think carefully about allowing multiple expressions (punctuation-based grouping is kinda needed as `do...done` blocks are only available if that operator is loaded); one possibility is for expression groups to coerce differently depending on whether they contain one or arbitrary no. of expressions; thus a math operator would ask for `number` and would throw coercion error if passed `(do evil. 2)`, and only asking for commands would accept it (e.g. `if{bool,commands}`)
+class ExpressionGroup: Value { // TO DO: rename `ExpressionSequence` // TO DO: can/should these be omitted where not needed? also, need to think carefully about allowing multiple expressions (punctuation-based grouping is kinda needed as `do...done` blocks are only available if that operator is loaded); one possibility is for expression groups to coerce differently depending on whether they contain one or arbitrary no. of expressions; thus a math operator would ask for `number` and would throw coercion error if passed `(do evil. 2)`, and only asking for commands would accept it (e.g. `if{bool,commands}`)
     let expressions: [Value] // note: values are commands
     
     init(expressions: [Value]) {
@@ -445,76 +477,27 @@ class ExpressionGroup: Value { // TO DO: can/should these be omitted where not n
     // TO DO: this should cast to command before evaling so that pair values and name values are converted to corresponding `store` and `NAME(no-value)` commands; all other values should cast to `_output_{value}` (actually, simplest way to do this is to use an enum); it's important to bear in mind that new types may be defined which also act like commands, thus the cast is necessary to ensure compatibility with those
     
     // TO DO: another possibility is to define _evaluateAsProcedureCall_ (_callAsProcedure_? _call_?) on all Values, which this method can then call, providing the necessary clue about how to deal with pairs and other non-commands; unlike _expandAsCommand_ (which is really only useful for coercing Name to Command, and throwing error if it's anything else... although strictly speaking an expression group should maybe also coerce to Command, as it's just a collection of the things and should be more or less transparent from runtime's POV, c.f. kiwi's composite commands)
-
+    
     override func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         // TO DO: how should returnType.defersExpansion be handled? should it apply to entire expression, or just to final result? (bear in mind that some coercions, e.g. `as expression`, need to do non-standard processing of values; it may be that `as` operator should check RH operand's Coercion.defersExpansion itself before doing anything with LH operand); for now, probably just do the simplest thing that gets stuff working
         var result: Value = gNullValue
         for expression in self.expressions {
-            result = try expression.evaluate(env, returnType: gAnyCoercion) // TO DO: what type? also, how to break out of loop, e.g. when returning result? (and what, if anything, needs to be done wrt error handling, especially if error is capturing scope plus remaining commands as continuation, allowing it to resume from where it left off)
+            print("EVALING: \(expression)")
+            do {
+                result = try expression.evaluate(env, returnType: gAnythingCoercion) // TO DO: what type? also, how to break out of loop, e.g. when returning result? (and what, if anything, needs to be done wrt error handling, especially if error is capturing scope plus remaining commands as continuation, allowing it to resume from where it left off)
+            } catch {
+                throw EvaluationError(description: "Can't evaluate the following expression (\(error)): \(expression)")
+            }
+            print("RESULT: \(result)")
         }
         return try returnType._coerce_(result, env: env) // TO DO: returnType needs to be provided to last expression
     }
 }
 
 
-//**********************************************************************
-//
 
 
-class Thunk: Value { // TO DO: memoize? (kinda depends on difference between `as lazy value` and `as expression`; if there's no memoization then there's no difference, and a new result is generated each time expand is called - which causes fun e.g. when value is `random number` command; otoh if there is memoization then the result needs to be generated and stored in thunk first time expand is called - which is also fun since side-effects mean that value may be different depending on timing of that first call; in addition, if there's memoization then a separate coercion may be needed to capture as expression [although arguably that's just a degenerate form of `as procedure`])
-    
-    let value: Value
-    let env: Scope
-    let type: Coercion // TO DO: kludgy, since we can't currently union thunked and requested Coercions, so have to apply them in sequence
-    
-    init(value: Value, env: Scope, type: Coercion = gAnyCoercion) {
-        self.value = value
-        self.env = env
-        self.type = type
-    }
-    
-    override var description: String {
-        return "Thunk(\(self.value), \(self.type))" // TO DO: this needs to escape any `"` chars within self.string by doubling them
-    }
-    
-    override func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
-        if returnType.defersExpansion {
-            return try returnType._coerce_(self, env: self.env)
-        } else {
-            return try self.type.intersect(returnType, env: self.env)._coerce_(self.value, env: env)
-        }
-    }
-}
-
-
-
-
-
-
-
-
-
-class ExpressionSeparator: Value { // period separator, used to separate commands; for now, preserved as a postfix no-op, though might be better if commands always rendered with a period at end // TO DO: if using `!` and `?` as expression separators that also work as behavioural modifiers, this class will need updated to support those and Parser and ExpressionGroupValue will need to preserve them as well (alternatively, they should set behavioral flags on CommandValue; need to decide what approach works best, bearing in mind that they could be applied to non-commands too [although this might be considered a no-op and auto-corrected away])
-    let data: Value
-    
-    init(data: Value) {
-        self.data = data
-    }
-    override var description: String {
-        return "\(self.data). "
-    }
-}
-
-
-class ItemSeparator: ExpressionSeparator { // comma separator, used to separate list/record items; ditto
-    override var description: String {
-        return "\(self.data), "
-    }
-}
-
-
-
-class EntoliScript: ExpressionGroup {
+class EntoliScript: ExpressionGroup { // TO DO: rename `Script`?
     override var description: String {
         return "EntoliScript(\(self.expressions))"
     }

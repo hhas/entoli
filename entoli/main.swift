@@ -97,41 +97,44 @@ do {
 
 
 do {
-    
-    let value = try p.parseScript()
-    //let value = Text("2")
-    
-    //print(a)
-    
-    //print(try a.toScalar())
-    
+    // initialize an environment
     let env = Scope()
-    
     try loadLibrary(env)
+//    let script = " [(2 + 3 * 4 - 1.5), 3.14] "//div 1 "
+ //   let script = "[3]"
     
-    print("EVALED:", try value.evaluate(env, returnType: AnyCoercion()))
+  //  let script = " store {5, x}. x () " // TO DO: () should be treated same as {} or `nothing` here, either by parser or runtime (not sure which); might be best if parser 'auto-corrected' this
+    
+    let script = " to foo {} 3 + 1. foo "
+    
+    
+    let value = try Parser(lexer: Lexer(code: script)).parseScript()
+    print(script, "=>", try value.evaluate(env, returnType: gAnythingCoercion))
+//    print(env)
     
     /*
-    print("EVALED:", try value.evaluate(env, returnType: TextCoercion()))   // -> "2" (Text)
-    print("EVALED:", try value.evaluate(env, returnType: StringCoercion())) // -> "2" (String)
-    print("EVALED:", try value.evaluate(env, returnType: IntCoercion()))    // -> 2   (Int)
-    print("EVALED:", try value.evaluate(env, returnType: DoubleCoercion())) // -> 2.0 (Double)
-    
-    let command = Command("+", value, Text("3"))
-    let result = try env.callProcedure(command, returnType: AnyCoercion(), commandScope: env)
+    do {
+        let value = Text("2")
+        print("Any:   ", try value.evaluate(env, returnType: ValueCoercion()))
+        print("Text:  ", try value.evaluate(env, returnType: TextCoercion()))   // -> "2" (Text)
+        print("String:", try value.evaluate(env, returnType: StringCoercion())) // -> "2" (String)
+        print("Int:   ", try value.evaluate(env, returnType: IntCoercion()))    // -> 2   (Int)
+        print("Double:", try value.evaluate(env, returnType: DoubleCoercion())) // -> 2.0 (Double)
+    }
+    let command = Command("+", Text("2"), Text("3"))
+    let result = try env.callProcedure(command, returnType: ValueCoercion(), commandScope: env)
     print("CMD:", command, "RES:", result) // -> `'+' {"2", "3"}` -> Text("5.0")
     
-    print(try env.callProcedure(Command("nothing"), returnType: AnyCoercion(), commandScope: env)) // -> 'nothing'
+    print(try env.callProcedure(Command("nothing"), returnType: ValueCoercion(), commandScope: env)) // -> 'nothing'
     
     try env.store(Name("wibble")) // define a named "constant" (i.e. a name that evals to itself)
-    print(try env.callProcedure(Command("wibble"), returnType: AnyCoercion(), commandScope: env)) // -> 'wibble'
-    
+    print(try env.callProcedure(Command("wibble"), returnType: ValueCoercion(), commandScope: env)) // -> 'wibble'
     */
     
  //   print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: IntCoercion())))   // -> Thunk("2", IntCoercion)
- //   print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: IntCoercion())).evaluate(env, returnType: gAnyCoercion)) // incorrect; currently returns Text
+ //   print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: IntCoercion())).evaluate(env, returnType: gValueCoercion)) // incorrect; currently returns Text
     
-} catch { print(error) }
+} catch { print("\n",error) }
 
 
 

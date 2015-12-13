@@ -61,14 +61,17 @@ func wrapScalarComparisonOperator(function: ScalarComparisonFunction) -> Primiti
 // (note: this tuple doesn't have a standard type as parameter tuple does not have fixed length/type, and a variable-length structure such as Array doesn't provide the static type info required by evalRecordField() generic, which needs to know the *exact* Coercion class in order to determine its correct return type; thus we can't type the other fields either, which is not ideal as it'd allow problems to be spotted during authoring rather than glue generation; still, there's a good chance all this implementation will radically change in future anyway, so no point sweating details too much right now)
 
 
-private func func_store(env: Scope, slotName: String, value: Value) throws {
-    try env.store(slotName, value: value) // TO DO: editable flag, etc
+private func func_storeValue(env: Scope, slotName: String, value: Value) throws {
+    try env.store(slotName, value: value) // TO DO: `editable` flag, etc
 }
-private let proc_store = (name: "store",
-                          parameterType: (value: (Name("value"), gAnyCoercion), slotName: (Name("named"), gNameKeyStringCoercion)), // TO DO: value should probably be pass-thru, allowing func_store to determine if it is an `as` command and use that as slot's type if mutable
-                          returnType: gScalarCoercion,
-                          envType: PrimitiveProcedure.Env.CommandScope,
-                          function: func_store)
+
+private let proc_storeValue = (name: "store",
+                               // TO DO: should value's type be gNoCoercion, allowing func_storeValue to determine if it is an `as` command and use that as slot's type if mutable? Alternatively, define a TypedValueCoercion that unpacks to `(Value,Coercion)` tuple? (Yet another option is just to let the `as` operator annotate the value as it expands and coerces it, and then check that any time the slot is mutated. (There is also the question of how much attention the slot should pay to the value's existing type tags versus a literal `as` operator declared within the assignment, especially since the same value may have different tags depending on prior usage - e.g. a Text value might or might not have an 'integer' tag, which may be more specific than the user intends the slot to be.)
+                               parameterType: (value:    (Name("value"), gValueCoercion),
+                                               slotName: (Name("named"), gNameKeyStringCoercion)),
+                               returnType: gNoResultCoercion, // since the primitive func doesn't return a result, its generated wrapper will return `nothing` which should be passed through as-is; gNoResultCoercion simply provides a human-readable description that will appear in documentation
+                               envType: PrimitiveProcedure.Env.CommandScope,
+                               function: func_storeValue)
 
 
 
@@ -78,35 +81,88 @@ private let proc_store = (name: "store",
 // TO DO: should there be standard for declaring aliases?
 
 
-
 //**********************************************************************
 
 
+private func func_defineProcedure(env: Scope, procName: Name, parameterType: ParameterType, returnType: ReturnType, body: Value) throws {
 
-private func call_store(var arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
-    let value_ = try evalRecordField(&arguments, fieldStructure: proc_store.parameterType.0, commandScope: commandScope)
-    let slotName_ = try evalRecordField(&arguments, fieldStructure: proc_store.parameterType.1, commandScope: commandScope)
+}
+
+private let proc_defineProcedure = (name: "to",
+                                    // TO DO: need to decide `to` proc's signature; e.g. {NAME [PARAM-TYPE], BODY, [RESULT-TYPE]} would probably be more appropriate when writing raw command (even better if the result type were included with the name and param type), though currently makeDefineProcedureCommand uses the following:
+                                    parameterType: (procName:       (Name("name"),           gNameCoercion),
+                                                    parameterType:  (Name("parameter type"), gParameterTypeCoercion),
+                                                    returnType:     (Name("result type"),    gReturnTypeCoercion),
+                                                    body:           (Name("code"),           gAnythingCoercion)
+                                    ),
+                                    returnType: gNoResultCoercion,
+                                    envType: PrimitiveProcedure.Env.CommandScope,
+                                    function: func_defineProcedure)
+
+
+//**********************************************************************
+// generated glue code
+// each primitive func gets wrapped in a generated func that unpacks and repacks its arguments and results/errors
+
+
+private func call_storeValue(var arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+    let arg_value = try evalRecordField(&arguments, fieldStructure: proc_storeValue.parameterType.0, commandScope: commandScope)
+    let arg_slotName = try evalRecordField(&arguments, fieldStructure: proc_storeValue.parameterType.1, commandScope: commandScope)
     if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
-    try proc_store.function(commandScope, slotName: slotName_, value: value_)
+    do {
+        try proc_storeValue.function(commandScope, slotName: arg_slotName, value: arg_value)
+    } catch {
+        throw ProcedureError(name: proc_storeValue.name, arguments: arguments, // TO DO: include entire proc definition, not just name? (this'd require looking up name now in procedureScope, in case scope's state subsequently mutates, although if slot is locked - which it usually should be for procs - that shouldn't happen; alternatively, defining PrimitiveProcedure instance as top-level generated `let` should make it directly available)
+                             commandScope: commandScope, procedureScope: procedureScope, originalError: error)
+    }
     return gNullValue
 }
 
 
-//**********************************************************************
+private func call_defineProcedure(var arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+    let arg_procName = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.0, commandScope: commandScope)
+    let arg_parameterType = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.1, commandScope: commandScope)
+    let arg_returnType = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.2, commandScope: commandScope)
+    let arg_body = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.3, commandScope: commandScope)
+    if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
+    do {
+        try proc_defineProcedure.function(commandScope, procName: arg_procName, parameterType: arg_parameterType, returnType: arg_returnType, body: arg_body)
+    } catch {
+        throw ProcedureError(name: proc_defineProcedure.name, arguments: arguments, // TO DO: include entire proc definition, not just name? (this'd require looking up name now in procedureScope, in case scope's state subsequently mutates, although if slot is locked - which it usually should be for procs - that shouldn't happen; alternatively, defining PrimitiveProcedure instance as top-level generated `let` should make it directly available)
+            commandScope: commandScope, procedureScope: procedureScope, originalError: error)
+    }
+    return gNullValue
 
+}
+
+
+
+//**********************************************************************
+// generated glue code
+// each library has a loadLibrary() func that adds its procs to the given environment scope
 
 func loadLibrary(env: Scope) throws {
-    try env.store(PrimitiveProcedure(name: proc_store.name,
-                                     type: (RecordSignature(FieldSignature(proc_store.parameterType.value.0, proc_store.parameterType.slotName.1),
-                                                            FieldSignature(proc_store.parameterType.value.0, proc_store.parameterType.slotName.1)), proc_store.returnType),
-                                     envType: proc_store.envType,
-                                     function: call_store))
+    try env.store(PrimitiveProcedure(name: proc_storeValue.name,
+                                     type: (RecordSignature(
+                                                FieldSignature(proc_storeValue.parameterType.value.0, proc_storeValue.parameterType.slotName.1),
+                                                FieldSignature(proc_storeValue.parameterType.value.0, proc_storeValue.parameterType.slotName.1)),
+                                            proc_storeValue.returnType),
+                                     envType: proc_storeValue.envType, function: call_storeValue))
+    try env.store(PrimitiveProcedure(name: proc_defineProcedure.name,
+                                     type: (RecordSignature(
+                                                FieldSignature(proc_defineProcedure.parameterType.procName.0, proc_defineProcedure.parameterType.procName.1),
+                                                FieldSignature(proc_defineProcedure.parameterType.parameterType.0, proc_defineProcedure.parameterType.parameterType.1),
+                                                FieldSignature(proc_defineProcedure.parameterType.returnType.0, proc_defineProcedure.parameterType.returnType.1),
+                                                FieldSignature(proc_defineProcedure.parameterType.body.0, proc_defineProcedure.parameterType.body.1)),
+                                            proc_defineProcedure.returnType),
+                                     envType: proc_defineProcedure.envType, function: call_defineProcedure))
     try env.store(PrimitiveProcedure(name: "+",   scalarArithmeticOperatorFunction: (+)))
     try env.store(PrimitiveProcedure(name: "-",   scalarArithmeticOperatorFunction: (-)))
     try env.store(PrimitiveProcedure(name: "×",   scalarArithmeticOperatorFunction: (*)))
     try env.store(PrimitiveProcedure(name: "÷",   scalarArithmeticOperatorFunction: (/)))
     try env.store(PrimitiveProcedure(name: "mod", scalarArithmeticOperatorFunction: (%)))
     try env.store(PrimitiveProcedure(name: "div", scalarArithmeticOperatorFunction: (integerDivision)))
+    try env.store(PrimitiveProcedure(name: "^",   scalarArithmeticOperatorFunction: (pow)))
     
     try env.store(PrimitiveProcedure(name: "<", scalarComparisonOperatorFunction: (<)))
     try env.store(PrimitiveProcedure(name: "≤", scalarComparisonOperatorFunction: (<=)))
@@ -114,5 +170,10 @@ func loadLibrary(env: Scope) throws {
     try env.store(PrimitiveProcedure(name: "≠", scalarComparisonOperatorFunction: (!=)))
     try env.store(PrimitiveProcedure(name: ">", scalarComparisonOperatorFunction: (>)))
     try env.store(PrimitiveProcedure(name: "≥", scalarComparisonOperatorFunction: (>=)))
+    // TO DO: min, max procs that take list of one or more numbers
+    
+    let pi = Text("3.14159265359")
+    pi.annotations.append(Scalar(3.14159265359))
+    try env.store("π", value: pi)
 }
 

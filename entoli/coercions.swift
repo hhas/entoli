@@ -6,6 +6,8 @@
 //  note: this design/implementation is troublesome (to say the least): problem is that it needs to serve two masters: entoli runtime, which only uses `Value`, and primitive procedures, which need to know *exactly* what Swift/Value type a given Coercion will return so that proc functions' argument and result types are always complete and correct
 //
 
+// TO DO: how to describe - and unpack - arguments whose types are related to each other? e.g. in scalar operators, both operands need to be same primitive type (Int OR Double); in numeric operations, `+` and `-` require two numbers with same unit types (i.e. identical or inter-convertible, e.g. `2m + 3m`, `2m + 300cm`) while `*` and `/` require one numeric and one scalar to produce linear result (e.g. `4m / 2 => 2m`) or (if supported) might also accept two numerics (e.g. `2m * 3m => 6sqm`); this suggests current unpacking process - where each record field is matched and evaluated in turn - is only suitable for simple use cases, and a more sophisticated option where all fields are matched first, then grouped according to relationships and then further matched as groups to determine appropriate/optimal coercion[s] to apply to them (e.g. `&` operator needs to coerce both operands to same outer type, e.g. text&text or list&list or record&record); plus such matching needs to be table- and/or matchfunc-driven so that it's fully extensible
+
 
 // TO DO: any way to define entire native api on a Value subclass, Coercion, then add primitive API on top of subclasses of that?
 
@@ -42,9 +44,9 @@ class Coercion: Value, CoercionBase {
         return self
     }
     
-    //    func _expandAsCommand_(env: Scope, returnType: Coercion) throws -> Command // TO DO: implement, along with _expandAsAny_ (which should return self as-is)
+    // TO DO: implement _expandAsCommand_? (TBH, not sure how coercions should behave as values; suspect they need a Proc [sub]class for constructing them; _expandAsCommand_ would only be useful in metaprogramming for converting coercion values back to the commands that constructed them)
     
-    var defersExpansion: Bool { return false } // determines if Thunk.evaluate() should force and return its thunked value, or call ReturnType._coerce_(self,...) and let it decide what it wants to do with the Thunk (e.g. NullCoercion will return Thunk unchanged, ThunkCoercion with thunk it again)
+    var defersExpansion: Bool { return false } // determines if Thunk.evaluate() should force and return its thunked value, or call ReturnType._coerce_(self,...) and let it decide what it wants to do with the Thunk (e.g. NoCoercion will return Thunk unchanged, ThunkCoercion with thunk it again)
     
     func defaultValue(env: Scope) throws ->  Value {
         throw ImplementationError(description: "\(self) coercion does not provide a standard default value, and no other default was specified.") // note: the `default` type command (commonly used to define optional parameters to native procedures) should ensure that a valid default always exists or error if not, so the only time this error should occur is if a primitive procedure's signature has forgotten to supply one (i.e. developer error)
@@ -139,14 +141,14 @@ class NativeCoercionProtocolWrapper: Coercion, NativeCoercionProtocol { // TO DO
 //
 
 
-class AnyCoercion: Coercion, FullCoercion {
+class ValueCoercion: Coercion, FullCoercion {
     
-    typealias NativeType = Value
+    typealias SwiftType = Value // TO DO
     
     // TO DO: option to constrain to one or more specified native Coercion types (i.e. implicit union) e.g. `any [text, list, record]`; this'll probably need to be a list, since order is significant (also needs to do two passes: first to check for exact type match, second to try coercing; oh, and first pass should also check for best partial match for lists and records, since)
     
-    func _coerce_(value: Value, env: Scope) throws -> Value {
-        return value
+    func _coerce_(value: Value, env: Scope) throws -> SwiftType {
+        return try value._expandAsAny_(env, returnType: self)
     }
 }
 
@@ -155,22 +157,23 @@ class AnyCoercion: Coercion, FullCoercion {
 //
 
 
-class NullCoercion: Coercion, FullCoercion { // no-op; unlike AnyCoercion, which expands a value to its own choice of type, this immediately returns value without any evaluation; e.g. for use in primitive procedures that want to do their own thing
+class NoCoercion: Coercion, FullCoercion { // no-op; unlike ValueCoercion, which expands a value to its own choice of type, this immediately returns value without any evaluation; e.g. for use in primitive procedures that want to do their own thing
     
-    typealias NativeType = Value
+    typealias SwiftType = Value
     
     override var defersExpansion: Bool { return true }
     
     let type: Coercion
     
-    init(type: Coercion = gAnyCoercion) { // for documentation purposes, constructor should take a Coercion object that will provide user with description of what's expected; this Coercion instance can always be used by primitive func if/when it needs to apply it itself
+    init(type: Coercion = gValueCoercion) { // for documentation purposes, constructor should take a Coercion object that will provide user with description of what's expected; this Coercion instance can always be used by primitive func if/when it needs to apply it itself
         self.type = type
     }
     
-    func _coerce_(value: Value, env: Scope) throws -> Value {
+    func _coerce_(value: Value, env: Scope) throws -> SwiftType {
         return value
     }
 }
+
 
 //**********************************************************************
 
@@ -239,7 +242,7 @@ class NameCoercion: Coercion, FullCoercion {
     typealias SwiftType = Name
     
     func _coerce_(value: Value, env: Scope) throws -> SwiftType {
-        return try value._expandAsName_(env, returnType: self)
+        return try value._expandAsName_(env, returnType: self) // TO DO: not sure about this (it doesn't expand, but rather typechecks value to see if it's a Name and throws coercion error if not; TBH name literals are a huge pain since they're ambiguous with commands, and must sometimes be treated as name literals - e.g. record keys - and other times as arg-less commands, e.g. record values and most other contexts; worse, a list of name values won't roundtrip when formatted as literal then reparsed [unless formatter knows to e.g. wrap them in `as name` casts])
     }
 }
 
@@ -453,6 +456,7 @@ class ArrayCoercion<ItemCoercion: Coercion where ItemCoercion: FullCoercion>: Co
 extension ArrayCoercion { // deep-wrap rawValue array when it contains non-Value elements (this is recursive so may take some time on large collections of Swift values) // TO DO: might be worth shallow-wrapping large data structures and only wrap individual items if/when they are actually used
 
     func wrap(rawValue: SwiftType, env: Scope) throws -> Value {
+        // TO DO: need to catch and rethrow temporary errors (e.g. NullCoercionError) as permanent coercion errors; ditto elsewhere
         return List(items: try rawValue.map{try self.itemType.wrap($0, env: env)}, itemType: self.itemType) // TO DO: should annotated type always be converted to fully native Coercion? or can/should that be left till first time it's actually used?
     }
 }
@@ -497,8 +501,8 @@ class TuplePairCoercion<KeyCoercion: Coercion, ValueCoercion: Coercion where Key
 }
 
 
-class PairCoercion<KeyCoercion: Coercion, ValueCoercion: Coercion
-where KeyCoercion: FullCoercion, KeyCoercion.SwiftType: Value, ValueCoercion: FullCoercion, ValueCoercion.SwiftType: Value>: TuplePairCoercion<KeyCoercion, ValueCoercion> {
+class PairCoercion<KeyCoercion: Coercion, ValueCoercion: Coercion where KeyCoercion: FullCoercion, KeyCoercion.SwiftType: Value,
+                                        ValueCoercion: FullCoercion, ValueCoercion.SwiftType: Value>: TuplePairCoercion<KeyCoercion, ValueCoercion> {
     
     typealias SwiftType = Pair
     
@@ -512,9 +516,20 @@ where KeyCoercion: FullCoercion, KeyCoercion.SwiftType: Value, ValueCoercion: Fu
 //
 
 
-class CoercionCoercion: Coercion, FullCoercion {
+class TypeCoercion: Coercion, FullCoercion {
     
     typealias SwiftType = Coercion
+    
+    func _coerce_(value: Value, env: Scope) throws -> SwiftType {
+        throw NotImplementedError()
+    }
+}
+
+
+
+class ParameterTypeCoercion: Coercion, FullCoercion {
+
+    typealias SwiftType = ParameterType
     
     func _coerce_(value: Value, env: Scope) throws -> SwiftType {
         throw NotImplementedError()
@@ -532,7 +547,7 @@ class ThunkCoercion: Coercion, FullCoercion { // aka `lazy`
     
     let type: Coercion
     
-    init(type: Coercion = gAnyCoercion) { // TO DO: just how necessary is it to include type here? e.g. lets us specify e.g. `as lazy (list of text)`
+    init(type: Coercion = gValueCoercion) { // TO DO: just how necessary is it to include type here? e.g. lets us specify e.g. `as lazy (list of text)`
         self.type = type
     }
     
@@ -547,12 +562,38 @@ class ThunkCoercion: Coercion, FullCoercion { // aka `lazy`
 }
 
 
+// TO DO: also implement `MayBeOptional`
 
-class DefaultValue: Coercion, FullCoercion {
+class MayBeNullValue<ReturnType: Coercion where ReturnType: FullCoercion, ReturnType.SwiftType: Value>: Coercion, FullCoercion {
     
-    typealias NativeType = Value
+    typealias SwiftType = Value
     
-    // TO DO: would a shim work for wrapping?
+    let type: ReturnType
+    
+    init(type: ReturnType) {
+        self.type = type
+    }
+    
+    override var defersExpansion: Bool { return self.type.defersExpansion }
+    
+    func _coerce_(value: Value, env: Scope) throws -> SwiftType {
+        do {
+            return try value.evaluate(env, returnType: self.type)
+        } catch is NullValueCoercionError {
+            return gNullValue
+        }
+    }
+}
+/*
+*/
+
+
+
+
+
+class DefaultValue: Coercion, FullCoercion { // TO DO: would it be better if this returned gNullValue if default value is not specified? that'd allow MayBeNullValue modifier to be used solely to return SwiftType=Optional<ReturnType>; alternatively, use MayBeNothing for native and Optional for primitive
+    
+    typealias SwiftType = Value // TO DO
     
     let type: CoercionBase
     let value: Value?
@@ -567,8 +608,8 @@ class DefaultValue: Coercion, FullCoercion {
     func _coerce_(value: Value, env: Scope) throws -> Value {
         var expandedValue: Value
         do {
-            expandedValue = try value.evaluate(env, returnType: gAnyCoercion) // TEMP HACK; should use `self.type` // TO DO: FIX: the Coercion vs FullCoercion problem strikes again; this seriously needs solved (gotta admit, NativeCoercionProtocol is looking like the only sensible answer, although it does lack the advantage when bridging to Swift... wonder if there'd be another way to drive Value vs SwiftType result decisions)
-        } catch is NullCoercionError {
+            expandedValue = try value.evaluate(env, returnType: gValueCoercion) // TEMP HACK; should use `self.type` // TO DO: FIX: the Coercion vs FullCoercion problem strikes again; this seriously needs solved (gotta admit, NativeCoercionProtocol is looking like the only sensible answer, although it does lack the advantage when bridging to Swift... wonder if there'd be another way to drive Value vs SwiftType result decisions)
+        } catch is NullValueCoercionError {
             let defaultValue: Value
             if self.value == nil {
                 do {
@@ -580,7 +621,7 @@ class DefaultValue: Coercion, FullCoercion {
                 defaultValue = self.value!
             }
             do {
-                expandedValue = try defaultValue.evaluate(env, returnType: gAnyCoercion) // TEMP HACK; should use `self.type` // TO DO: FIX: ditto
+                expandedValue = try defaultValue.evaluate(env, returnType: gValueCoercion) // TEMP HACK; should use `self.type` // TO DO: FIX: ditto
             } catch {
                 throw CoercionError(value: value, coercion: self, description: "Couldn't use standard default: \(error)")
             }
@@ -590,11 +631,39 @@ class DefaultValue: Coercion, FullCoercion {
 }
 
 
+
+class Precis<CoercionType: Coercion where CoercionType: FullCoercion>: Coercion, FullCoercion { // provides a custom description of Coercion object for documentation putposes
+    
+    typealias SwiftType = CoercionType.SwiftType
+    
+    override var defersExpansion: Bool { return true }
+    
+    let type: CoercionType
+    
+    init(type: CoercionType, description: String = "") {
+        self.type = type
+    }
+    
+    func _coerce_(value: Value, env: Scope) throws -> SwiftType {
+        return try value.evaluate(env, returnType: self.type)
+    }
+    
+    func wrap(value: SwiftType, env: Scope) throws -> Value {
+        return try self.type.wrap(value, env: env)
+    }
+}
+
+
 //**********************************************************************
 // commonly used Coercions, predefined for convenience
 
+let gNoResultCoercion = Precis(type: gNoCoercion, description: "nothing")
 
-let gAnyCoercion = AnyCoercion()
+let gNoCoercion = NoCoercion()
+
+let gValueCoercion = ValueCoercion() // any value except `nothing`
+
+let gAnythingCoercion = MayBeNullValue(type: gValueCoercion)
 
 let gBoolCoercion = BoolCoercion()
 
@@ -608,5 +677,8 @@ let gTextCoercion = TextCoercion()
 let gNameCoercion = NameCoercion()
 let gNameKeyStringCoercion = NameKeyStringCoercion()
 
+
+let gParameterTypeCoercion = ParameterTypeCoercion()
+let gReturnTypeCoercion = TypeCoercion()
 
 

@@ -206,7 +206,7 @@ func readDecimalNumber(code: ScriptChars, startIndex: ScriptIndex, allowExponent
             scalar = try! Scalar(double: code[firstDigitIndex..<idx], isNegative: isNegative)
         } else { // no digit after period (i.e. the period is an expression separator, not decimal separator), so it's a suffix-less integer
             idx = idx.predecessor()
-            return (try! Scalar(int: code[firstDigitIndex..<idx.predecessor()], isNegative: isNegative), idx) // ...and return it, as we're done
+            return (try! Scalar(int: code[firstDigitIndex..<idx], isNegative: isNegative), idx) // ...and return it, as we're done
         }
     } else {
         scalar = try! Scalar(int: code[firstDigitIndex..<idx], isNegative: isNegative)

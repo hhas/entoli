@@ -16,6 +16,7 @@
 
 // TO DO: what are implications of storing first-class expressions in slots as raw values (as opposed to procs)? (suspect as with unbound procs, they need to be wrapped as thunks when `EXPR as expression` is applied; main issue is avoiding refcycles where possible, in which case it's probably a matter of checking if raw value's value is expr and thunking it if it is)
 
+// Q. when delegating a call to a parent scope, need to think about difference between `continue CMD` and `CMD of parent` (currently, upcalls aren't allowed as a native proc only has access to its lexical scope, not the scope to which the command was initially sent)
 
 //**********************************************************************
 
@@ -26,14 +27,15 @@ enum Slot {
     case EncapsulatedProcedure(Closure) // closure value containing both a procedure the scope in which it was originally defined (note: primitive procedures that don't interact with their lexical scope could just use an empty Scope to reduce likelihood of refcycles, though not sure how helpful that'd be in practice given that most closures contain non-trivial - i.e. native - logic, or are only used as proc arguments and not retained beyond completion of that proc)
     // TO DO: how to represent an overloaded proc? should it be possible to define overloads in sub-frames without masking those in parents? simplest option would be to require all overloads defined in same frame, and store as UnboundProcedure(OverloadedProcedure), which provides a transparent dispatch wrapper around them all
     
-    func call<ReturnType: FullCoercion>(command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    func call<ReturnType: Coercion where ReturnType: FullCoercion>(command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         switch self {
         case .StoredValue(let value):
             if command.argument.fields.count != 0 {
                 throw BadArgument(description: "Unexpected argument for command: \(command)")// TO DO: need to nail down jargon: a command can have only zero or one arguments
             }
-            return try returnType._coerce_(value, env: procedureScope)
+            print("GET \(command) -> \(value)")
+            return try value.evaluate(procedureScope, returnType: returnType) //._coerce_(value, env: procedureScope)
         case .UnboundProcedure(let procedure):
             return try procedure.call(command, returnType: returnType, commandScope: commandScope, procedureScope: procedureScope)
         case .EncapsulatedProcedure(let closure):
@@ -75,7 +77,7 @@ class Scope: CustomStringConvertible {
     
     private let parent: Scope!
     
-    let reservedNames: Set<String> = ["", gNullValue.keyString] // TO DO: should this be static, and available to introspection // TO DO: should `parent` [possibly with some sort of prefix] be a reserved name that procedure() knows to recognize, allowing entoli code to refer to parent scope (note: this is probably part of larger question on how to distinguish and refer to local vs global scopes, library scopes, etc)
+    let reservedNames: Set<String> = ["", gNullValue.keyString] // TO DO: should this be static, and available to introspection // TO DO: should `parent` [possibly with some sort of prefix] be a reserved name that procedure() knows to recognize, allowing entoli code to refer to parent scope (note: this is probably part of larger question on how to distinguish and refer to local vs global scopes, library scopes, etc) // TO DO: should `store` be a protected name too? (need to give some thought to how name overloading/masking should be dealt with, particularly as it might affect program predictability/security/compilation, e.g. one option would be to treat collisions as errors unless explicit `override` operator is applied, and need to be particularly careful if importing procs into existing scopes c.f. `from MODULE import *`, which in entoli interpreter would probably be done using closures so would just be implemented as an ordinary command that does batch assignment from given scope to current scope)
     
     // TO DO: probably need some way to distinguish global from local scopes, e.g. when using `store` to modify global scope; or is it better to define a `script` slot on global Scope that returns self (wrapped as Value)?
     
@@ -89,7 +91,7 @@ class Scope: CustomStringConvertible {
         self.parent = parent
     }
     
-    var description: String { return "Scope:\(self.frame)" }
+    var description: String { return "Scope:\(Array(self.frame.keys))" }
     
     func makeSubScope() -> Scope { // TO DO: what args? e.g. access rights; need to consider where barriers go: for modules, write barrier is on outside (i.e. the module can still manipulate its own state, though it may be preferable to lock that too once module is initialized)
         return Scope(parent: self)
@@ -134,7 +136,7 @@ class Scope: CustomStringConvertible {
     // TO DO: `closure(name:Name)throws->Closure` for use by `as procedure` coercion? note that this'd need to create swift closure for .StoredValue slots, or else Closure class needs modified to hold Value and/or Procedure (should be safe enough using swift closures tho')
     
     
-    func callProcedure<ReturnType: FullCoercion>(command: Command, returnType: ReturnType, commandScope: Scope) throws -> ReturnType.SwiftType {
+    func callProcedure<ReturnType: Coercion where ReturnType: FullCoercion>(command: Command, returnType: ReturnType, commandScope: Scope) throws -> ReturnType.SwiftType {
         let (slot, procedureScope) = try self.procedure(command.name)
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         return try slot.call(command, commandScope: commandScope, procedureScope: procedureScope, returnType: returnType)

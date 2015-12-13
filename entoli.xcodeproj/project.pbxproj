@@ -22,6 +22,7 @@
 		4F54395F1C0A169500DA3D8D /* scalar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F5439501C0A169500DA3D8D /* scalar.swift */; };
 		4F5439601C0A169500DA3D8D /* token.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F5439511C0A169500DA3D8D /* token.swift */; };
 		4FA3D4CA1C0A1A2400990B49 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FA3D4C91C0A1A2400990B49 /* main.swift */; };
+		4FF3363C1C170006007A3E7B /* operators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FF3363B1C170006007A3E7B /* operators.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -53,6 +54,7 @@
 		4F5439501C0A169500DA3D8D /* scalar.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = scalar.swift; sourceTree = "<group>"; };
 		4F5439511C0A169500DA3D8D /* token.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = token.swift; sourceTree = "<group>"; };
 		4FA3D4C91C0A1A2400990B49 /* main.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		4FF3363B1C170006007A3E7B /* operators.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = operators.swift; sourceTree = "<group>"; };
 		4FFD82AD1BD2D57C00677DC4 /* entoli */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = entoli; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -87,6 +89,7 @@
 				4F5439451C0A169500DA3D8D /* environment.swift */,
 				4F54394B1C0A169500DA3D8D /* numeric.swift */,
 				4F54394E1C0A169500DA3D8D /* procedure.swift */,
+				4F54394F1C0A169500DA3D8D /* renderer.swift */,
 				4F5439501C0A169500DA3D8D /* scalar.swift */,
 			);
 			name = interpreter;
@@ -96,16 +99,9 @@
 			isa = PBXGroup;
 			children = (
 				4F5439481C0A169500DA3D8D /* library.swift */,
+				4FF3363B1C170006007A3E7B /* operators.swift */,
 			);
 			name = "standard library";
-			sourceTree = "<group>";
-		};
-		4F5439641C0A16F900DA3D8D /* formatter */ = {
-			isa = PBXGroup;
-			children = (
-				4F54394F1C0A169500DA3D8D /* renderer.swift */,
-			);
-			name = formatter;
 			sourceTree = "<group>";
 		};
 		4FFD82A41BD2D57B00677DC4 = {
@@ -129,11 +125,10 @@
 			isa = PBXGroup;
 			children = (
 				4FA3D4C91C0A1A2400990B49 /* main.swift */,
+				4F5439461C0A169500DA3D8D /* errors.swift */,
 				4F5439611C0A16C300DA3D8D /* parser */,
 				4F5439621C0A16E200DA3D8D /* interpreter */,
 				4F5439631C0A16EE00DA3D8D /* standard library */,
-				4F5439641C0A16F900DA3D8D /* formatter */,
-				4F5439461C0A169500DA3D8D /* errors.swift */,
 			);
 			path = entoli;
 			sourceTree = "<group>";
@@ -202,6 +197,7 @@
 				4F5439551C0A169500DA3D8D /* errors.swift in Sources */,
 				4F54395B1C0A169500DA3D8D /* operator-tables.swift in Sources */,
 				4F54395F1C0A169500DA3D8D /* scalar.swift in Sources */,
+				4FF3363C1C170006007A3E7B /* operators.swift in Sources */,
 				4FA3D4CA1C0A1A2400990B49 /* main.swift in Sources */,
 				4F54395A1C0A169500DA3D8D /* numeric.swift in Sources */,
 				4F5439591C0A169500DA3D8D /* numeric-parser.swift in Sources */,

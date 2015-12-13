@@ -90,7 +90,7 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
         case .ExpressionSeparator:  return 50
         case .ItemSeparator:        return 50
         case .PairSeparator:        return 60
-        case .PipeSeparator:        return 50
+        case .PipeSeparator:        return 5000 // TO DO: confirm this, as it creates a non-trivial transform, e.g. `foo; bar + 1` -> `bar{foo} + 1`
         case .Operator:             return gOperatorDefinedPrecedence
         default:                    return 0
         }

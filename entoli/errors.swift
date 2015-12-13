@@ -10,6 +10,28 @@
 
 
 //**********************************************************************
+// parse errors
+
+
+class SyntaxError: ErrorType, CustomStringConvertible {
+    
+    let description: String
+    
+    init(description: String = "Syntax error.") { // TO DO: also needs range + source
+        self.description = description
+    }
+    
+} // TO DO: how to store error info? (ideally, should be NSError-compatible without being dependent on it)
+
+class EndOfCodeError: SyntaxError {}
+
+class LeftOperandNotFoundError: SyntaxError {}
+
+class MalformedNumericError: SyntaxError {}
+
+
+
+//**********************************************************************
 
 
 //struct BadValue: ErrorType {}
@@ -59,6 +81,7 @@ struct CoercionError: ErrorType {
     let value: Any // TO DO: what should this be? (e.g. enum of Value, Scalar, Primitive?)
     let coercion: Coercion?
     let description: String?
+    // TO DO: should this also capture env:Scope?
     
     init(value: Any, coercion: Coercion? = nil, description: String? = nil) {
         self.value = value
@@ -67,13 +90,21 @@ struct CoercionError: ErrorType {
     }
 }
 
-struct NotImplementedError: ErrorType {}
+struct NotImplementedError: ErrorType { // TODO // TO DO: better just to use `assert`?
+    let description: String?
+    
+    init(description: String? = nil) {
+        self.description = description
+    }
+}
 
 
-struct NotSupportedError: ErrorType {}
+struct NotSupportedError: ErrorType {} // not an allowed operation
 
 
-struct NullCoercionError: ErrorType {}
+struct NullValueCoercionError: ErrorType {
+    let coercion: Coercion
+}
 
 
 struct ScopeError: ErrorType { // locked slot, name not found, etc
@@ -81,6 +112,17 @@ struct ScopeError: ErrorType { // locked slot, name not found, etc
 }
 
 
-struct ImplementationError: ErrorType {
+struct ImplementationError: ErrorType { // internal bug // TO DO: better just to use `assert`?
     let description: String
 }
+
+
+struct ProcedureError: ErrorType {
+    let name: String
+    let arguments: [Value]
+    let commandScope: Scope
+    let procedureScope: Scope
+    let originalError: ErrorType
+}
+
+
