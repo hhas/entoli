@@ -18,6 +18,8 @@ to munge {bar: text, baz: list of number} as list of text: blah, blah, blah.
 
 
 
+// TO DO: given user input [e.g.] `x()`, the empty expression group `()` after `x` should be treated same as `{}` or `nothing` here, either by parser or runtime (not sure which), as it's likely to be a common typo amongst users used to Algol-y syntax (where parens indicate both grouping and params lists); might be best if code editor 'auto-corrected' this upon user input since an empty expression group `()` returns `nothing` when evaluated anyway, either converting it to `{}` or ny deleting it entirely and inserting appropriate punctuation to end the command instead
+
 
 
 // TO DO: Coercion instances should be able to perform set operations (isSubset, union, etc), eliminating double application

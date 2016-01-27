@@ -12,21 +12,15 @@ private let DEBUG = false
 
 
 class Parser {
-    // TO DO: currently whitespace tokens are always included in lexer stream; if they usually aren't needed (e.g. to disambiguate adjoining tokens) then lexer could be revised to emit significant tokens only (alternatively, if lookahead and backtracking moves to lexer, could use 'includeWhiteSpace' arg in VocabularyLexer.lookahead() to check for whitespace separator only when it needs them, e.g. when parsing multi-word unquoted names)
     
-    let lexer: Lexer // TO DO: make private (i.e. lexer is stateful, so only parser should be able to control it    )
+    let lexer: Lexer // operator parsefuncs also call lexer methods to read their operand tokens, but must leave it in correct state when done
     
     init(lexer: Lexer) {
         self.lexer = lexer
     }
-
+    
     //**********************************************************************
     // TOKENS
-    
-    // TO DO: need to maintain cache of punctuation+vocabulary tokens
-    
-    var currentToken: Token { return self.lexer.currentToken } // current token // TO DO: currently unused by Parser; might be used by other code, e.g. for error reporting (e.g. parseMisplacedToken() in operator-tables.swift), but this is probably not ideal
-    
     
     private var precedenceForNextToken: Int { // used by parseOperation() to determine if leftExpr binds more tightly to its right (i.e. the infix/postfix operator [if any] currently being processed) than its left (the previous prefix/infix operator [if any])
         // TO DO: this gets a bit thorny with non-breaking whitespace tokens (that said, linebreaks should always delimit exprs; the only ones to worry about are in groups) (Q. what about linebreaks/comments/annotations?); lookahead should always skip those
@@ -39,20 +33,6 @@ class Parser {
         } else {
             return precedence
         }
-    }
-    
-    
-    //**********************************************************************
-    // utility funcs; used to clean up collection items
-    
-    func stripComma(value: Value) -> Value { // used to tidy list items after parsing; TO DO: should this strip _all_ commas? or treat adjoining commas as syntax error/warning (e.g. [1,2,,4] is legal but suggests a typo)? or just leave as-is and leave user to clean up surplus commas in code if it bothers them
-        if let v = value as? ItemSeparator { return v.data }
-        return value
-    }
-    
-    func stripPeriod(value: Value) -> Value { // TO DO: ditto
-        if let v = value as? ExpressionSeparator { return v.data }
-        return value
     }
     
     
@@ -86,13 +66,13 @@ class Parser {
             }
             let value: Value
             if isNamedPair {
-                value = self.stripComma(try self.parseOperation(Name(token.value)))
+                value = try self.parseOperation(Name(token.value))
             } else {
  //               print("...backtrack from \(self.lexer.currentTokenIndex): (\(self.lexer.currentToken))")
                 self.lexer.backtrackTo(backtrackIndex, flush: true)
  //               print("            ...to \(backtrackIndex): \(self.lexer.currentToken)")
  //               print("==============\n\t",self.lexer.currentTokensCache.map{String($0)}.joinWithSeparator("\n\t"), "\n===============")
-                value = self.stripComma(try self.parseExpression())
+                value = try self.parseExpression()
  //               print("READ ITEM:", value)
             }
             // additional validity checks
@@ -129,8 +109,8 @@ class Parser {
             return name // TO DO: if next token is `do...done` block (a postfix structure), confirm that this gets attached to command correctly (note that its parsefunc will need to cast name to command first)
         } else { // TO DO: also, what if `nothing` literal is found?
            
-            if let expr = argument as? ExpressionGroup { // note: if argument literal is `()` (which is synonymous with `nothing`, as that's what it returns when evaled, and not something the user would intend here as it's simpler just to omit the argument entirely), the parser automatically 'corrects' it by replacing it with an empty record (which is also equivalent to omitting argument entirely). This should avoid runtime errors due to users habitually typing `foo()` instead of `foo{}` (note: to explicitly pass nothing, use `foo{nothing}`, which is functionally identical to `foo{}` or `foo`). OTOH, `foo(1)`, `foo(1,2,3)` is not 'auto-corrected' as its intent is ambiguous (the user may have intended it to be a group whose result is passed as single argument to `foo`), but will be visibly incorrect when formatted as `foo{(1)}`, `foo{(1,2,3)}`; it might also be worth parser/formatter flagging it as questionable when performing a syntax check (though am inclined not to do that in parser itself)
-                if expr.expressions.count == 0 { argument = gNullRecord }
+            if let expr = argument as? ExpressionSequence { // note: if argument literal is `()` (which is synonymous with `nothing`, as that's what it returns when evaled, and not something the user would intend here as it's simpler just to omit the argument entirely), the parser automatically 'corrects' it by replacing it with an empty record (which is also equivalent to omitting argument entirely). This should avoid runtime errors due to users habitually typing `foo()` instead of `foo{}` (note: to explicitly pass nothing, use `foo{nothing}`, which is functionally identical to `foo{}` or `foo`). OTOH, `foo(1)`, `foo(1,2,3)` is not 'auto-corrected' as its intent is ambiguous (the user may have intended it to be a group whose result is passed as single argument to `foo`), but will be visibly incorrect when formatted as `foo{(1)}`, `foo{(1,2,3)}`; it might also be worth parser/formatter flagging it as questionable when performing a syntax check (though am inclined not to do that in parser itself)
+                if expr.expressions.count == 0 { argument = gEmptyRecord }
             }
             if !(argument is Record) { argument = Record([argument!]) } // non-record values are treated as first item in a record arg
             // any pairs in argument record *must* have Name as LH operand (in theory, they could be treated as positional if LH is non-name, but this will likely cause user confusion), so check and throw syntax error if not (e.g. to pass a pair as a positional arg, just wrap in parens, though bear in mind how it's evaled will depend on context)
@@ -164,28 +144,17 @@ class Parser {
         case .ListLiteral: // [...];  an ordered collection (array) or key-value collection (dictionary)
             var result = [Value]()
             while self.lexer.lookaheadBy(1).type != .ListLiteralEnd {
-                let value = self.stripComma(try self.parseExpression()) // parser treats comma separator as postfix op to preserve it, but collections are self-delimiting so don't need it
+                let value = try self.parseExpression()
                 result.append(value)
             }
             try self.lexer.skip(.ListLiteralEnd) // TO DO: skip is only really needed to throw error if code terminates without closing `]`
             return List(items: result)
         case .RecordLiteral: // {...}; a sequence of values and/or name-value pairs; mostly used to pass proc args
             return try self.parseRecord()
-        case .ExpressionGroupLiteral: // (...) // TO DO: need to extract following logic into a shared parsefunc that can be used by `do` block parsefunc too
-            var result = [Value]()
-            while self.lexer.lookaheadBy(1).type != .ExpressionGroupLiteralEnd {
-                var value = self.stripPeriod(try self.parseExpression())
-                if let name = value as? Name { // convert a name to an arg-less command
-                    value = Command(name: name)
-                } else if let pair = value as? Pair { // convert a named pair to a `store [value]` command
-                    if let name = pair.key as? Name {
-                        value = makeStoreValueCommand(pair.value, named: name) // TO DO: annotate for formatter
-                    }
-                }
-                result.append(value)
-            }
-            try self.lexer.skip(.ExpressionGroupLiteralEnd)
-            return ExpressionGroup(expressions: result)
+        case .ExpressionSequenceLiteral: // (...) // a sequence of zero or more expressions, grouped by parentheses; also be aware that `(x:1)` will be treated as an ordinary pair, not a `store` command, unlike in (e.g.) `do...done` blocks
+            let result = ExpressionSequence(expressions: try self.parseExpressionSequence({$0.type == .ExpressionSequenceLiteralEnd}))
+            try self.lexer.skip(.ExpressionSequenceLiteralEnd)
+            return result
             // atomic literals
         case .QuotedText: // "..." // a text (string) literal
             return Text(token.value)
@@ -210,7 +179,7 @@ class Parser {
         case .UnquotedName:
             return try self.parseArgument(Name(token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
         case .Operator:
-            if true {print("\nparseAtom got Operator: \(token.prefixOperator) \(token.infixOperator)")}
+            if DEBUG {print("\nparseAtom got Operator: \(token.prefixOperator) \(token.infixOperator)")}
             guard let operatorDefinition = token.prefixOperator else {
                 self.lexer.backtrackTo(previousIndex)
                 assert(token.infixOperator != nil, "BUG in Parser.parseAtom(): .Operator token contains neither prefix nor infix definition: \(token)")
@@ -224,8 +193,8 @@ class Parser {
             return nil
             // INVALID TOKENS (these cannot appear where an atom or prefix operator is expected)
         default:
-            // AnnotationLiteralEnd, RecordLiteralEnd, ListLiteralEnd, ExpressionGroupLiteralEnd will only appear if opening '«', '{', '[', or '(' token is missing, in which case parser should treat as syntax error [current behavior] or as an incomplete structure in chunk of code whose remainder is in a previous chunk [depending how incremental parsing is done]; any other token types are infix/postfix ops which are missing their left operand
-            return nil
+            // AnnotationLiteralEnd, RecordLiteralEnd, ListLiteralEnd, ExpressionSequenceLiteralEnd will only appear if opening '«', '{', '[', or '(' token is missing, in which case parser should treat as syntax error [current behavior] or as an incomplete structure in chunk of code whose remainder is in a previous chunk [depending how incremental parsing is done]; any other token types are infix/postfix ops which are missing their left operand
+            return nil // TO DO: this should throw, and .LineBreak should be treated separately
         }
     }
     
@@ -241,25 +210,25 @@ class Parser {
                 // PUNCTUATION TOKENS
             case .AnnotationLiteral: // «...» // attaches arbitrary contents to preceding node as metadata
                 leftExpr.annotations.append(token.value)
-            case .ExpressionSeparator: // period separator // note: comma and period seps are currently treated as postfix [no-]ops to preserve them // TO DO: this allows for somewhat silly inputs, e.g. `foo..,...,,,bar`, that should arguably be cleaned up or rejected
-                return ExpressionSeparator(data: leftExpr) // as with linebreak token, period token (`.`) indicates end of expression (e.g. `1. - 2` is two expressions, not an operation), so is a no-op // TO DO: is it safe to return leftExpr without preserving period? any use cases where that would cause problems?
-            case .ItemSeparator: // comma separator is normally used to separate list and record items; here it acts as an expression separator, though period separators are strongly preferred to avoid confusion
-                return ItemSeparator(data: leftExpr) // ditto
+            case .ExpressionSeparator: // period separator
+                return leftExpr // as with linebreak token, period token (`.`) indicates end of expression (e.g. `1. - 2` is two expressions, not an operation), so is a no-op
+            case .ItemSeparator: // comma separator is normally used to separate list and record items; here it acts as an expression separator, though period separators are strongly preferred to avoid confusion // TO DO: in command contexts, can/should commas work as separators within an unparenthesized expression group, with periods/linebreaks terminating the group? (in practice, we don't want to create more groups than needed)
+                return leftExpr
             case .PairSeparator: // found colon separator for key:value pair
                 leftExpr = Pair(leftExpr, try self.parseExpression(TokenType.PairSeparator.precedence-1))
-            case .PipeSeparator: // found semicolon separator, indicating leftExpr should be used as first field in RH command's arg list (which in turn requires that RH actually be a command, something further complicated by RH being parenthesizable) 
-                // transform `foo{...};bar{...}` into `bar{foo{...},...}`, annotating `foo` command with formatting preference (i.e. `;` should be purely syntactic sugar, with no semantic representation); also note that rightExpr must be a command (possibly in parens) and `;` needs to bind to it like glue, much as command-arg pairs already do (i.e. no operator should have higher precedence)
-                // TO DO: if rightExpr is parenthesized command, e.g. `(cmd)`, decide if this should be a syntax error (i.e. `;` _must_ be immediately followed by next command's name), or if it should be temporarily unwrapped for purposes of inserting arg; might make sense to annotate it as wrapped so that it [re]formats as `(cmd;cmd)`; another option is to implement `toCommand` or similar on values so that parser can convert any value to command by calling that without worrying about details (the resulting Command could be annotated so that formatter knows to print it in parens) - bear in mind general philosophy of begging forgiveness rather than asking permission, which would suggest it's better to convert automatically and display 'correction' to user rather than reject
-                // TO DO: another problem: if RH expr is an operator, it already has all its [leading] arguments; thus, the preceding `;` must be reported as a syntax error; when creating command from operator, might want to annotate it so that no more ops can be added [prefixed?] (caveat do block suffix?), or just annotated to indicate it was created from an operator literal, allowing that annotation to be checked for here and an error raised if found.
-                var rightExpr = try self.parseExpression(TokenType.PipeSeparator.precedence)
-                if let name = rightExpr as? Name {
-                    rightExpr = Command(name: name)
-                }
-                guard let command = rightExpr as? Command else {
+            case .PipeSeparator: // found semicolon separator, indicating leftExpr should be used as first field in RH command's arg list, e.g. given `foo{1};bar{2}`, transforms it into `bar{foo{1},2}`, annotating `foo` command with formatting preference (i.e. `;` should be purely syntactic sugar, with no semantic representation); also note that rightExpr must be a command (possibly in parens) and `;` needs to bind to it like glue, much as command-arg pairs already do (i.e. no operator should have higher precedence)
+                // TO DO: if RH expr is an operator, it already has all its [leading] arguments; thus, the preceding `;` must be reported as a syntax error; when creating command from operator, might want to annotate it so that no more ops can be added [prefixed?] (caveat do block suffix?), or just annotated to indicate it was created from an operator literal, allowing that annotation to be checked for here and an error raised if found.
+                let rightExpr = try self.parseExpression(TokenType.PipeSeparator.precedence)
+                let command: Command
+                do {
+                    command = try rightExpr.toCommand()
+                } catch {
                     throw SyntaxError(description: "Expected command after `;` but found \(rightExpr.typename): \(rightExpr)")
                 }
+                // TO DO: would be better to call `insertArgument` on Commmand and let it return new Command instance, or throw error if it knows it has all its args (i.e. operator-created)
                 leftExpr = Command(name: command.name, argument: Record([leftExpr] + command.argument.fields))
-                leftExpr.annotations.append("PipedArgument") // TO DO: suspect annotations will be dict with [mostly] constant keys, probably grouping by purpose (e.g. `gPipedArgument` flag would be added to `gFormatting` set/sub-dict; the only caveat being that nested dicts, while easier to view/search for arbitrary keys, add complexity to implementation... TBH, one could just about argue for using a linked list)
+                leftExpr.annotations.append("Format.PipedInput") // TO DO: suspect annotations will be dict with [mostly] constant keys, probably grouping by purpose (e.g. `gPipedArgument` flag would be added to `gFormatting` set/sub-dict; the only caveat being that nested dicts, while easier to view/search for arbitrary keys, add complexity to implementation... TBH, one could just about argue for using a linked list)
+                leftExpr.annotations.appendContentsOf(command.annotations)
                 // VOCABULARY TOKENS
             case .Operator:
                 if DEBUG {print("\nparseOperation got Operator: \(token.prefixOperator) \(token.infixOperator)")}
@@ -275,7 +244,7 @@ class Parser {
             case .LineBreak: // a line break always acts as an expression separator
                 return leftExpr // TO DO: need to check this is correct // TO DO: check behavior is appropriate when linebreak appears between an operator and its operand[s]; also make sure it behaves correctly when it appears after a pipe (semi-colon) separator, as it's not unreasonable for the RH operand to appear on the following line in that case
                 // INVALID TOKENS (these cannot appear where an infix/postfix operator is expected)
-            default: // anything else implictly starts a new expression (if token is invalid, e.g. unbalanced bracket/brace/paren, if will be detected and thrown by parseAtom on next pass)
+            default: // anything else implictly starts a new expression (if token is invalid, e.g. unbalanced bracket/brace/paren, parseAtom will detect it and throw error on next pass)
                 self.lexer.backtrackTo(previousIndex)
                 return leftExpr
             }
@@ -289,7 +258,7 @@ class Parser {
     
     
     func parseExpression(precedence: Int = 0) throws -> Value {
-        while self.lexer.lookaheadBy(1).type == .LineBreak { // skip any white space prior to new expression (note: linebreaks will need preserved for display purposes; perhaps as annotations?)
+        while self.lexer.lookaheadBy(1).type == .LineBreak { // skip any line breaks prior to new expression (note: these will need preserved for display purposes; perhaps as annotations?)
             print("parseExpression skipping linebreak")
             self.lexer.advance()
         }
@@ -304,6 +273,26 @@ class Parser {
     }
     
     
+    
+    // TO DO: what about .LineBreak?
+    
+    func parseExpressionSequence(isEndToken: (Token -> Bool), isBlock: Bool = false) throws -> [Value] {
+        // note: this method reads up to, but does not advance onto, the end token; caller must do that on return
+        // isBlock should be true only if the caller wants named pairs to be treated as syntactic shortcuts for `store` commands (e.g. `x:1` -> `store{value:1,named:x}`)
+        var result = [Value]()
+        while !isEndToken(self.lexer.lookaheadBy(1)) {
+            var value = try self.parseExpression()
+            if let command = try? value.toCommand() {
+                value = command
+            } else if isBlock && value is Pair {
+                if let command = try? (value as! Pair).toStoreCommand() { value = command }
+            }
+            result.append(value)
+        }
+        return result
+    }
+    
+    
     //**********************************************************************
     // PARSE SCRIPT
     
@@ -311,7 +300,7 @@ class Parser {
     func parseScript() throws -> EntoliScript { // parse entire document (result is expression group)
         var result = [Value]()
         while self.lexer.lookaheadBy(1).type != .EndOfCode {
-            result.append(self.stripPeriod(try self.parseExpression()))
+            result.append(try self.parseExpression())
             if DEBUG {print("TOP-LEVEL parse() completed expr: \(result.last)")}
             self.lexer.flush()
         }

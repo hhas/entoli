@@ -5,71 +5,7 @@
 //
 //
 
-
-//**********************************************************************
-// Signature classes describe a procedure's entoli interface
-
-
-typealias ParameterType = RecordSignature
-typealias ReturnType = Coercion
-
-
-// note: subclassing allows these to be manipulated as ordinary record and command types in metaprogramming; coercions should ensure that standard types get coerced to these where necessary
-
-
-class FieldSignature: Pair { // TO DO: use generic PairBase<ValueType> rather than subclassing?
-    
-    var keyString: String { return self.name.keyString }
-    let name: Name
-    let type: Coercion
-    
-    init(_ key: Name, _ value: Coercion) {
-        self.name = key
-        self.type = value
-        super.init(key, value) // TO DO: kludgy
-    }
-    
-    override func toFieldSignature() throws -> FieldSignature {
-        return self
-    }
-}
-
-
-class RecordSignature: Record { // TO DO: use generics rather than subclassing? (entoli should always use coercions to ensure it gets the right Value type, which at worst means unboxing and reboxing the Array if going from RecordSignature to Record (which shouldn't be often, and is still cheaper than going the other way), so shouldn't care about subclassing or lack thereof)
-    
-    let fieldTypes: [FieldSignature]
-    
-    init(fields: [FieldSignature]) {
-        self.fieldTypes = fields
-        super.init(fields)
-    }
-    
-    convenience init(_ fields: FieldSignature...) {
-        self.init(fields: fields)
-    }
-    
-    override func toRecordSignature() throws -> RecordSignature {
-        return self
-    }
-}
-
-
-let gNullRecordSignature = RecordSignature()
-
-
-class ProcedureSignature: Command { //
-    
-    let returnType: ReturnType // TO DO: should this include 'fails'? would be cleaner, esp if using icon-style error handling, which in turn might allow a degree of continuation since remaining procs could be captured by the error value as it passes through them, along with their scope... will really have to think that one through, plus it'd presumably be limited to native procs)
-    
-    // note: it would be better if signature was simpler (less initialization overhead); alternatively, use structs/tuples to declare primitive procs, and only create ProcedureSignature instances for native procs and when introspecting primitive procs
-    
-    init(name: Name, parameterType: ParameterType, returnType: ReturnType) { // TO DO: this shouldn't throw as declarations will be top-level in swift
-        self.returnType = returnType
-        super.init(name: name, argument: parameterType)
-    }
-}
-
-
+// TO DO: how practical for procs to declare they're idempotent? this'd be particularly useful for ProxyCoercions as it'd allow them to memoize the constructed Coercion on first use, rather than reconstructing it every time it's applied; problem is native procs don't know if they're idempotent as commands within their body are late-bound; also bear in mind that type args/operands can't be evaled until scope is fully populated by top-level exprs being evaled, but `to` commands need to eval param types in order to add themselves to scope (thus their full initialization really wants to be deferred until after the scope is fully populated)
 
 
 //**********************************************************************
@@ -77,6 +13,8 @@ class ProcedureSignature: Command { //
 
 // note: primitive proc glue should code-generate one unpackArgument() call for each parameter in sig
 // TO DO: this func should probably be generalized to work on any record, allowing it to be applied by coercion handlers as well (note: would probably be easier to wrap it in a function that does this, possibly as method on RecordSignature)
+
+// TO DO: unpacking records should support use cases where first (e.g. 'target') arg is optional and the second is not, e.g. `forward 100`, where forward is defined as `forward {turtle: optional turtle, distance: number} -> turtle`; thus, `forward 10, turn 90; forward 20.` would operate on current default turtle, whereas `{name:"Bob", color:red} as turtle; forward 10; turn 90; forward 20.` would operate on a newly created turtle named "Bob" (the code editor being smart enough to recommend semi-colons [pipes] if the user didn't already include them herself).
 
 
 func evalRecordField<ReturnType: FullCoercion where ReturnType: Coercion>(inout fields: [Value], fieldStructure: (name: Name, type: ReturnType), commandScope: Scope) throws -> ReturnType.SwiftType {
@@ -112,9 +50,7 @@ func evalRecordField<ReturnType: FullCoercion where ReturnType: Coercion>(inout 
 
 class Procedure: CustomStringConvertible {
     
-    // Note: a procedure is stored in the Scope to which it is lexically bound; thus to avoid refcycles that scope is passed in upon invocation. This means a Procedure is not itself a closure; thus it is not defined as a Value subclass. Instead, it must be encapsulated by a `PROCNAME as procedure` cast which returns a `Closure` containing both the Procedure and the Scope within which it was found (somewhat like a thunk, except it supports `call` rather than `eval` [the latter would merely return self]). Bear in mind that storing this procvalue in the same scope (or its subscopes) will create a refcycle; will need to decide how best to deal with that (e.g. uncycler could be informed of the procvalue's creation, allowing it to put that scope on its to-check list).
-    
-    // Note that storage of a Closure might be a little finnicky under current design; suspect Scope is going to need to use an enum to store Procedure/Value/ProcValue
+    // Note: a procedure is by default stored in the scope in which it was defined and thus lexically bound; to avoid refcycles that scope is passed in upon invocation. This means a Procedure is not itself a closure; thus it is not defined as a Value subclass. Instead, it must be encapsulated by a `PROCNAME as procedure` cast which returns a `Closure` containing both the Procedure and the Scope within which it was found (somewhat like a thunk, except it supports `call` rather than `eval` [the latter would merely return self]). Bear in mind that storing this procvalue in the same scope (or its subscopes) will create a refcycle; will need to decide how best to deal with that (e.g. uncycler could be informed of the procvalue's creation, allowing it to put that scope on its to-check list).
     
     let signature: ProcedureSignature
     var keyString: String { return self.signature.name.keyString }
@@ -133,7 +69,7 @@ class Procedure: CustomStringConvertible {
     func call<ReturnType: FullCoercion>(command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType { // Q. what is commandScope exactly? (A. it's just args' lexical scope, supplied so sig's typespecs can coerce/eval those args)
         // 1. get command.data (Record)
         // 2. apply that record to signature.data (Record) to create canonical args (dict? array? Record? what about labels? could all depend on primitive vs native Proc implementation), or throw BadCommand error if they can't be lined up (note: Coercions throw coercion error; mismatched fields would need to throw something else, e.g. BadName; these get caught and rethrown as BadCommand, though the real prize would be to allow these errors to be handled - either by `catching` clause or by user herself - without unspooling call stack)
-        throw NotImplementedError()
+        fatalNotYetImplemented(self, __FUNCTION__)
     }
 }
 
@@ -169,7 +105,7 @@ class PrimitiveProcedure: Procedure {
     
     // convenience constructors for standard math operators
     
-    static let leftFieldSignature  = FieldSignature(gLeftOperandName, gScalarCoercion)
+    static let leftFieldSignature         = FieldSignature(gLeftOperandName, gScalarCoercion)
     static let rightFieldSignature        = FieldSignature(gRightOperandName, gScalarCoercion)
     static let scalarInfixParameterType   = RecordSignature(leftFieldSignature, rightFieldSignature)
     static let scalarPrefixParameterType  = RecordSignature(leftFieldSignature)
@@ -231,7 +167,7 @@ class NativeProcedure: Procedure {
         var arguments = command.argument.fields // TO DO: if command takes previous result as its first arg and/or has postfixed `do` block as its last arg, these will need to be passed too
         for (i, parameter) in (self.signature.argument as! RecordSignature).fieldTypes.enumerate() {
             print("getting parameter \(i+1): \(parameter)")
-            let value = try evalRecordField(&arguments, fieldStructure: (parameter.name, parameter.type.intersect(gValueCoercion, env: commandScope)), commandScope: commandScope) // TO DO: FIX; parameter.type is Coercion, but evalRecordField needs something that conforms to FullCoercion (which, conversely, parameter.type can't be cast to because it's generic); for now we cheat it by doing a redundant intersect whose only real , but this is hardly ideal; one option might be to define a 'native coercion' wrapper for primitive coercions that hooks their expand/coerce methods to their wrap methods, but even that will probably complain
+            let value = try evalRecordField(&arguments, fieldStructure: (parameter.name, parameter.type.intersect(gAnyValueCoercion, env: commandScope)), commandScope: commandScope) // TO DO: FIX; parameter.type is Coercion, but evalRecordField needs something that conforms to FullCoercion (which, conversely, parameter.type can't be cast to because it's generic); for now we cheat it by doing a redundant intersect whose only real , but this is hardly ideal; one option might be to define a 'native coercion' wrapper for primitive coercions that hooks their expand/coerce methods to their wrap methods, but even that will probably complain
             try subEnv.store(parameter.keyString, value: value)
         }
         if arguments.count > 0 { throw BadArgument(description: "Unrecognized extra argument(s): \(arguments)") }

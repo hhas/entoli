@@ -71,8 +71,8 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
     case ListLiteralEnd
     case RecordLiteral // a sequence of values and/or name-value pairs; primarily used to represent complex procedure arguments
     case RecordLiteralEnd
-    case ExpressionGroupLiteral
-    case ExpressionGroupLiteralEnd
+    case ExpressionSequenceLiteral
+    case ExpressionSequenceLiteralEnd
     case ExpressionSeparator
     case ItemSeparator
     case PairSeparator

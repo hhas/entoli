@@ -90,7 +90,7 @@ func parsePostfixOperator(parser: Parser, leftExpr: Value!, operatorName: String
 }
 
 func parseMisplacedToken(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    throw SyntaxError(description: "Found misplaced \(parser.currentToken.type) token: \(parser.currentToken.value)") // TO DO: should probably throw sub-error here, and leave parser to construct full error message and throw as SyntaxError
+    throw SyntaxError(description: "Found misplaced \(parser.lexer.currentToken.type) token: \(parser.lexer.currentToken.value)") // TO DO: should probably throw sub-error here, and leave parser to construct full error message and throw as SyntaxError
 }
 
 

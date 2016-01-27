@@ -63,8 +63,8 @@ class Lexer {
         "]": .ListLiteralEnd,
         "{": .RecordLiteral,
         "}": .RecordLiteralEnd,
-        "(": .ExpressionGroupLiteral,
-        ")": .ExpressionGroupLiteralEnd,
+        "(": .ExpressionSequenceLiteral,
+        ")": .ExpressionSequenceLiteralEnd,
         ".": .ExpressionSeparator, // also decimal sep in canonical numbers (or thousands sep in localized numbers?)
         ",": .ItemSeparator, // also thousands separator in canonical numbers? (or decimal sep in localized numbers?)
         ":": .PairSeparator,

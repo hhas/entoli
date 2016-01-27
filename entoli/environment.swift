@@ -118,7 +118,7 @@ class Scope: CustomStringConvertible {
         try self.store(procedure.keyString, slot: .UnboundProcedure(procedure))
     }
     
-    func store(name: Name) throws { // stores a "constant", e.g. 'nothing' (which evaluates to 'nothing')
+    func store(name: Name) throws { // stores a "constant", i.e. a name that evaluates to itself (e.g. 'nothing' evaluates to 'nothing') // TO DO: this is problematic, and will confuse users
         try self.store(name.keyString, slot: .StoredValue(name))
     }
     
@@ -136,7 +136,7 @@ class Scope: CustomStringConvertible {
     // TO DO: `closure(name:Name)throws->Closure` for use by `as procedure` coercion? note that this'd need to create swift closure for .StoredValue slots, or else Closure class needs modified to hold Value and/or Procedure (should be safe enough using swift closures tho')
     
     
-    func callProcedure<ReturnType: Coercion where ReturnType: FullCoercion>(command: Command, returnType: ReturnType, commandScope: Scope) throws -> ReturnType.SwiftType {
+    func callProcedure<ReturnType: Coercion where ReturnType: FullCoercion>(command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         let (slot, procedureScope) = try self.procedure(command.name)
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         return try slot.call(command, commandScope: commandScope, procedureScope: procedureScope, returnType: returnType)

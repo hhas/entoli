@@ -22,6 +22,7 @@
 		4F54395F1C0A169500DA3D8D /* scalar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F5439501C0A169500DA3D8D /* scalar.swift */; };
 		4F5439601C0A169500DA3D8D /* token.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F5439511C0A169500DA3D8D /* token.swift */; };
 		4FA3D4CA1C0A1A2400990B49 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FA3D4C91C0A1A2400990B49 /* main.swift */; };
+		4FF060E11C20F3AA00622913 /* signatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FF060E01C20F3AA00622913 /* signatures.swift */; };
 		4FF3363C1C170006007A3E7B /* operators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FF3363B1C170006007A3E7B /* operators.swift */; };
 /* End PBXBuildFile section */
 
@@ -54,6 +55,7 @@
 		4F5439501C0A169500DA3D8D /* scalar.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = scalar.swift; sourceTree = "<group>"; };
 		4F5439511C0A169500DA3D8D /* token.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = token.swift; sourceTree = "<group>"; };
 		4FA3D4C91C0A1A2400990B49 /* main.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		4FF060E01C20F3AA00622913 /* signatures.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = signatures.swift; sourceTree = "<group>"; };
 		4FF3363B1C170006007A3E7B /* operators.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = operators.swift; sourceTree = "<group>"; };
 		4FFD82AD1BD2D57C00677DC4 /* entoli */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = entoli; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -89,6 +91,7 @@
 				4F5439451C0A169500DA3D8D /* environment.swift */,
 				4F54394B1C0A169500DA3D8D /* numeric.swift */,
 				4F54394E1C0A169500DA3D8D /* procedure.swift */,
+				4FF060E01C20F3AA00622913 /* signatures.swift */,
 				4F54394F1C0A169500DA3D8D /* renderer.swift */,
 				4F5439501C0A169500DA3D8D /* scalar.swift */,
 			);
@@ -194,6 +197,7 @@
 				4F5439601C0A169500DA3D8D /* token.swift in Sources */,
 				4F5439531C0A169500DA3D8D /* datatypes.swift in Sources */,
 				4F54395E1C0A169500DA3D8D /* renderer.swift in Sources */,
+				4FF060E11C20F3AA00622913 /* signatures.swift in Sources */,
 				4F5439551C0A169500DA3D8D /* errors.swift in Sources */,
 				4F54395B1C0A169500DA3D8D /* operator-tables.swift in Sources */,
 				4F54395F1C0A169500DA3D8D /* scalar.swift in Sources */,

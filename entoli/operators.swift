@@ -5,6 +5,10 @@
 //
 //
 
+// TO DO: if using `!` and `?` as expression separators that also work as behavioural modifiers, it's probably simplest to implement them as postfix operators and convert them to commands that wrap the preceding expression, annotating them with formatter hints to suppress trailing `,`/`.`
+
+
+// TO DO: operator parsefuncs should always annotate command to indicate it was created from operator
 
 
 let StandardOperatorsTable = Operators().add(StandardOperators) // TO DO: where to put this? (both parser and formatter require access to formatting tables, which in turn need to be composed according to what modules are imported)
@@ -64,7 +68,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     (("≥", .Symbol, .Full),   400, .Infix,  parseInfixOperator, [(">=", .Symbol, .Full), ("!>", .Symbol, .Full)]),
     
     // concatenation
-    (("&", .Symbol, .Full),   450, .Infix,  parseInfixOperator, []), // TO DO: as with `is equal to`, should this accept optional `as` clause for specifying which type to force both operands to before joining (e.g. `A & B as list of text`); and, if so, how should constraints be applied?
+    (("&", .Symbol, .Full),   450, .Infix,  parseInfixOperator, []), // TO DO: as with `is equal to`, should this accept optional `as` clause for specifying which type to force both operands to before joining (e.g. `A & B as list of text`); and, if so, how should constraints be applied? // TO DO: what about `|` for merging records rather than concatenating)? (i.e. since record fields may be unnamed, not sure if `&` c.f. AS is appropriate; or is it sufficient just to have `merge` command?); also, when applying `&` to records, should it throw if both records contain same field name? (may also want optional `as` clause, which might solve a lot of these problems)
     
     
     // non-numeric comparisons (e.g. text); note that parsefunc overrides standard precedence to allow `COMP as TYPE` to specify comparison type, e.g. `A is B as C` is shorthand for `(A as C) is (B as C)` (currently, `as` operator binds lowest, so would apply to comparison's result, but since these ops always return boolean that isn't really useful, whereas applying cast to both operands prior to comparison is, and allows things like case-insensitive text comparisons and list of X comparisons to be done as well) -- note that a failed cast will throw error (not sure if catching this should be done by typespec, and if it is then what's to prevent `A is not B as C` returning true when both A and B fail to cast causing typespec to supply identical default value for each)
@@ -73,6 +77,8 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     
     // note: `is` and `is not` shortcuts are not right-auto-delimited as they may often appear at start of, or within, longer user-defined command names, particularly those that return a boolean result, e.g. `is job done`
     // caution: it is safer to use longest match for canonical name, e.g. `A is equal B` will rewrite to `A is equal to equal B`, making the mistake obvious, whereas shortest would rewrite to `A is equal B`, concealing it (a highlighting editor would still give some clue since "is" and "equal B" would be colored differently, but a less experienced user could miss that whereas an extra word is much harder to overlook; using longest match as canonical name should also be more auto-complete friendly)
+    // important: operators that take an optional `as` clause MUST have higher precendence than the `as` token in order, e.g. `"foo" is "FOO" as case-insensitive text`
+    // TO DO: if splitting operators into task-specific sets, they will need some way to indicate if `as` or other 'standard' tokens are also required
     (("is before",             .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("lt",                    .Phrase, .Full)]),
     (("is before or equal to", .Phrase, .Full), 400, .Infix, parseGeneralComparisonOperator, [("le",                    .Phrase, .Full),
         ("is or before",          .Phrase, .Full),
@@ -124,7 +130,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     
     // define native procedure
     // `to` operator provides cleaner syntax for defining new procs; as a commonly-used word it is auto-right-delimited only to reduce chance of conflicts when used within a longer unquoted name (e.g. `go back to start`), so must appear at start of an expression to act as operator.
-    (("to",     .Phrase, .Right),   0, .Prefix,   parseProcedureDefinition, []),
+    (("to",     .Phrase, .Right),   0, .Prefix,   parseProcedureDefinition, []), // lowest precedence ensures operator will use rest of expression as its operand
 ]
 
 
@@ -134,17 +140,17 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
 
 
 func readTypeOperand(parser: Parser, precedence: Int) throws -> Command { // precedence is that of `as` operator
-    let expr = try parser.parseExpression(precedence) // TO DO: avoid hardcoded values
-    switch expr { // TO DO: Value classes should implement cast methods, avoiding need for switches
-    case is Command: return expr as! Command
-    case is Name: return Command(name: expr as! Name)
-    default: throw SyntaxError(description: "Expected type command after `as` operator but found \(expr.typename) instead: \(expr)")
+    let expr = try parser.parseExpression(precedence)
+    do {
+        return try expr.toCommand()
+    } catch {
+        throw SyntaxError(description: "Expected type command after `as` operator but found \(expr.typename) instead: \(expr)")
     }
 }
 
 
 func parseGeneralComparisonOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    let rightOperand = try parser.parseExpression(precedence)
+    let rightOperand = try parser.parseExpression(precedence) // note that this should _not_ consume `as` clause itself, as comparison operators [must] have higher precedence than `as` token
     let nextToken = parser.lexer.lookaheadBy(1) // if next token is .Operator("as"), consume it and then consume its RH operand and use that as the type to which both operands should be cast before comparing; if omitted, operator will use default `text` type instead
     var operands = [leftExpr!, rightOperand]
     if nextToken.type == .Operator && nextToken.value == gAsOperatorKeyString {
@@ -161,16 +167,17 @@ func parseCastOperator(parser: Parser, leftExpr: Value!, operatorName: String, p
 
 
 func parseProcedureDefinition(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    // TO DO: implement
+    // TO DO: this isn't going to work right if operand is a Pair, e.g. `to foo: bar.`; basically need to think about how forgiving syntax (autocorrect) should be, and how much can be done at this point to split it into individual values (name, in/out types, body; also, where should annotations attach?).
     // 1. read quoted/unquoted name, including parameter record, if given
     let procName: Name, parameterType: RecordSignature, returnType: Value
     guard let op1 = try parser.parseAtom() else { throw SyntaxError(description: "Expected procedure's name after `to` operator, ") }
+    // TO DO: sort this out; one option is to use `op1.toCommand` which will work for name, command, or parensed name/command
     if let command = op1 as? Command {
         procName = command.name
-        parameterType = try command.argument.toRecordSignature() // TO DO: this is problematic, since field values are commands that must be evaled to obtain coercions
+        parameterType = try command.argument.toRecordSignature() // note: param types will be ProxyCoercions until they can be evaluated
     } else if let name = op1 as? Name {
         procName = name
-        parameterType = gNullRecordSignature
+        parameterType = gEmptyRecordSignature
     } else {
         throw SyntaxError(description: "Expected procedure's name after `to` operator, but found \(op1.typename) value instead: \(op1)")
     }
@@ -182,9 +189,8 @@ func parseProcedureDefinition(parser: Parser, leftExpr: Value!, operatorName: St
     } else {
         returnType = gAnythingCoercion
     }
-    // 2a. require some kind of delimiter (colon? comma?)
+    // 4. read group expression; need to decide what structures are appropriate for this, e.g. single line of comma-separated exprs with period terminator (which will require lexer/parser mods), multi-line `do...done` block. bear in mind too that we currently don't have a clearly defined way to express return type; e.g. might define operator as `to SIG: EXPR [returning TYPE]`, though need to consider how well that'd work with single-line exprs (which'd want to put a period after TYPE, not before `returning`)
     let procBody = try parser.parseExpression()
-    // 3. read group expression; need to decide what structures are appropriate for this, e.g. single line of comma-separated exprs with period terminator (which will require lexer/parser mods), multi-line `do...done` block. bear in mind too that we currently don't have a clearly defined way to express return type; e.g. might define operator as `to SIG: EXPR [returning TYPE]`, though need to consider how well that'd work with single-line exprs (which'd want to put a period after TYPE, not before `returning`)
     
     return makeDefineProcedureCommand(procName, parameterType: parameterType, returnType: returnType, body: procBody)
     
@@ -203,16 +209,16 @@ func parseAtomDoBlock(parser: Parser, leftExpr: Value!, operatorName: String, pr
         if nextToken.type == .Operator && nextToken.value == "done" { break }
         // TO DO: how best to implement this parse loop? currently this fails if there's a linebreak before `done` as unlike parseExpression this does not automatically skip linebreak tokens (not that it should anyway, since that info should be preserved for display purposes)
         //        print("READING EXPR AFTER \(lexer.currentToken):\n\t\t\(nextToken) ...")
-        let value = parser.stripPeriod(try parser.parseExpression())
+        let value = try parser.parseExpression()
         result.append(value)
         //        print("READ EXPR:", value)
     }
-    //    print("NOW ON \(parser.lexer.currentToken)")
+    //    print("NOW ON \(lexer.currentToken)")
     lexer.advance() // move onto `done` token
     if !(lexer.currentToken.type == .Operator && lexer.currentToken.value == "done") {
         throw SyntaxError(description: "Expected end of `do...done` block but found \(lexer.currentToken)")
     }
-    return ExpressionGroup(expressions: result) // TO DO: annotate to indicate it uses `do...done` rather than `(...)` syntax?
+    return ExpressionSequence(expressions: result) // TO DO: annotate to indicate it uses `do...done` rather than `(...)` syntax?
 }
 
 

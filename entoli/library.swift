@@ -62,12 +62,12 @@ func wrapScalarComparisonOperator(function: ScalarComparisonFunction) -> Primiti
 
 
 private func func_storeValue(env: Scope, slotName: String, value: Value) throws {
-    try env.store(slotName, value: value) // TO DO: `editable` flag, etc
+    try env.store(slotName, value: value) // TO DO: `editable` flag, etc; Q. could type, flags, docs, etc. all be provided by `as clause` and annotations? if so, another possibility would be to define `store` as a unary operator that takes a named pair as its RH operand, c.f. AS's `property NAME : VALUE`, but able to work in any evaluation context (eliminating the need for >1 assignment syntax)
 }
 
 private let proc_storeValue = (name: "store",
                                // TO DO: should value's type be gNoCoercion, allowing func_storeValue to determine if it is an `as` command and use that as slot's type if mutable? Alternatively, define a TypedValueCoercion that unpacks to `(Value,Coercion)` tuple? (Yet another option is just to let the `as` operator annotate the value as it expands and coerces it, and then check that any time the slot is mutated. (There is also the question of how much attention the slot should pay to the value's existing type tags versus a literal `as` operator declared within the assignment, especially since the same value may have different tags depending on prior usage - e.g. a Text value might or might not have an 'integer' tag, which may be more specific than the user intends the slot to be.)
-                               parameterType: (value:    (Name("value"), gValueCoercion),
+                               parameterType: (value:    (Name("value"), gAnyValueCoercion),
                                                slotName: (Name("named"), gNameKeyStringCoercion)),
                                returnType: gNoResultCoercion, // since the primitive func doesn't return a result, its generated wrapper will return `nothing` which should be passed through as-is; gNoResultCoercion simply provides a human-readable description that will appear in documentation
                                envType: PrimitiveProcedure.Env.CommandScope,

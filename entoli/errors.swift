@@ -76,6 +76,11 @@ struct NameNotFoundError: ErrorType {
 
 
 
+struct CastError: ErrorType {
+    let value: Value
+    let type: Value.Type
+}
+
 
 struct CoercionError: ErrorType {
     let value: Any // TO DO: what should this be? (e.g. enum of Value, Scalar, Primitive?)
@@ -90,13 +95,12 @@ struct CoercionError: ErrorType {
     }
 }
 
-struct NotImplementedError: ErrorType { // TODO // TO DO: better just to use `assert`?
-    let description: String?
-    
-    init(description: String? = nil) {
-        self.description = description
-    }
+
+
+@noreturn func fatalNotYetImplemented(object: Any, _ methodName: String, _ message: String = "") {
+    fatalError("\(object.dynamicType) does not yet implement \(methodName). \(message)")
 }
+
 
 
 struct NotSupportedError: ErrorType {} // not an allowed operation
