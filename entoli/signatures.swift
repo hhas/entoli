@@ -25,21 +25,21 @@ class ProxyCoercion: Coercion, FullCoercion { // wrapper for a coercion construc
         self.coercionConstructor = command
     }
     
-    private func force(env: Scope) throws -> Coercion { // TO DO: is there any remotely safe way to memoize?
+    private func force(_ env: Scope) throws -> Coercion { // TO DO: is there any remotely safe way to memoize?
         // TO DO: this evaluation really needs guaranteed to be safe, idempotent, and without side-effects; could coercion constructor procs [also] be defined in their own restricted scope, independent of standard script scopes for use by `as` operator, `to` proc, etc. If that namespace's contents can be guaranteed then early binding should be possible (main caveat would be where a type command is parameterized with the result of another command, e.g. `number{min:n1,max:n2}`, as that would need to be evaled on each use, but as long as constructor proc declares its param types correctly then type args and constraint args should be easy enough to distinguish)
         return try self.coercionConstructor.evaluate(env, returnType: gCoercionCoercion)
     }
     
     // when used as a Value, evaluating returns the Coercion object specified by the command
     
-    override func _expandAsCoercion_(env: Scope, returnType: Coercion) throws -> Coercion { return try self.force(env) }
+    override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { return try self.force(env) }
     
-    override func _expandAsAny_(env: Scope, returnType: Coercion) throws -> Value { return try self.force(env) }
+    override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value { return try self.force(env) }
 
     // when used as a Coercion, the command is evaluated to obtain the Coercion object which is then used as its result
     
-    func _coerce_(value: Value, env: Scope) throws -> SwiftType { // TO DO: problematic as force()'s result isn't FullCoercion
-        fatalNotYetImplemented(self, __FUNCTION__)
+    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: problematic as force()'s result isn't FullCoercion
+        fatalNotYetImplemented(self, #function)
         //return try value.evaluate(env, returnType: self.force(env))
     }
 

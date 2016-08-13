@@ -27,7 +27,7 @@ private struct PartialOperatorMatch<T:Hashable> {
     private(set) var endIndex: ScriptIndex // position in source code at which this partial/whole match ends
     private(set) var info: OperatorTable<T>.Part // struct describing the current char/word match along with lookup table for making the next char/word match
     
-    mutating func update(endIndex: ScriptIndex, info: OperatorTable<T>.Part) { // called by updateOperatorMatches
+    mutating func update(_ endIndex: ScriptIndex, info: OperatorTable<T>.Part) { // called by updateOperatorMatches
         self.endIndex = endIndex
         self.info = info
     }
@@ -43,12 +43,12 @@ class Lexer {
     
     // quoted text/name literals
     static let quoteDelimiters: [Character:TokenType] = [
-        "\"": .QuotedText,
-        "“": .QuotedText,
-        "”": .QuotedText,
-        "'": .QuotedName,
-        "‘": .QuotedName,
-        "’": .QuotedName,
+        "\"": .quotedText,
+        "“": .quotedText,
+        "”": .quotedText,
+        "'": .quotedName,
+        "‘": .quotedName,
+        "’": .quotedName,
     ]
     
     // annotation literals
@@ -59,19 +59,19 @@ class Lexer {
     
     // collection literal/expression group delimiters, and separators
     static let punctuation: [Character:TokenType] = [
-        "[": .ListLiteral,
-        "]": .ListLiteralEnd,
-        "{": .RecordLiteral,
-        "}": .RecordLiteralEnd,
-        "(": .ExpressionSequenceLiteral,
-        ")": .ExpressionSequenceLiteralEnd,
-        ".": .ExpressionSeparator, // also decimal sep in canonical numbers (or thousands sep in localized numbers?)
-        ",": .ItemSeparator, // also thousands separator in canonical numbers? (or decimal sep in localized numbers?)
-        ":": .PairSeparator,
-        ";": .PipeSeparator,
+        "[": .listLiteral,
+        "]": .listLiteralEnd,
+        "{": .recordLiteral,
+        "}": .recordLiteralEnd,
+        "(": .expressionSequenceLiteral,
+        ")": .expressionSequenceLiteralEnd,
+        ".": .expressionSeparator, // also decimal sep in canonical numbers (or thousands sep in localized numbers?)
+        ",": .itemSeparator, // also thousands separator in canonical numbers? (or decimal sep in localized numbers?)
+        ":": .pairSeparator,
+        ";": .pipeSeparator,
         // TO DO: should "@" and "#" also be fixed tokens? (used in `@mentions` and `#hashtag`, which may appear in code as well as in annotations; the former to identify universal [persistent machine-wide URI-like] resources, the latter to tag words for search indexing)
-        "\n": .LineBreak,
-        "\r": .LineBreak, // TO DO: how best to normalize CR/CRLF/LF? (note that this gets extra tricky inside text literals; prob best always to use LF internally and normalize at IO only; if user specifically wants CR, they should use [e.g.] ` "..." & 0u000C & "..."`)
+        "\n": .lineBreak,
+        "\r": .lineBreak, // TO DO: how best to normalize CR/CRLF/LF? (note that this gets extra tricky inside text literals; prob best always to use LF internally and normalize at IO only; if user specifically wants CR, they should use [e.g.] ` "..." & 0u000C & "..."`)
     ]
     
     static let nonBreakingWhiteSpace: Set<Character> = [" ", "\t"]
@@ -113,11 +113,11 @@ class Lexer {
     
     //
     
-    private func joinWords(words: [UnquotedWord]) -> String {
-        return words.map{$0.text}.joinWithSeparator(" ")
+    private func joinWords(_ words: [UnquotedWord]) -> String {
+        return words.map{$0.text}.joined(separator: " ")
     }
     
-    private func wordsRange(words: [UnquotedWord]) -> ScriptRange {
+    private func wordsRange(_ words: [UnquotedWord]) -> ScriptRange {
         return words.first!.startIndex..<words.last!.endIndex
     }
     
@@ -125,15 +125,16 @@ class Lexer {
     
     // TO DO: parameterize these: they shouldn't rely on cursor's current position but should instead take current match's endIndex as arg
     
-    private func isEndOfPhrase(var idx: ScriptIndex) -> Bool { // used by isValidOperatorName() to determine if there are any more words in current unquoted words sequence (note: this does not test if subsequent word is a left-delimited operator, which also needs to be done if this test returns false)
+    private func isEndOfPhrase(_ idx: ScriptIndex) -> Bool { // used by isValidOperatorName() to determine if there are any more words in current unquoted words sequence (note: this does not test if subsequent word is a left-delimited operator, which also needs to be done if this test returns false)
+        var idx = idx
         repeat { // TO DO: BUG?????? check if cursor is on last char of word or already on char after it; if the latter, then use `while...{}` loop instead
-            idx = idx.successor()
+            idx = self.code.index(after: idx)
         } while idx < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[idx])
         return idx == self.codeLength || Lexer.reservedCharacters.contains(self.code[idx])
                                       || isNumericWord(self.code, startIndex: idx, numericUnits: self.numericUnits)
     }
     
-    private func isEndOfWord(idx: ScriptIndex) -> Bool { // idx is the char after the operator char being tested; as above, returns false if there are still characters to be consumed, requiring an additional test to disambiguate adjoining operators
+    private func isEndOfWord(_ idx: ScriptIndex) -> Bool { // idx is the char after the operator char being tested; as above, returns false if there are still characters to be consumed, requiring an additional test to disambiguate adjoining operators
        //print("isEndOfWord for `\(self.code[idx])`")
         return idx == self.codeLength || Lexer.reservedCharacters.contains(self.code[idx])
     }
@@ -145,7 +146,7 @@ class Lexer {
         
     }
     
-    private func isValidOperatorName(operatorDefinition: OperatorDefinition?, isLeftDelimited: Bool, isRightDelimited: ScriptIndex->Bool) -> Bool { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
+    private func isValidOperatorName(_ operatorDefinition: OperatorDefinition?, isLeftDelimited: Bool, isRightDelimited: (ScriptIndex)->Bool) -> Bool { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
         if let opDef = operatorDefinition { // non-nil if the operator name has been fully matched
             // note: if the matched "operator" is NOT left-self-delimiting, it must be first in word sequence; conversely, if it is NOT right-self-delimiting, it must be last. If these conditions are not met then it is not an operator, just normal word[s] within a longer phrase. e.g. The `to` prefix operator is not left-self-delimiting, so `to foo` is a valid `to` op with 'foo' as its RH operand, but `go to` is just an ordinary name (i.e. the 'to' is not special as it is not the first word in the expression).
             return (isLeftDelimited || opDef.name.autoDelimit.left)
@@ -154,18 +155,18 @@ class Lexer {
         return false
     }
     
-    private func isValidOperatorName<T>(matchInfo: OperatorPart<T>?, isLeftDelimited: Bool, isRightDelimited: ScriptIndex->Bool) -> OperatorFixity { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
+    private func isValidOperatorName<T>(_ matchInfo: OperatorPart<T>?, isLeftDelimited: Bool, isRightDelimited: (ScriptIndex)->Bool) -> OperatorFixity { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
         return (self.isValidOperatorName(matchInfo?.prefixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimited: isRightDelimited),
                 self.isValidOperatorName(matchInfo?.infixDefinition,  isLeftDelimited: isLeftDelimited, isRightDelimited: isRightDelimited))
     }
 
     
-    private func updateOperatorMatches<T:Hashable>(operatorsTable: OperatorTable<T>,
-                                                   inout partialMatches: [PartialOperatorMatch<T>],
-                                                   inout fullMatch: (match: PartialOperatorMatch<T>, fixity: OperatorFixity)?, // once first full match is made, it is cached here, and no later operators are matched
+    private func updateOperatorMatches<T:Hashable>(_ operatorsTable: OperatorTable<T>,
+                                                   partialMatches: inout [PartialOperatorMatch<T>],
+                                                   fullMatch: inout (match: PartialOperatorMatch<T>, fixity: OperatorFixity)?, // once first full match is made, it is cached here, and no later operators are matched
                                                    value: T, startIndex: ScriptIndex, endIndex: ScriptIndex, // startIndex..<endIndex is range of current word (if matching Phrase) or char (if matching Symbol)
                                                    precedingWords: [UnquotedWord], currentPartialWord: PartialWord?,
-                                                   isLeftDelimited: Bool, isRightDelimited: ScriptIndex->Bool) -> Bool {
+                                                   isLeftDelimited: Bool, isRightDelimited: (ScriptIndex)->Bool) -> Bool {
         // check for the start of a new operator (note: this only needs done until the first full match is made)
         if fullMatch == nil {
             if let matchInfo = operatorsTable.definitionsByPart[value] { // matched the first char/word of a possible operator
@@ -187,7 +188,7 @@ class Lexer {
                     if DEBUG {print("... and matched `\(value)` to it too: \(partialMatches[partialMatchIndex].info.name)")}
                 } else {
                     if DEBUG {print("...and failed to make a match on `\(value)`, so discarding partial.")}
-                    partialMatches.removeAtIndex(partialMatchIndex)
+                    partialMatches.remove(at: partialMatchIndex)
                     if partialMatches.count == 0 { return fullMatch != nil }
                     continue
                 }
@@ -208,7 +209,7 @@ class Lexer {
         return false
     }
     
-    private func tokensForMatchedOperator<T>(match: PartialOperatorMatch<T>, fixity: OperatorFixity) -> [Token] {
+    private func tokensForMatchedOperator<T>(_ match: PartialOperatorMatch<T>, fixity: OperatorFixity) -> [Token] {
         // once the best operator match is made, call this method to obtain .UnquotedName token for preceding words (if any) and the finished .Operator token
         var nameToken: Token? = nil
         if match.precedingWords.count > 0 || match.currentPartialWord?.chars.count > 0 {
@@ -218,10 +219,10 @@ class Lexer {
                     words.append((String(match.currentPartialWord!.chars), partialWord.startIndex, partialWord.endIndex)) // TO DO: confirm these indexes are right
                 }
             }
-            nameToken = Token(type: .UnquotedName, value: self.joinWords(words), range: self.wordsRange(words))
+            nameToken = Token(type: .unquotedName, value: self.joinWords(words), range: self.wordsRange(words))
         }
         if DEBUG {print("FULLY MATCHED \(T.self) OPERATOR: <\(match.info.name)>     range=\(match.startIndex..<match.endIndex)")}
-        let operatorToken = Token(type: .Operator, value: match.info.name!, range: match.startIndex..<match.endIndex,
+        let operatorToken = Token(type: .operator, value: match.info.name!, range: match.startIndex..<match.endIndex,
                                                    operatorDefinitions: (fixity.prefix ? match.info.prefixDefinition : nil,
                                                                          fixity.infix  ? match.info.infixDefinition  : nil))
         return nameToken == nil ? [operatorToken] : [nameToken!, operatorToken]
@@ -266,16 +267,16 @@ class Lexer {
                 // we've found a numeric word, but there's already an operator waiting to be added to cache so we have to add that first
                 if let operatorTokens = currentLongestOperator {
                     //print("found number, so processing previous operator")
-                    self.currentTokensCache.appendContentsOf(operatorTokens)
+                    self.currentTokensCache.append(contentsOf: operatorTokens)
                     
-                    self.cursor = operatorTokens.last!.range.endIndex // TO DO: don't do this as it's wasteful re-reading already processed words; instead, get rid of else clause and remove consumed words from `words` array (a simple `map` should do) before proceeding to add UnquotedName
+                    self.cursor = operatorTokens.last!.range.upperBound // TO DO: don't do this as it's wasteful re-reading already processed words; instead, get rid of else clause and remove consumed words from `words` array (a simple `map` should do) before proceeding to add UnquotedName
                 } else {
                     if words.count > 0 { // complete and cache tokens for all preceding chars
                         //print("found number, so processing previous words")
-                        self.currentTokensCache.append(Token(type: .UnquotedName, value: self.joinWords(words), range: self.wordsRange(words)))
+                        self.currentTokensCache.append(Token(type: .unquotedName, value: self.joinWords(words), range: self.wordsRange(words)))
                     }
                     let range = wordStartIndex..<endIndex
-                    let token = Token(type: .NumericWord, value: String(self.code[range]), range: range, numericInfo: numericValue)
+                    let token = Token(type: .numericWord, value: String(self.code[range]), range: range, numericInfo: numericValue)
                     //if DEBUG {print("READ NUMERIC: \(token)")}
                     self.currentTokensCache.append(token)
                 }
@@ -294,7 +295,7 @@ class Lexer {
                 let charIndex = self.cursor
                 let char = self.code[charIndex]
                 //print("READ VOCAB CHAR `\(char)`")
-                self.cursor = self.cursor.successor()
+                self.cursor = self.code.index(after: self.cursor)
                 if fullPhraseOperatorMatch == nil { // if there is not already a full phrase operator match, then give symbol operator a chance
                     if updateOperatorMatches(self.operatorsTable.symbols,
                                              partialMatches: &partialSymbolOperatorMatches, fullMatch: &fullSymbolOperatorMatch,
@@ -315,7 +316,7 @@ class Lexer {
             let wordEndIndex = self.cursor // caution: non-inclusive; use `..<` (not `...`) to construct ScriptRange
             if updateOperatorMatches(self.operatorsTable.phrases,
                                      partialMatches: &partialPhraseOperatorMatches, fullMatch: &fullPhraseOperatorMatch,
-                                     value: word.lowercaseString, startIndex: wordStartIndex, endIndex: wordEndIndex,
+                                     value: word.lowercased(), startIndex: wordStartIndex, endIndex: wordEndIndex,
                                      precedingWords: words, currentPartialWord: nil,
                                      isLeftDelimited: isFirstWord, isRightDelimited: self.isEndOfPhrase) {
                     isDone = true
@@ -336,7 +337,7 @@ class Lexer {
             //if DEBUG {print("!!!Going to skip whitespace now `\(self.code[self.cursor])`")}
             while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor]) {
                 //print("SKIP c\(self.cursor)")
-                self.cursor = self.cursor.successor()
+                self.cursor = self.code.index(after: self.cursor)
             }
             //if DEBUG {print("ended whitespace skip loop on \(self.cursor): `\(self.code[self.cursor])`")}
             
@@ -350,10 +351,10 @@ class Lexer {
         // if a full operator match was found, add it
         if let operatorTokens = currentLongestOperator {
             if DEBUG {print("processing remaining operator")}
-            self.currentTokensCache.appendContentsOf(operatorTokens)
+            self.currentTokensCache.append(contentsOf: operatorTokens)
             // move cursor back to end of operator
             let n = self.cursor
-            self.cursor = operatorTokens.last!.range.endIndex
+            self.cursor = operatorTokens.last!.range.upperBound
             if DEBUG {print("...MOVED CURSOR FROM \(n) BACK TO: \(self.cursor), `\(self.currentChar)`")}
             return
         }
@@ -361,7 +362,7 @@ class Lexer {
         //
         if words.count > 0 {
             if DEBUG {print("so processing remaining words")}
-            self.currentTokensCache.append(Token(type: .UnquotedName, value: self.joinWords(words), range: self.wordsRange(words)))
+            self.currentTokensCache.append(Token(type: .unquotedName, value: self.joinWords(words), range: self.wordsRange(words)))
             self.cursor = words.last!.endIndex
         }
     }
@@ -378,17 +379,17 @@ class Lexer {
             let startWordIndex = self.cursor
             // read to end of word
             while self.cursor < self.codeLength && !Lexer.reservedCharacters.contains(self.code[self.cursor]) {
-                self.cursor = self.cursor.successor()
+                self.cursor = self.code.index(after: self.cursor)
             }
             words.append(String(self.code[startWordIndex..<self.cursor]))
             endWordIndex = self.cursor
             while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor]) {
-                self.cursor = self.cursor.successor()
+                self.cursor = self.code.index(after: self.cursor)
             }
         }
         self.cursor = endWordIndex // TO DO: confirm this positions correctly
         //print("READ UNQUOTED NAME \"\(String(self.code[startIndex..<endWordIndex]))\" \(startIndex..<endWordIndex)")
-        return self.currentTokensCache.append(Token(type: .UnquotedName, value: words.joinWithSeparator(" "), range: startIndex..<endWordIndex))
+        return self.currentTokensCache.append(Token(type: .unquotedName, value: words.joined(separator: " "), range: startIndex..<endWordIndex))
     }
     
     
@@ -400,11 +401,11 @@ class Lexer {
      
      
     // read next token[s] into currentTokensCache; inserts gEndOfCodeToken once all tokens have been read
-    private func readNextToken(ignoreVocabulary: Bool) {
+    private func readNextToken(_ ignoreVocabulary: Bool) {
         if DEBUG {print("READ_NEXT_TOKEN \(self.cursor) ==================================================")}
         // skip any leading 'non-breaking' white space (note: unlike LF, space and TAB do not automatically delimit unquoted text but instead can be treated as part of it, allowing the lexer to combine white space-separated words as a single .Operator/.UnquotedName token if/where/when it wishes. Inter-word tabs/spaces will be read and normalized by the relevant `Lexer.read...` method; tab/space runs appearing elsewhere in the code delimit tokens normally and are otherwise ignored.)
         while self.cursor < self.codeLength && Lexer.nonBreakingWhiteSpace.contains(self.code[self.cursor]) {
-            self.cursor = self.cursor.successor()
+            self.cursor = self.code.index(after: self.cursor)
         }
         if self.cursor < self.codeLength { // TO DO: what to do if overrun? (e.g. endlessly adding null tokens prob. isn't good idea if something gets stuck in infinite loop)
             let start = self.cursor
@@ -414,17 +415,17 @@ class Lexer {
                 var chars = String.CharacterView()
                 var isquote = true
                 while isquote {
-                    self.cursor = self.cursor.successor() // eat open quote
+                    self.cursor = self.code.index(after: self.cursor) // eat open quote
                     let substart = self.cursor // [1] if already starting inside quote, need to initialize token, text, isquote, and start vars, skip eating open quote (since there isn't one), then continue from this line
                     while self.cursor < self.codeLength && Lexer.quoteDelimiters[self.code[self.cursor]] != token {
-                        self.cursor = self.cursor.successor()
+                        self.cursor = self.code.index(after: self.cursor)
                     }
                     if self.cursor == self.codeLength {
-                        chars.appendContentsOf(self.code[substart..<self.cursor])
+                        chars.append(contentsOf: self.code[substart..<self.cursor])
                         return self.currentTokensCache.append(Token(type: token, value: String(chars), range: start..<self.cursor, partial: +1))
                     }
-                    chars.appendContentsOf(self.code[substart..<self.cursor])
-                    self.cursor = self.cursor.successor() // eat close quote
+                    chars.append(contentsOf: self.code[substart..<self.cursor])
+                    self.cursor = self.code.index(after: self.cursor) // eat close quote
                     isquote = self.cursor < self.codeLength && Lexer.punctuation[self.code[self.cursor]] == token
                     if isquote { // note: quote chars are escaped by typing twice (the first is ignored, the second used)
                         chars.append(self.code[self.cursor])
@@ -444,25 +445,25 @@ class Lexer {
             // 4. «...» annotations are atomic and nestable and read as-is (understanding their contents is left to the caller)
             if let t = Lexer.annotationDelimiters[firstChar] {
                 if t < 0 { // TO DO: how to handle case where `»` is encountered first?
-                    return self.currentTokensCache.append(Token(type: .AnnotationLiteralEnd, value: String(firstChar), range: start..<self.cursor))
+                    return self.currentTokensCache.append(Token(type: .annotationLiteralEnd, value: String(firstChar), range: start..<self.cursor))
                 }
                 let start = self.cursor
                 var level = 1
                 while level > 0 {
-                    self.cursor = self.cursor.successor()
+                    self.cursor = self.code.index(after: self.cursor)
                     if self.cursor == self.codeLength {
                         let range = start..<self.cursor
-                        return self.currentTokensCache.append(Token(type: .AnnotationLiteral, value: String(self.code[range]), range: range, partial: level))
+                        return self.currentTokensCache.append(Token(type: .annotationLiteral, value: String(self.code[range]), range: range, partial: level))
                     }
                     level += Lexer.annotationDelimiters[self.code[self.cursor]] ?? 0
                 }
-                self.cursor = self.cursor.successor()
+                self.cursor = self.code.index(after: self.cursor)
                 let range = start..<self.cursor
-                return self.currentTokensCache.append(Token(type: .AnnotationLiteral, value: String(self.code[range]), range: range))
+                return self.currentTokensCache.append(Token(type: .annotationLiteral, value: String(self.code[range]), range: range))
             }
             // 5. all other tokens (single-char)
             if let token = Lexer.punctuation[firstChar] {
-                self.cursor = self.cursor.successor()
+                self.cursor = self.code.index(after: self.cursor)
                 return self.currentTokensCache.append(Token(type: token, value: String(firstChar), range: start..<self.cursor))
             }
         }
@@ -481,32 +482,32 @@ class Lexer {
     
     // TO DO: FIX!!!!! ignoreVocabulary will screw up cache if it changes; safe solution is to write all tokens to cache with a flag that indicates the ignore settings with which they were originally read; advance, etc. can then check the token has the same ignore settings as it has, and flush it and the remaining tokens if not
     
-    func advance(ignoreVocabulary ignoreVocabulary: Bool = false) {
+    func advance(ignoreVocabulary: Bool = false) {
         self.currentTokenIndex += 1
         if self.currentTokenIndex == self.currentTokensCache.count { self.readNextToken(ignoreVocabulary) }
         //            if self.currentTokenIndex > 100 {print("BUG: punc.advance() is stuck: "+(self.currentTokensCache.map{String($0)}.joinWithSeparator("\n\t"))); break} // TO DO: DEBUG; DELETE
     }
     
     // TO DO: option to skip next N tokens?
-    func skip(tokenType: TokenType) throws { // advance to next token, throwing SyntaxError if it's not the specified type
+    func skip(_ tokenType: TokenType) throws { // advance to next token, throwing SyntaxError if it's not the specified type
         self.advance()
         if self.currentToken.type != tokenType {
             throw SyntaxError(description: "[0] Expected \(tokenType) but found \(self.currentToken.type): `\(self.currentToken.value)`")
         }
     }
     
-    func backtrackTo(tokenIndex: Int, flush: Bool = false) { // backtrack to a previous token, optionally flushing subsequent tokens if they need to be regenerated (e.g. with different ignoreVocabulary option)
+    func backtrackTo(_ tokenIndex: Int, flush: Bool = false) { // backtrack to a previous token, optionally flushing subsequent tokens if they need to be regenerated (e.g. with different ignoreVocabulary option)
         self.currentTokenIndex = tokenIndex
         if flush {
-            self.currentTokensCache.removeRange(tokenIndex+1..<self.currentTokensCache.count)
-            self.cursor = self.currentToken.range.endIndex
+            self.currentTokensCache.removeSubrange(tokenIndex+1..<self.currentTokensCache.count)
+            self.cursor = self.currentToken.range.upperBound
         }
     }
     
     
     // TO DO: CAUTION: lookahead will screw up cache if ignoreVocabulary changes, as tokens appended to cache read with one ignore setup need to be thrown out if read with another; currently this shouldn't be a problem since only parseRecord does this, and it backtracks and flushes before re-reading with different ignoreVocabulary setting
     
-    func lookaheadBy(offset: UInt, ignoreVocabulary: Bool = false) -> Token { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
+    func lookaheadBy(_ offset: UInt, ignoreVocabulary: Bool = false) -> Token { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
         if offset == 0 { return self.currentToken }
         var count: UInt = 0
         var lookaheadTokenIndex: Int = self.currentTokenIndex
@@ -515,7 +516,7 @@ class Lexer {
             lookaheadTokenIndex += 1
             while lookaheadTokenIndex >= self.currentTokensCache.count { self.readNextToken(ignoreVocabulary) }
             let lookaheadToken = self.currentTokensCache[lookaheadTokenIndex]
-            if lookaheadToken.type == .EndOfCode {
+            if lookaheadToken.type == .endOfCode {
                 //if DEBUG {print("LOOKAHEAD REACHED END: \(self.currentTokensCache.map{"\($0.value)"})")}
                 return lookaheadToken
             }
@@ -526,7 +527,7 @@ class Lexer {
     }
     
     func flush() { // clear cache of fully-parsed tokens (at minimum, this leaves the current token at index 0)
-        self.currentTokensCache.removeRange(0..<self.currentTokenIndex)
+        self.currentTokensCache.removeSubrange(0..<self.currentTokenIndex)
         self.currentTokenIndex = 0
     }
 }

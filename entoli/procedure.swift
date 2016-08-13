@@ -17,7 +17,7 @@
 // TO DO: unpacking records should support use cases where first (e.g. 'target') arg is optional and the second is not, e.g. `forward 100`, where forward is defined as `forward {turtle: optional turtle, distance: number} -> turtle`; thus, `forward 10, turn 90; forward 20.` would operate on current default turtle, whereas `{name:"Bob", color:red} as turtle; forward 10; turn 90; forward 20.` would operate on a newly created turtle named "Bob" (the code editor being smart enough to recommend semi-colons [pipes] if the user didn't already include them herself).
 
 
-func evalRecordField<ReturnType: FullCoercion where ReturnType: Coercion>(inout fields: [Value], fieldStructure: (name: Name, type: ReturnType), commandScope: Scope) throws -> ReturnType.SwiftType {
+func evalRecordField<ReturnType: FullCoercion where ReturnType: Coercion>(_ fields: inout [Value], fieldStructure: (name: Name, type: ReturnType), commandScope: Scope) throws -> ReturnType.SwiftType {
 //    print("evalRecordField: `\(fieldStructure.name.keyString)` as \(fieldStructure.type), SwiftType=\(ReturnType.SwiftType.self)")
     let fieldValue: Value
     if fields.count > 0 {
@@ -66,10 +66,10 @@ class Procedure: CustomStringConvertible {
     
     // note: command and commandScope are intimately related, and might be worth binding the two together as a lightweight (Command,Scope) tuple; procedureScope is the scope within which the Procedure was stored
     
-    func call<ReturnType: FullCoercion>(command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType { // Q. what is commandScope exactly? (A. it's just args' lexical scope, supplied so sig's typespecs can coerce/eval those args)
+    func call<ReturnType: FullCoercion>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType { // Q. what is commandScope exactly? (A. it's just args' lexical scope, supplied so sig's typespecs can coerce/eval those args)
         // 1. get command.data (Record)
         // 2. apply that record to signature.data (Record) to create canonical args (dict? array? Record? what about labels? could all depend on primitive vs native Proc implementation), or throw BadCommand error if they can't be lined up (note: Coercions throw coercion error; mismatched fields would need to throw something else, e.g. BadName; these get caught and rethrown as BadCommand, though the real prize would be to allow these errors to be handled - either by `catching` clause or by user herself - without unspooling call stack)
-        fatalNotYetImplemented(self, __FUNCTION__)
+        fatalNotYetImplemented(self, #function)
     }
 }
 
@@ -80,11 +80,11 @@ class PrimitiveProcedure: Procedure {
     
     
     enum Env {
-        case None
-        case CommandScope
-        case ProcedureScope
-        case ProcedureBody
-        case FullClosure
+        case none
+        case commandScope
+        case procedureScope
+        case procedureBody
+        case fullClosure
     }
     
     typealias FunctionWrapper = (commandArguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value
@@ -114,31 +114,33 @@ class PrimitiveProcedure: Procedure {
     convenience init(name: String, scalarArithmeticOperatorFunction: ScalarArithmeticFunction) {
         let signature = ProcedureSignature(name: Name(name),
             parameterType: PrimitiveProcedure.scalarInfixParameterType, returnType: gScalarCoercion)
-        func wrapperFunction(var arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+        func wrapperFunction(_ arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+            var arguments = arguments
             let arg1 = try evalRecordField(&arguments, fieldStructure: (gLeftOperandName, gScalarCoercion), commandScope: commandScope)
             let arg2 = try evalRecordField(&arguments, fieldStructure: (gRightOperandName, gScalarCoercion), commandScope: commandScope)
             if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
             return try gScalarCoercion.wrap(try scalarArithmeticOperatorFunction(arg1, arg2), env: procedureScope)
         }
-        self.init(signature: signature, envType: .None, function: wrapperFunction)
+        self.init(signature: signature, envType: .none, function: wrapperFunction)
     }
     
     convenience init(name: String, scalarComparisonOperatorFunction: ScalarComparisonFunction) {
         let signature = ProcedureSignature(name: Name(name),
                         parameterType: PrimitiveProcedure.scalarInfixParameterType, returnType: gBoolCoercion)
-        func wrapperFunction(var arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+        func wrapperFunction(_ arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+            var arguments = arguments
             let arg1 = try evalRecordField(&arguments, fieldStructure: (gLeftOperandName, gScalarCoercion), commandScope: commandScope)
             let arg2 = try evalRecordField(&arguments, fieldStructure: (gRightOperandName, gScalarCoercion), commandScope: commandScope)
             if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
             return try gBoolCoercion.wrap(try scalarComparisonOperatorFunction(arg1, arg2), env: procedureScope)
         }
-        self.init(signature: signature, envType: .None, function: wrapperFunction)
+        self.init(signature: signature, envType: .none, function: wrapperFunction)
     }
     
     // TO DO: how practical to make Proc.call() methods non-generic? (it should be enough for them just to return Value; the entoli runtime doesn't care, and primitive callers can probably live with it)
 
     override func call<ReturnType: FullCoercion where ReturnType: Coercion, ReturnType.SwiftType: Value>
-                (command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType {
+                (_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType {
         let tmpValue = try self.function(commandArguments: command.argument.fields, commandScope: commandScope, procedureScope: procedureScope)
         return try tmpValue.evaluate(procedureScope, returnType: returnType) // TO DO: problem: how to intersect proc's returnType with with caller's requested returnType? (there is an implicit constraint here in that returnType's FullCoercion.SwiftType should always be Value)
     }
@@ -162,10 +164,10 @@ class NativeProcedure: Procedure {
     // TO DO: need to think about `yield` (the latter should be a feature of Closure [subclass?], which needs to capture proc's own body subscope instead of its lexical scope, and also provide some kind of `isEmpty` flag that is set once proc returns instead of yields; note that `return` command can probably implement optional `resumable` arg, avoiding need for a separate, less familiar, 'yield' command)
     
     override func call<ReturnType: FullCoercion where ReturnType: Coercion, ReturnType.SwiftType: Value>
-                                (command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType {
+                                (_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType {
         let subEnv = procedureScope.makeSubScope()
         var arguments = command.argument.fields // TO DO: if command takes previous result as its first arg and/or has postfixed `do` block as its last arg, these will need to be passed too
-        for (i, parameter) in (self.signature.argument as! RecordSignature).fieldTypes.enumerate() {
+        for (i, parameter) in (self.signature.argument as! RecordSignature).fieldTypes.enumerated() {
             print("getting parameter \(i+1): \(parameter)")
             let value = try evalRecordField(&arguments, fieldStructure: (parameter.name, parameter.type.intersect(gAnyValueCoercion, env: commandScope)), commandScope: commandScope) // TO DO: FIX; parameter.type is Coercion, but evalRecordField needs something that conforms to FullCoercion (which, conversely, parameter.type can't be cast to because it's generic); for now we cheat it by doing a redundant intersect whose only real , but this is hardly ideal; one option might be to define a 'native coercion' wrapper for primitive coercions that hooks their expand/coerce methods to their wrap methods, but even that will probably complain
             try subEnv.store(parameter.keyString, value: value)

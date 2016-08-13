@@ -34,22 +34,22 @@ let gDefaultNumericUnits = NumericUnits(prefixes: [:], suffixes: [:])
 
 
 enum Numeric {
-    case Number(Scalar)
-    case Quantity(Scalar, NumericUnit) // TO DO: probably also want an option to retain original/canonical value to minimize loss of precision when applying multiple conversions (e.g. `in`->`cm`->`pt`->`pica` will produce better results recalculating from original inches quantity each time)
+    case number(Scalar)
+    case quantity(Scalar, NumericUnit) // TO DO: probably also want an option to retain original/canonical value to minimize loss of precision when applying multiple conversions (e.g. `in`->`cm`->`pt`->`pica` will produce better results recalculating from original inches quantity each time)
     // TO DO: Vector? (TBH, that can be added if/when the need arises, e.g. as Array<Scalar>; as with dates, times, and other numerical data, the best representation will be determined by the implemented solution)
-    case UTF8EncodedString(String) // decoded string
-    case Invalid(String, NumericError) // String is word; NumericError indicates problem
+    case utf8EncodedString(String) // decoded string
+    case invalid(String, NumericError) // String is word; NumericError indicates problem
     
     
     func literalRepresentation() -> String {
         switch self {
-        case .Number(let n):
+        case .number(let n):
             return String(n)
-        case .Quantity(let n, let u):
+        case .quantity(let n, let u):
             return u.isPrefix ? "\(u)\(n)" : "\(n)\(u)" // TO DO: problem here is that `-` should probably appear before prefix
-        case .UTF8EncodedString(let s):
+        case .utf8EncodedString(let s):
             return s // TO DO: return UTF8 codepoints literal, e.g. "A\t∞" -> "0u41+9+E2889E"
-        case .Invalid(let s, _):
+        case .invalid(let s, _):
             return s
         }
     }
@@ -57,11 +57,11 @@ enum Numeric {
 
 
 enum NumericError { // TO DO: decide how best to implement (e.g. read word to completion, and include string representation and code range in error)
-    case UnknownUnit // unknown unit suffix (note that unknown prefixes will result in word being read as unquoted name as there's no way to distinguish a non-digit char followed by digit chars from a valid name; it's contingent upon whoever defines unit prefixes not to use characters that are liable to appear at start of proc names, e.g. `a-z`)
-    case InvalidCodePoint
-    case Overflow(Any.Type)
-    case NotNumber
-    case Other
+    case unknownUnit // unknown unit suffix (note that unknown prefixes will result in word being read as unquoted name as there's no way to distinguish a non-digit char followed by digit chars from a valid name; it's contingent upon whoever defines unit prefixes not to use characters that are liable to appear at start of proc names, e.g. `a-z`)
+    case invalidCodePoint
+    case overflow(Any.Type)
+    case notNumber
+    case other
 }
 
 

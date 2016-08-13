@@ -35,8 +35,8 @@ let scalarPrefixParameterType = RecordSignature(FieldSignature(gRightOperandName
 let scalarInfixParameterType = RecordSignature(FieldSignature(gLeftOperandName, gScalarCoercion), FieldSignature(gRightOperandName, gScalarCoercion))
 let scalarPostfixParameterType = RecordSignature(FieldSignature(gLeftOperandName, gScalarCoercion))
 
-func wrapScalarArithmeticOperator(function: ScalarArithmeticFunction) -> PrimitiveProcedure.FunctionWrapper {
-    return { (var arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value in
+func wrapScalarArithmeticOperator(_ function: ScalarArithmeticFunction) -> PrimitiveProcedure.FunctionWrapper {
+    return { (arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value in
         let arg1 = try evalRecordField(&arguments, fieldStructure: (gLeftOperandName, gScalarCoercion), commandScope: commandScope)
         let arg2 = try evalRecordField(&arguments, fieldStructure: (gRightOperandName, gScalarCoercion), commandScope: commandScope)
         if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
@@ -44,8 +44,8 @@ func wrapScalarArithmeticOperator(function: ScalarArithmeticFunction) -> Primiti
     }
 }
 
-func wrapScalarComparisonOperator(function: ScalarComparisonFunction) -> PrimitiveProcedure.FunctionWrapper {
-    return { (var arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value in
+func wrapScalarComparisonOperator(_ function: ScalarComparisonFunction) -> PrimitiveProcedure.FunctionWrapper {
+    return { (arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value in
         let arg1 = try evalRecordField(&arguments, fieldStructure: (gLeftOperandName, gScalarCoercion), commandScope: commandScope)
         let arg2 = try evalRecordField(&arguments, fieldStructure: (gRightOperandName, gScalarCoercion), commandScope: commandScope)
         if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
@@ -61,7 +61,7 @@ func wrapScalarComparisonOperator(function: ScalarComparisonFunction) -> Primiti
 // (note: this tuple doesn't have a standard type as parameter tuple does not have fixed length/type, and a variable-length structure such as Array doesn't provide the static type info required by evalRecordField() generic, which needs to know the *exact* Coercion class in order to determine its correct return type; thus we can't type the other fields either, which is not ideal as it'd allow problems to be spotted during authoring rather than glue generation; still, there's a good chance all this implementation will radically change in future anyway, so no point sweating details too much right now)
 
 
-private func func_storeValue(env: Scope, slotName: String, value: Value) throws {
+private func func_storeValue(_ env: Scope, slotName: String, value: Value) throws {
     try env.store(slotName, value: value) // TO DO: `editable` flag, etc; Q. could type, flags, docs, etc. all be provided by `as clause` and annotations? if so, another possibility would be to define `store` as a unary operator that takes a named pair as its RH operand, c.f. AS's `property NAME : VALUE`, but able to work in any evaluation context (eliminating the need for >1 assignment syntax)
 }
 
@@ -70,7 +70,7 @@ private let proc_storeValue = (name: "store",
                                parameterType: (value:    (Name("value"), gAnyValueCoercion),
                                                slotName: (Name("named"), gNameKeyStringCoercion)),
                                returnType: gNoResultCoercion, // since the primitive func doesn't return a result, its generated wrapper will return `nothing` which should be passed through as-is; gNoResultCoercion simply provides a human-readable description that will appear in documentation
-                               envType: PrimitiveProcedure.Env.CommandScope,
+                               envType: PrimitiveProcedure.Env.commandScope,
                                function: func_storeValue)
 
 
@@ -84,7 +84,7 @@ private let proc_storeValue = (name: "store",
 //**********************************************************************
 
 
-private func func_defineProcedure(env: Scope, procName: Name, parameterType: ParameterType, returnType: ReturnType, body: Value) throws {
+private func func_defineProcedure(_ env: Scope, procName: Name, parameterType: ParameterType, returnType: ReturnType, body: Value) throws {
 
 }
 
@@ -96,7 +96,7 @@ private let proc_defineProcedure = (name: "to",
                                                     body:           (Name("code"),           gAnythingCoercion)
                                     ),
                                     returnType: gNoResultCoercion,
-                                    envType: PrimitiveProcedure.Env.CommandScope,
+                                    envType: PrimitiveProcedure.Env.commandScope,
                                     function: func_defineProcedure)
 
 
@@ -105,7 +105,8 @@ private let proc_defineProcedure = (name: "to",
 // each primitive func gets wrapped in a generated func that unpacks and repacks its arguments and results/errors
 
 
-private func call_storeValue(var arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+private func call_storeValue(_ arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+    var arguments = arguments
     let arg_value = try evalRecordField(&arguments, fieldStructure: proc_storeValue.parameterType.0, commandScope: commandScope)
     let arg_slotName = try evalRecordField(&arguments, fieldStructure: proc_storeValue.parameterType.1, commandScope: commandScope)
     if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
@@ -119,7 +120,8 @@ private func call_storeValue(var arguments: [Value], commandScope: Scope, proced
 }
 
 
-private func call_defineProcedure(var arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+private func call_defineProcedure(_ arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
+    var arguments = arguments
     let arg_procName = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.0, commandScope: commandScope)
     let arg_parameterType = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.1, commandScope: commandScope)
     let arg_returnType = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.2, commandScope: commandScope)
@@ -141,7 +143,7 @@ private func call_defineProcedure(var arguments: [Value], commandScope: Scope, p
 // generated glue code
 // each library has a loadLibrary() func that adds its procs to the given environment scope
 
-func loadLibrary(env: Scope) throws {
+func loadLibrary(_ env: Scope) throws {
     try env.store(PrimitiveProcedure(name: proc_storeValue.name,
                                      type: (RecordSignature(
                                                 FieldSignature(proc_storeValue.parameterType.value.0, proc_storeValue.parameterType.slotName.1),
@@ -160,7 +162,7 @@ func loadLibrary(env: Scope) throws {
     try env.store(PrimitiveProcedure(name: "-",   scalarArithmeticOperatorFunction: (-)))
     try env.store(PrimitiveProcedure(name: "×",   scalarArithmeticOperatorFunction: (*)))
     try env.store(PrimitiveProcedure(name: "÷",   scalarArithmeticOperatorFunction: (/)))
-    try env.store(PrimitiveProcedure(name: "mod", scalarArithmeticOperatorFunction: (%)))
+//    try env.store(PrimitiveProcedure(name: "mod", scalarArithmeticOperatorFunction: (%))) TO DO: truncatingRemainder
     try env.store(PrimitiveProcedure(name: "div", scalarArithmeticOperatorFunction: (integerDivision)))
     try env.store(PrimitiveProcedure(name: "^",   scalarArithmeticOperatorFunction: (pow)))
     

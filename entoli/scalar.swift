@@ -10,42 +10,42 @@ import Darwin
 
 enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Double) number; numbers that are valid but too large to represent using standard Swift types are held as strings
     
-    case Integer(Int)
-    case FloatingPoint(Double)
-    case Overflow(String, Any.Type) // TO DO: separate enums for int vs double overflows? also, what about UInt?
+    case integer(Int)
+    case floatingPoint(Double)
+    case overflow(String, Any.Type) // TO DO: separate enums for int vs double overflows? also, what about UInt?
     
     init(_ n: Int) {
-        self = .Integer(n)
+        self = .integer(n)
     }
     init(_ n: Double) {
-        self = (n == Double.infinity) ? .Overflow(String(n), Double.self) : .FloatingPoint(n)
+        self = (n == Double.infinity) ? .overflow(String(n), Double.self) : .floatingPoint(n)
     }
     init(_ n: Int8) {
-        self = .Integer(Int(n))
+        self = .integer(Int(n))
     }
     init(_ n: Int16) {
-        self = .Integer(Int(n))
+        self = .integer(Int(n))
     }
     init(_ n: Int32) {
-        self = .Integer(Int(n))
+        self = .integer(Int(n))
     }
     init(_ n: Int64) {
-        self = .Integer(Int(n))
+        self = .integer(Int(n))
     }
     init(_ n: UInt8) {
-        self = .Integer(Int(n))
+        self = .integer(Int(n))
     }
     init(_ n: UInt16) {
-        self = .Integer(Int(n))
+        self = .integer(Int(n))
     }
     init(_ n: UInt32) {
-        self = .Integer(Int(n)) // TO DO: 32-bit Int compatibility
+        self = .integer(Int(n)) // TO DO: 32-bit Int compatibility
     }
     init(_ n: UInt64) { // TO DO: better UInt compatibility
-        self = n > UInt64(Int.max) ? .Overflow(String(n), UInt64.self) : .Integer(Int(n))
+        self = n > UInt64(Int.max) ? .overflow(String(n), UInt64.self) : .integer(Int(n))
     }
     init(_ n: Float) {
-        self = (n == Float.infinity) ? .Overflow(String(n), Float.self) : .FloatingPoint(Double(n))
+        self = (n == Float.infinity) ? .overflow(String(n), Float.self) : .floatingPoint(Double(n))
     }
     
     // initializers primarily intended for use by scalar parsefuncs below // TO DO: should these *only* be used by numeric parsefuncs?
@@ -55,9 +55,9 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
     
     init(int code: String, isNegative: Bool, radix: Int = 10) throws {
         if let number = Int(code, radix: radix) {
-            self = .Integer(isNegative ? -number : number)
+            self = .integer(isNegative ? -number : number)
         } else if radix == 10 && Double(code) != nil {
-            self = .Overflow(String(code), Int.self)
+            self = .overflow(String(code), Int.self)
         } else {
             throw EvaluationError(description: "Not a base-\(radix) int: \(code)")
         }
@@ -69,7 +69,7 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
     
     init(double code: String, isNegative: Bool) throws {
         guard let number = Double(code) else { throw EvaluationError(description: "Not a double: \(code)") } // TO DO: how to distinguish .Overflow (e.g. if `code` is "1e500") from .NotNumber? (e.g. if `code` is empty or contains spaces or other invalid chars); note that Double(String) returns nil, not Double.infinity, upon overflow, which makes it hard to determine if it's Double overflow or malformed text
-        self = .FloatingPoint(isNegative ? -number : number)
+        self = .floatingPoint(isNegative ? -number : number)
     }
     
     init(double code: ScriptChars, isNegative: Bool) throws {
@@ -80,17 +80,17 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
     
     func toInt() throws -> Int {
         switch self {
-        case .Integer(let n):                           return n
-        case .FloatingPoint(let n) where n % 1 == 0:    return Int(n)
-        case .Overflow(_, let t) where t is Int.Type:   throw CoercionError(value: self, description: "Number is too large to use: \(self.literalRepresentation())")
+        case .integer(let n):                           return n
+        case .floatingPoint(let n) where n.truncatingRemainder(dividingBy: 1) == 0:    return Int(n)
+        case .overflow(_, let t) where t is Int.Type:   throw CoercionError(value: self, description: "Number is too large to use: \(self.literalRepresentation())")
         default:                                        throw CoercionError(value: self, description: "Not a whole number: \(self.literalRepresentation())")
         }
     }
     
     func toDouble() throws -> Double {
         switch self {
-        case .Integer(let n):       return Double(n)
-        case .FloatingPoint(let n): return n
+        case .integer(let n):       return Double(n)
+        case .floatingPoint(let n): return n
         default:                    throw CoercionError(value: self, description: "Number is too large to use: \(self.literalRepresentation())")
         }
     }
@@ -98,12 +98,12 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
     
     // overloaded generic-friendly version of toInt/toDouble; used by numeric coercions' generic base class
     
-    private func _toInt(min: Int, _ max: Int) throws -> Int {
+    private func _toInt(_ min: Int, _ max: Int) throws -> Int {
         let n = try self.toInt()
         if n < min || n > max { throw CoercionError(value: self, description: "Whole number is too large to use: \(self.literalRepresentation())") }
         return n
     }
-    private func _toUInt(max: UInt) throws -> UInt {
+    private func _toUInt(_ max: UInt) throws -> UInt {
         let n = try self.toInt()
         if n < 0 || UInt(n) > max { throw CoercionError(value: self, description: "Whole number is too large to use: \(self.literalRepresentation())") }
         return UInt(n)
@@ -141,7 +141,7 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
         if n == Float.infinity { throw CoercionError(value: self, description: "Whole number is too large to use: \(self.literalRepresentation())") }
         return n
     }
-    func toSwift(min: Double, _ max: Double) throws -> Double {
+    func toSwift(_ min: Double, _ max: Double) throws -> Double {
         return try self.toDouble()
     }
     
@@ -149,11 +149,11 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
     
     func literalRepresentation() -> String { // get canonical code representation (note: this is currently implemented as a method to allow for formatting options to be passed in future) // TO DO: check these representations are always correct
         switch self {
-        case .Integer(let n):
+        case .integer(let n):
             return String(n)
-        case .FloatingPoint(let n):
+        case .floatingPoint(let n):
             return String(n)
-        case .Overflow(let s, _):
+        case .overflow(let s, _):
             return s
         }
     }
@@ -167,13 +167,13 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
 // generic helper functions for basic arithmetic and numerical comparisons
 
 
-func scalarArithmeticOperation(lhs: Scalar, _ rhs: Scalar, intOperator: ((Int,Int)->(Int,Bool))?, doubleOperator: (Double,Double)->Double) throws -> Scalar {
+func scalarArithmeticOperation(_ lhs: Scalar, _ rhs: Scalar, intOperator: ((Int,Int)->(Int,Bool))?, doubleOperator: (Double,Double)->Double) throws -> Scalar {
     switch (lhs, rhs) {
-    case (.Integer(let leftOp), .Integer(let rightOp)):
+    case (.integer(let leftOp), .integer(let rightOp)):
         if let op = intOperator {
             let (result, isOverflow) = op(leftOp, rightOp)
             // TO DO: how best to deal with integer overflows? switch to Double automatically? (i.e. loses precision, but allows operation to continue)
-            return isOverflow ? .Overflow(String(doubleOperator(try lhs.toDouble(), try rhs.toDouble())), Int.self) : Scalar(result)
+            return isOverflow ? .overflow(String(doubleOperator(try lhs.toDouble(), try rhs.toDouble())), Int.self) : Scalar(result)
         } else {
             return try Scalar(doubleOperator(lhs.toDouble(), rhs.toDouble()))
         }
@@ -182,9 +182,9 @@ func scalarArithmeticOperation(lhs: Scalar, _ rhs: Scalar, intOperator: ((Int,In
     }
 }
 
-func scalarComparisonOperation(lhs: Scalar, _ rhs: Scalar, intOperator: (Int,Int)->Bool, doubleOperator: (Double,Double)->Bool) throws -> Bool {
+func scalarComparisonOperation(_ lhs: Scalar, _ rhs: Scalar, intOperator: (Int,Int)->Bool, doubleOperator: (Double,Double)->Bool) throws -> Bool {
     switch (lhs, rhs) {
-    case (.Integer(let leftOp), .Integer(let rightOp)):
+    case (.integer(let leftOp), .integer(let rightOp)):
         return intOperator(leftOp, rightOp)
     default:
         return try doubleOperator(lhs.toDouble(), rhs.toDouble()) // TO DO: as above, use Int-based comparison where possible (casting an Int to Double is lossy in 64-bit, which may affect correctness of result when comparing a high-value Int against an almost equivalent Double)
@@ -214,15 +214,15 @@ func *(lhs: Scalar, rhs: Scalar) throws -> Scalar {
 func /(lhs: Scalar, rhs: Scalar) throws -> Scalar {
     return try scalarArithmeticOperation(lhs, rhs, intOperator: nil, doubleOperator: /)
 }
-func %(lhs: Scalar, rhs: Scalar) throws -> Scalar {
-    return try scalarArithmeticOperation(lhs, rhs, intOperator: nil, doubleOperator: %)
-}
-func pow(lhs: Scalar, rhs: Scalar) throws -> Scalar {
+//func %(lhs: Scalar, rhs: Scalar) throws -> Scalar { // TO DO: truncatingRemainder
+//    return try scalarArithmeticOperation(lhs, rhs, intOperator: nil, doubleOperator: %)
+//}
+func pow(_ lhs: Scalar, rhs: Scalar) throws -> Scalar {
     return Scalar(try pow(lhs.toDouble(), rhs.toDouble()))
 }
-func integerDivision(lhs: Scalar, rhs: Scalar) throws -> Scalar {
+func integerDivision(_ lhs: Scalar, rhs: Scalar) throws -> Scalar {
     switch (lhs, rhs) {
-    case (.Integer(let leftOp), .Integer(let rightOp)):
+    case (.integer(let leftOp), .integer(let rightOp)):
         return Scalar(leftOp / rightOp)
     default:
         let n = try (lhs / rhs).toDouble()

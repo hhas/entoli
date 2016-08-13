@@ -22,23 +22,23 @@
 
 
 enum Slot {
-    case StoredValue(Value) // from an interaction POV, entoli doesn't have variables, just 'procedures' that return values previously stored under the same name; however, implementing these as actual closures would create more complexity than is justified, so we just store the value directly (i.e. fake it); only core operations such as `NAME as procedure` should need to know the difference, and ideally even that coupling should be eliminated (e.g. by implementing toClosure method on Scope)
-    case UnboundProcedure(Procedure) // standard procedure in the scope in which it was defined
-    case EncapsulatedProcedure(Closure) // closure value containing both a procedure the scope in which it was originally defined (note: primitive procedures that don't interact with their lexical scope could just use an empty Scope to reduce likelihood of refcycles, though not sure how helpful that'd be in practice given that most closures contain non-trivial - i.e. native - logic, or are only used as proc arguments and not retained beyond completion of that proc)
+    case storedValue(Value) // from an interaction POV, entoli doesn't have variables, just 'procedures' that return values previously stored under the same name; however, implementing these as actual closures would create more complexity than is justified, so we just store the value directly (i.e. fake it); only core operations such as `NAME as procedure` should need to know the difference, and ideally even that coupling should be eliminated (e.g. by implementing toClosure method on Scope)
+    case unboundProcedure(Procedure) // standard procedure in the scope in which it was defined
+    case encapsulatedProcedure(Closure) // closure value containing both a procedure the scope in which it was originally defined (note: primitive procedures that don't interact with their lexical scope could just use an empty Scope to reduce likelihood of refcycles, though not sure how helpful that'd be in practice given that most closures contain non-trivial - i.e. native - logic, or are only used as proc arguments and not retained beyond completion of that proc)
     // TO DO: how to represent an overloaded proc? should it be possible to define overloads in sub-frames without masking those in parents? simplest option would be to require all overloads defined in same frame, and store as UnboundProcedure(OverloadedProcedure), which provides a transparent dispatch wrapper around them all
     
-    func call<ReturnType: Coercion where ReturnType: FullCoercion>(command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    func call<ReturnType: Coercion where ReturnType: FullCoercion>(_ command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         switch self {
-        case .StoredValue(let value):
+        case .storedValue(let value):
             if command.argument.fields.count != 0 {
                 throw BadArgument(description: "Unexpected argument for command: \(command)")// TO DO: need to nail down jargon: a command can have only zero or one arguments
             }
             print("GET \(command) -> \(value)")
             return try value.evaluate(procedureScope, returnType: returnType) //._coerce_(value, env: procedureScope)
-        case .UnboundProcedure(let procedure):
+        case .unboundProcedure(let procedure):
             return try procedure.call(command, returnType: returnType, commandScope: commandScope, procedureScope: procedureScope)
-        case .EncapsulatedProcedure(let closure):
+        case .encapsulatedProcedure(let closure):
             return try closure.procedure.call(command, returnType: returnType, commandScope: commandScope, procedureScope: closure.procedureScope)
         }
     }
@@ -85,7 +85,7 @@ class Scope: CustomStringConvertible {
     
     // TO DO: option for sealing, preventing new slots from being added [by callers] and locking existing slots' read/write settings; `store` calls would subsequently delegate to parent scope (assuming no write barrier inbetween); e.g. a `tell` block would lock all its slots (actually, it'd probably use a custom LazyScope subclass that only initializes slots on first use, as in normal usage the majority will never be used so initializing them all would be a waste of time)
 
-    private var frame: Frame = [gNullValue.keyString: .StoredValue(gNullValue)] // TO DO: what's best; adding special values to every frame, or defining them in a special 'builtins' scope that is automatically used as root scope when no parent is given
+    private var frame: Frame = [gNullValue.keyString: .storedValue(gNullValue)] // TO DO: what's best; adding special values to every frame, or defining them in a special 'builtins' scope that is automatically used as root scope when no parent is given
     
     init(parent: Scope? = nil) {
         self.parent = parent
@@ -99,7 +99,7 @@ class Scope: CustomStringConvertible {
     
     // TO DO: will need a way to distinguish global (module) scopes from local (e.g. Bool flag/scope name arg? separate constructors?), and provide `this script` command (or hardcoded shortcut) to return it; Q. should Scope be Value subclass, or boxed? (sidenote: that takes us close to supporting prototype OOP; a proc that ends with `return {this scope}` would return its frame) note that supporting toRecord coercion would allow easy way to introspect any module or proc frame
     
-    func store(keyString: String, slot: Slot) throws {
+    func store(_ keyString: String, slot: Slot) throws {
         // TO DO: need to check if slot is already filled, and check type, access rights, etc if it is and throw error if it can't be replaced [with new value]; also, how to persist type info if value is mutable? also, when setting a slot, how best to ensure new value is appropriate? (suggest that any replacement value must match core signature of original value [i.e. types must match, but some constraints such as numeric ranges might be ignored unless they were explicitly specified at the time the original value was bound - i.e. values need to differentiate between annotations they collect while building up information about themselves, and requirements ascribed by user in specific situations such as `store` command args, where an explicit `as` clause is intended not only to be applied to the value prior to storing it but to describe the permanent nature of that slot as well])
         // TO DO: what about masking? (except for )
         // TO DO: certain names must _never_ be masked or overwritten, so will either need to be initialized in every scope, or else checked for here
@@ -111,18 +111,18 @@ class Scope: CustomStringConvertible {
     }
     
     // convenience shortcuts for above (since swift isn't smart enough to auto-box)
-    func store(name: String, value: Value) throws { // TO DO: name MUST be all-lowercase; check who's calling this; may want to add `lowercaseString` to be sure, or else take Name instead
-        try self.store(name, slot: value is Closure ? .EncapsulatedProcedure(value as! Closure) : .StoredValue(value))
+    func store(_ name: String, value: Value) throws { // TO DO: name MUST be all-lowercase; check who's calling this; may want to add `lowercaseString` to be sure, or else take Name instead
+        try self.store(name, slot: value is Closure ? .encapsulatedProcedure(value as! Closure) : .storedValue(value))
     }
-    func store(procedure: Procedure) throws { // used by procedure loader
-        try self.store(procedure.keyString, slot: .UnboundProcedure(procedure))
-    }
-    
-    func store(name: Name) throws { // stores a "constant", i.e. a name that evaluates to itself (e.g. 'nothing' evaluates to 'nothing') // TO DO: this is problematic, and will confuse users
-        try self.store(name.keyString, slot: .StoredValue(name))
+    func store(_ procedure: Procedure) throws { // used by procedure loader
+        try self.store(procedure.keyString, slot: .unboundProcedure(procedure))
     }
     
-    func procedure(name: Name) throws -> (Slot, Scope) { // walk stack until named slot is found then returns it, else throws 'not found' error
+    func store(_ name: Name) throws { // stores a "constant", i.e. a name that evaluates to itself (e.g. 'nothing' evaluates to 'nothing') // TO DO: this is problematic, and will confuse users
+        try self.store(name.keyString, slot: .storedValue(name))
+    }
+    
+    func procedure(_ name: Name) throws -> (Slot, Scope) { // walk stack until named slot is found then returns it, else throws 'not found' error
         // note: stacks will usually be quite shallow, having local [proc] scope, script [module] scope, and entoli scope [contains stdlib procs visible to main script by default]; reference-based lookups will require jumping to other scopes, e.g. `foo of library "bar"`
         let key = name.keyString
         var procedureScope: Scope! = self
@@ -136,7 +136,7 @@ class Scope: CustomStringConvertible {
     // TO DO: `closure(name:Name)throws->Closure` for use by `as procedure` coercion? note that this'd need to create swift closure for .StoredValue slots, or else Closure class needs modified to hold Value and/or Procedure (should be safe enough using swift closures tho')
     
     
-    func callProcedure<ReturnType: Coercion where ReturnType: FullCoercion>(command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    func callProcedure<ReturnType: Coercion where ReturnType: FullCoercion>(_ command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         let (slot, procedureScope) = try self.procedure(command.name)
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         return try slot.call(command, commandScope: commandScope, procedureScope: procedureScope, returnType: returnType)

@@ -69,27 +69,27 @@ extension Command { // convenience constructors used by operator parsefuncs
 
 // caution: postfix ops MUST label their operand `gNameRight` to avoid any possible confusion with prefix ops of the same name, as they cannot be distinguished by number of arguments alone (the above convenience constructors will label all operands automatically and are recommended for constructing commands for all unary and binary operators)
 
-func parseAtomOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+func parseAtomOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
     return Command(operatorName)
 }
 
-func parsePrefixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+func parsePrefixOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
     return Command(operatorName, leftOperand: try parser.parseExpression(precedence))
 }
 
-func parseInfixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return Command(operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence))
+func parseInfixOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
+    return Command(operatorName, leftOperand: leftExpr!, rightOperand: try parser.parseExpression(precedence))
 }
 
-func parseRightInfixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return Command(operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence-1))
+func parseRightInfixOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
+    return Command(operatorName, leftOperand: leftExpr!, rightOperand: try parser.parseExpression(precedence-1))
 }
 
-func parsePostfixOperator(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
-    return Command(operatorName, rightOperand: leftExpr)
+func parsePostfixOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
+    return Command(operatorName, rightOperand: leftExpr!)
 }
 
-func parseMisplacedToken(parser: Parser, leftExpr: Value!, operatorName: String, precedence: Int) throws -> Value {
+func parseMisplacedToken(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
     throw SyntaxError(description: "Found misplaced \(parser.lexer.currentToken.type) token: \(parser.lexer.currentToken.value)") // TO DO: should probably throw sub-error here, and leave parser to construct full error message and throw as SyntaxError
 }
 
@@ -119,7 +119,7 @@ struct OperatorPart<ElementType: Hashable>: CustomStringConvertible { // Element
     
     var description: String {return "<OperatorPart prefixOp=\(self.prefixDefinition?.name) infixOp=\(self.infixDefinition?.name) next=\(Array(self.nextWords.keys))>"}
     
-    mutating func addDefinition(definition: OperatorDefinition) throws {
+    mutating func addDefinition(_ definition: OperatorDefinition) throws {
         if definition.form.hasLeftOperand {
             if self.infixDefinition != nil { throw SyntaxError(description: "Duplicate operator definition: \(definition)") } // error type?
             self.infixDefinition = definition
@@ -139,7 +139,8 @@ class OperatorTable<ElementType: Hashable> { // Keyword/Symbol table (only real 
     
     private(set) var definitionsByPart: Part.WordsDictionary = [:]
     
-    private func _addOperator(var words: [ElementType], inout wordsTable: Part.WordsDictionary, definition: OperatorDefinition) {
+    private func _addOperator(_ words: [ElementType], wordsTable: inout Part.WordsDictionary, definition: OperatorDefinition) {
+        var words = words
         if definition.precedence % 2 != 0 { // note: right association relies on subtracting 1 from normal precedence
             print("Operator has non-even precedence: \(definition)") // TO DO: how best to deal with this? throw?
         }
@@ -164,7 +165,7 @@ class OperatorTable<ElementType: Hashable> { // Keyword/Symbol table (only real 
 
 class SymbolOperatorsTable: OperatorTable<Character> {
     
-    func addOperator(name: String, definition: OperatorDefinition) {
+    func addOperator(_ name: String, definition: OperatorDefinition) {
         self._addOperator(Array(name.characters), wordsTable: &self.definitionsByPart, definition: definition)
     }
 }
@@ -172,7 +173,7 @@ class SymbolOperatorsTable: OperatorTable<Character> {
 
 class PhraseOperatorsTable: OperatorTable<String> { // whole-word matching
     
-    func addOperator(name: String, definition: OperatorDefinition) {
+    func addOperator(_ name: String, definition: OperatorDefinition) {
         // TO DO: what about normalizing name? (trim, lowercase, etc), or is it reasonable to expect tables to be correctly formatted before reading?
         self._addOperator(name.characters.split{$0 == " "}.map(String.init), wordsTable: &self.definitionsByPart, definition: definition)
     }
@@ -191,11 +192,11 @@ class Operators {
     let symbols = SymbolOperatorsTable()
     
     
-    func add(definition: OperatorDefinition) -> Self {
+    func add(_ definition: OperatorDefinition) -> Self {
         // given a multi-word operator name, split it into words, then store as a series of nested dicts,
         // ending in the operator definition itself
         for name in [definition.name] + definition.aliases {
-            if name.type == .Symbol {
+            if name.type == .symbol {
                 self.symbols.addOperator(name.text, definition: definition)
             } else {
                 self.phrases.addOperator(name.text, definition: definition)
@@ -204,8 +205,8 @@ class Operators {
         return self
     }
     
-    func add(definitions: [OperatorDefinition]) -> Self {
-        for definition in definitions { self.add(definition) }
+    func add(_ definitions: [OperatorDefinition]) -> Self {
+        for definition in definitions { let _ = self.add(definition) }
         return self
     }
 }
