@@ -27,7 +27,7 @@ enum Slot {
     case encapsulatedProcedure(Closure) // closure value containing both a procedure the scope in which it was originally defined (note: primitive procedures that don't interact with their lexical scope could just use an empty Scope to reduce likelihood of refcycles, though not sure how helpful that'd be in practice given that most closures contain non-trivial - i.e. native - logic, or are only used as proc arguments and not retained beyond completion of that proc)
     // TO DO: how to represent an overloaded proc? should it be possible to define overloads in sub-frames without masking those in parents? simplest option would be to require all overloads defined in same frame, and store as UnboundProcedure(OverloadedProcedure), which provides a transparent dispatch wrapper around them all
     
-    func call<ReturnType: Coercion where ReturnType: FullCoercion>(_ command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    func call<ReturnType: Coercion>(_ command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: CoercionProtocol {
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         switch self {
         case .storedValue(let value):
@@ -63,7 +63,7 @@ class Closure: Value { // basically a Value-compatible struct enclosing proc plu
     // literal representations
     
     override var description: String {
-        return "Closure(\(self.dynamicType), \(self.procedureScope))"
+        return "Closure(\(type(of: self)), \(self.procedureScope))"
     }
 }
 
@@ -136,7 +136,7 @@ class Scope: CustomStringConvertible {
     // TO DO: `closure(name:Name)throws->Closure` for use by `as procedure` coercion? note that this'd need to create swift closure for .StoredValue slots, or else Closure class needs modified to hold Value and/or Procedure (should be safe enough using swift closures tho')
     
     
-    func callProcedure<ReturnType: Coercion where ReturnType: FullCoercion>(_ command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    func callProcedure<ReturnType: Coercion>(_ command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: CoercionProtocol {
         let (slot, procedureScope) = try self.procedure(command.name)
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         return try slot.call(command, commandScope: commandScope, procedureScope: procedureScope, returnType: returnType)

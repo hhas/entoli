@@ -108,8 +108,8 @@ class Lexer {
     private typealias FullPhraseOperatorMatch    = (match: PartialPhraseOperatorMatch, fixity: OperatorFixity) // TO DO: rename PartialOperatorMatch to OperatorMatch and add `private(set) var fixity: OperatorFixity?` to that
     private typealias FullSymbolOperatorMatch    = (match: PartialSymbolOperatorMatch, fixity: OperatorFixity)
     
-    private typealias UnquotedWord               = (text: String, startIndex: ScriptIndex, endIndex: ScriptIndex)
-    private typealias PartialWord                = (chars: String.CharacterView, startIndex: ScriptIndex, endIndex: ScriptIndex)
+    typealias UnquotedWord               = (text: String, startIndex: ScriptIndex, endIndex: ScriptIndex)
+    typealias PartialWord                = (chars: String.CharacterView, startIndex: ScriptIndex, endIndex: ScriptIndex)
     
     //
     
@@ -212,7 +212,7 @@ class Lexer {
     private func tokensForMatchedOperator<T>(_ match: PartialOperatorMatch<T>, fixity: OperatorFixity) -> [Token] {
         // once the best operator match is made, call this method to obtain .UnquotedName token for preceding words (if any) and the finished .Operator token
         var nameToken: Token? = nil
-        if match.precedingWords.count > 0 || match.currentPartialWord?.chars.count > 0 {
+        if match.precedingWords.count > 0 || (match.currentPartialWord?.chars.count ?? 0) > 0 {
             var words = match.precedingWords
             if let partialWord = match.currentPartialWord {
                 if partialWord.chars.count > 0 {

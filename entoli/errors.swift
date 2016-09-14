@@ -97,8 +97,8 @@ struct CoercionError: Error {
 
 
 
-@noreturn func fatalNotYetImplemented(_ object: Any, _ methodName: String, _ message: String = "") {
-    fatalError("\(object.dynamicType) does not yet implement \(methodName). \(message)")
+func fatalNotYetImplemented(_ object: Any, _ methodName: String, _ message: String = "") -> Never  {
+    fatalError("\(type(of: object)) does not yet implement \(methodName). \(message)")
 }
 
 

@@ -137,9 +137,9 @@ class OperatorTable<ElementType: Hashable> { // Keyword/Symbol table (only real 
     
     typealias Part = OperatorPart<ElementType>
     
-    private(set) var definitionsByPart: Part.WordsDictionary = [:]
+    var definitionsByPart: Part.WordsDictionary = [:]
     
-    private func _addOperator(_ words: [ElementType], wordsTable: inout Part.WordsDictionary, definition: OperatorDefinition) {
+    func _addOperator(_ words: [ElementType], wordsTable: inout Part.WordsDictionary, definition: OperatorDefinition) {
         var words = words
         if definition.precedence % 2 != 0 { // note: right association relies on subtracting 1 from normal precedence
             print("Operator has non-even precedence: \(definition)") // TO DO: how best to deal with this? throw?

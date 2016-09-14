@@ -110,7 +110,7 @@ do {
         print("Text:  ", try value.evaluate(env, returnType: gTextCoercion))   // -> "2" (Text)
         // test Entoli->Swift data mapping
         print("String:", try value.evaluate(env, returnType: gStringCoercion)) // -> "2" (String)
-        print("Int:   ", try value.evaluate(env, returnType: gDoubleCoercion))    // -> 2   (Int)
+        print("Int:   ", try value.evaluate(env, returnType: gIntCoercion))    // -> 2   (Int)
         print("Double:", try value.evaluate(env, returnType: gDoubleCoercion)) // -> 2.0 (Double)
         print("")
     }

@@ -108,9 +108,9 @@ func readNumberSign(_ code: ScriptChars, startIndex idx: ScriptIndex, isNegative
 
 
 
-private struct CodePointReader: IteratorProtocol { // used by readHexadecimalNumber()
+struct CodePointReader: IteratorProtocol { // used by readHexadecimalNumber()
     typealias Element = UInt8
-    private var subCodePoints: [UInt8]
+    var subCodePoints: [UInt8]
     mutating func next() -> Element? {
         return self.subCodePoints == [] ? nil : self.subCodePoints.removeFirst() * 16 + self.subCodePoints.removeFirst()
     }

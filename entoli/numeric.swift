@@ -44,7 +44,7 @@ enum Numeric {
     func literalRepresentation() -> String {
         switch self {
         case .number(let n):
-            return String(n)
+            return String(describing: n)
         case .quantity(let n, let u):
             return u.isPrefix ? "\(u)\(n)" : "\(n)\(u)" // TO DO: problem here is that `-` should probably appear before prefix
         case .utf8EncodedString(let s):

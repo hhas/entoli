@@ -43,7 +43,7 @@ enum AutoDelimit { // e.g. Given word sequence `red is blue`, should it be parse
 }
 
 
-typealias ParseFuncType = (Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value
+typealias ParseFuncType = (Parser, _ leftExpr: Value?, _ operatorName: String, _ precedence: Int) throws -> Value
 
 typealias OperatorName = (text: String, type: OperatorType, autoDelimit: AutoDelimit)
 

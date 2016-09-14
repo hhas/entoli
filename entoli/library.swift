@@ -35,19 +35,24 @@ let scalarPrefixParameterType = RecordSignature(FieldSignature(gRightOperandName
 let scalarInfixParameterType = RecordSignature(FieldSignature(gLeftOperandName, gScalarCoercion), FieldSignature(gRightOperandName, gScalarCoercion))
 let scalarPostfixParameterType = RecordSignature(FieldSignature(gLeftOperandName, gScalarCoercion))
 
-func wrapScalarArithmeticOperator(_ function: ScalarArithmeticFunction) -> PrimitiveProcedure.FunctionWrapper {
+let leftScalarOperand = (gLeftOperandName, gScalarCoercion)
+let rightScalarOperand = (gRightOperandName, gScalarCoercion)
+
+func wrapScalarArithmeticOperator(_ function: @escaping ScalarArithmeticFunction) -> PrimitiveProcedure.FunctionWrapper {
     return { (arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value in
-        let arg1 = try evalRecordField(&arguments, fieldStructure: (gLeftOperandName, gScalarCoercion), commandScope: commandScope)
-        let arg2 = try evalRecordField(&arguments, fieldStructure: (gRightOperandName, gScalarCoercion), commandScope: commandScope)
+        var arguments = arguments
+        let arg1 = try evalRecordField(&arguments, fieldStructure: leftScalarOperand, commandScope: commandScope)
+        let arg2 = try evalRecordField(&arguments, fieldStructure: rightScalarOperand, commandScope: commandScope)
         if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
         return try gScalarCoercion.wrap(try function(arg1, arg2), env: procedureScope)
     }
 }
 
-func wrapScalarComparisonOperator(_ function: ScalarComparisonFunction) -> PrimitiveProcedure.FunctionWrapper {
+func wrapScalarComparisonOperator(_ function: @escaping ScalarComparisonFunction) -> PrimitiveProcedure.FunctionWrapper {
     return { (arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value in
-        let arg1 = try evalRecordField(&arguments, fieldStructure: (gLeftOperandName, gScalarCoercion), commandScope: commandScope)
-        let arg2 = try evalRecordField(&arguments, fieldStructure: (gRightOperandName, gScalarCoercion), commandScope: commandScope)
+        var arguments = arguments
+        let arg1 = try evalRecordField(&arguments, fieldStructure: leftScalarOperand, commandScope: commandScope)
+        let arg2 = try evalRecordField(&arguments, fieldStructure: rightScalarOperand, commandScope: commandScope)
         if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
         return try gBoolCoercion.wrap(try function(arg1, arg2), env: procedureScope)
     }
@@ -111,7 +116,7 @@ private func call_storeValue(_ arguments: [Value], commandScope: Scope, procedur
     let arg_slotName = try evalRecordField(&arguments, fieldStructure: proc_storeValue.parameterType.1, commandScope: commandScope)
     if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
     do {
-        try proc_storeValue.function(commandScope, slotName: arg_slotName, value: arg_value)
+        try proc_storeValue.function(commandScope, arg_slotName, arg_value)
     } catch {
         throw ProcedureError(name: proc_storeValue.name, arguments: arguments, // TO DO: include entire proc definition, not just name? (this'd require looking up name now in procedureScope, in case scope's state subsequently mutates, although if slot is locked - which it usually should be for procs - that shouldn't happen; alternatively, defining PrimitiveProcedure instance as top-level generated `let` should make it directly available)
                              commandScope: commandScope, procedureScope: procedureScope, originalError: error)
@@ -128,7 +133,7 @@ private func call_defineProcedure(_ arguments: [Value], commandScope: Scope, pro
     let arg_body = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.3, commandScope: commandScope)
     if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
     do {
-        try proc_defineProcedure.function(commandScope, procName: arg_procName, parameterType: arg_parameterType, returnType: arg_returnType, body: arg_body)
+        try proc_defineProcedure.function(commandScope, arg_procName, arg_parameterType, arg_returnType, arg_body)
     } catch {
         throw ProcedureError(name: proc_defineProcedure.name, arguments: arguments, // TO DO: include entire proc definition, not just name? (this'd require looking up name now in procedureScope, in case scope's state subsequently mutates, although if slot is locked - which it usually should be for procs - that shouldn't happen; alternatively, defining PrimitiveProcedure instance as top-level generated `let` should make it directly available)
             commandScope: commandScope, procedureScope: procedureScope, originalError: error)

@@ -8,6 +8,9 @@
 private let DEBUG = false
 
 
+// TO DO: if period-delimited expression lists are used for short-form (single-line) blocks, and `do...done` for long-form (multi-line) blocks, is there still a reason to support parenthesized expression lists for blocks as well? It would simplify language and eliminate potential source of errors if parens were used for grouping single expressions (e.g. math operators) only.
+
+
 //**********************************************************************
 
 
@@ -76,7 +79,7 @@ class Parser {
  //               print("READ ITEM:", value)
             }
             // additional validity checks
-            if (value.dynamicType == Pair.self) != isNamedPair { // note: this also disallows `name:value` pair if it's subsequently parsed as LH operand to a lower-precedence operator (technically, this would be a legal positional value, but visually it would be confusing so we disallow it; if users want to apply a low-precedence operator to pair's RH value, they'll need to explicitly parenthesize it)
+            if (type(of: value) == Pair.self) != isNamedPair { // note: this also disallows `name:value` pair if it's subsequently parsed as LH operand to a lower-precedence operator (technically, this would be a legal positional value, but visually it would be confusing so we disallow it; if users want to apply a low-precedence operator to pair's RH value, they'll need to explicitly parenthesize it)
                 throw SyntaxError(description: "Bad record item (pairs within records must have a literal name): \(value)")
             }
             result.append(value)
@@ -185,7 +188,7 @@ class Parser {
                 assert(token.infixOperator != nil, "BUG in Parser.parseAtom(): .Operator token contains neither prefix nor infix definition: \(token)")
                 throw LeftOperandNotFoundError(description: "parseAtom() encountered an infix operator: \(token.infixOperator!)") // note: when speculatively parsing a command argument, this indicates the command has no argument so will be used as leftExpr; elsewhere it's a syntax error
             }
-            let result = try operatorDefinition.parseFunc(self, leftExpr: nil, operatorName: operatorDefinition.name.text, precedence: precedence)
+            let result = try operatorDefinition.parseFunc(self, nil, operatorDefinition.name.text, precedence)
             if DEBUG {print("... and returned it: \(result)")}
             return result
             // OTHER
@@ -239,8 +242,7 @@ class Parser {
                     if DEBUG {print("... and returned leftExpr: \(leftExpr)")}
                     return leftExpr
                 }
-                leftExpr = try operatorDefinition.parseFunc(self, leftExpr: leftExpr, operatorName:
-                                                            operatorDefinition.name.text, precedence: operatorDefinition.precedence)
+                leftExpr = try operatorDefinition.parseFunc(self, leftExpr, operatorDefinition.name.text, operatorDefinition.precedence)
                 // OTHER
             case .lineBreak: // a line break always acts as an expression separator
                 return leftExpr // TO DO: need to check this is correct // TO DO: check behavior is appropriate when linebreak appears between an operator and its operand[s]; also make sure it behaves correctly when it appears after a pipe (semi-colon) separator, as it's not unreasonable for the RH operand to appear on the following line in that case

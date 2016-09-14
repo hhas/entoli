@@ -35,9 +35,9 @@ class Value: CustomStringConvertible { // TO DO: should this be named Expression
     
     // literal representations // TO DO: implement `literalRepresentation` methods that take additional options (e.g. always/never quote names) for formatting values as entoli literals
         
-    var description: String {return "\(self.dynamicType)(...)"} // TO DO: subclasses should override to return their Swift literal representation
+    var description: String {return "\(type(of: self))(...)"} // TO DO: subclasses should override to return their Swift literal representation
     
-    var typename: String {return String(self.dynamicType) } // TO DO: this should return native entoli type name (`text`, `name`, `expression`, etc)
+    var typename: String {return String(describing: type(of: self)) } // TO DO: this should return native entoli type name (`text`, `name`, `expression`, etc)
     
     
     // conversion; Value.toTYPE() methods allow parser to perform raw type conversions on Values without evaluation
@@ -59,13 +59,13 @@ class Value: CustomStringConvertible { // TO DO: should this be named Expression
         throw CoercionError(value: self, coercion: returnType)
     }
     // TO DO: need _expandAsTuplePair_, and implement _expandAsPair_ based on that
-    func _expandAsPair_<KeyType: Coercion, ValueType: Coercion where KeyType: FullCoercion, KeyType.SwiftType: Value, ValueType: FullCoercion, ValueType.SwiftType: Value>(_ env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair {
+    func _expandAsPair_<KeyType: Coercion, ValueType: Coercion>(_ env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair where KeyType: CoercionProtocol, KeyType.SwiftType: Value, ValueType: CoercionProtocol, ValueType.SwiftType: Value {
         throw CoercionError(value: self, coercion: returnType)
     }
-    func _expandAsArray_<ItemType: Coercion where ItemType: FullCoercion>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] {
+    func _expandAsArray_<ItemType: Coercion>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] where ItemType: CoercionProtocol {
         return [try self.evaluate(env, returnType: itemType)]
     }
-    func _expandAsList_<ItemType: Coercion where ItemType: FullCoercion, ItemType.SwiftType: Value>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> List {
+    func _expandAsList_<ItemType: Coercion>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> List where ItemType: CoercionProtocol, ItemType.SwiftType: Value {
         return List(items: try self._expandAsArray_(env, itemType: itemType, returnType: returnType), itemType: itemType)
     }
     func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record {
@@ -82,7 +82,7 @@ class Value: CustomStringConvertible { // TO DO: should this be named Expression
     
     // Value.evaluate() is the standard entry point for evaluating any given value
     
-    func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    func evaluate<ReturnType: CoercionProtocol>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         return try returnType._coerce_(self, env: env)
     }
 }
@@ -110,11 +110,10 @@ class NullValue: Name { // TO DO: need to think about how 'constant' names work;
     override func _expandAsName_(_ env: Scope, returnType: Coercion) throws -> Name { throw NullValueCoercionError(coercion: returnType) }
     
     // TO DO: simplify sig by grouping key and value types into tuple
-    override func _expandAsPair_<KeyType: Coercion, ValueType: Coercion where KeyType: FullCoercion, KeyType.SwiftType: Value, ValueType: FullCoercion, ValueType.SwiftType: Value>(_ env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair {
+    override func _expandAsPair_<KeyType: Coercion, ValueType: Coercion>(_ env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair where KeyType: CoercionProtocol, KeyType.SwiftType: Value, ValueType: CoercionProtocol, ValueType.SwiftType: Value {
         throw NullValueCoercionError(coercion: returnType)
     }
-    override func _expandAsArray_<ItemType: FullCoercion where ItemType: Coercion>
-                                                            (_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] {
+    override func _expandAsArray_<ItemType: CoercionProtocol>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] where ItemType: Coercion {
         throw NullValueCoercionError(coercion: returnType)
     }
     override func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record { throw NullValueCoercionError(coercion: returnType) }
@@ -143,7 +142,7 @@ class Text: Value { // TO DO: how to annotate with numerics, units, dates, etc?
     // literal representations // TO DO: entoli literal needs to escape any `"` chars by doubling them
     
     override var description: String {
-        return "\(self.dynamicType)(\(self.string.debugDescription))" // TO DO: this isn't ideal as tab chars don't appear as `\t`; need to check if there are any other chars that don't display as they would be written in a Swift string literal
+        return "\(type(of: self))(\(self.string.debugDescription))" // TO DO: this isn't ideal as tab chars don't appear as `\t`; need to check if there are any other chars that don't display as they would be written in a Swift string literal
     }
     
     // conversion // TO DO: these should self.annotate
@@ -194,7 +193,7 @@ class Name: Value {
     // TO DO: for entoli literal representation, this needs to escape any `'` chars within self.string; in addition, quotes should be omitted if unnecessary
     
     override var description: String {
-        return "\(self.dynamicType)(\(self.string.debugDescription))"
+        return "\(type(of: self))(\(self.string.debugDescription))"
     }
     
     // conversion
@@ -206,7 +205,7 @@ class Name: Value {
     override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value { return self }
     override func _expandAsName_(_ env: Scope, returnType: Coercion) throws -> Name { return self }
     override func _expandAsCommand_(_ env: Scope, returnType: Coercion) throws -> Command { return try self.toCommand() }
-    override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { // note: returnType is passed here purely for error reporting use, and doesn't support FullCoercion API which evaluate requires,
+    override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { // note: returnType is passed here purely for error reporting use, and doesn't support CoercionProtocol API which evaluate requires,
         return try self.toCommand().evaluate(env, returnType: gCoercionCoercion) // ...so for now we just kludge it
     }
 }
@@ -252,7 +251,7 @@ class Pair: Value { // TO DO: use generic Pair<KeyT,ValueT> rather than subclass
     // expansion
     
     // TO DO: would it be possible/practical to parameterize on returnType? (this'd require all _expand... methods to be generics, but assuming it'd work could likely provide a much tidier API since everything could be done using that)
-    override func _expandAsPair_<KeyType: Coercion, ValueType: Coercion where KeyType: FullCoercion, KeyType.SwiftType: Value, ValueType: FullCoercion, ValueType.SwiftType: Value>(_ env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair {
+    override func _expandAsPair_<KeyType: Coercion, ValueType: Coercion>(_ env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair where KeyType: CoercionProtocol, KeyType.SwiftType: Value, ValueType: CoercionProtocol, ValueType.SwiftType: Value {
         return try Pair(self.key.evaluate(env, returnType: keyType), self.value.evaluate(env, returnType: valueType))
     }
     
@@ -260,7 +259,7 @@ class Pair: Value { // TO DO: use generic Pair<KeyT,ValueT> rather than subclass
         return try self._expandAsPair_(env, keyType: gAnyValueCoercion, valueType: gAnyValueCoercion, returnType: returnType) // TO DO: what if key is Name? pretty sure it needs left as-is, otherwise applying two expands to a pair will change its key; FIX
     }
     
-    override func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    override func evaluate<ReturnType: Coercion>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: CoercionProtocol {
         // TO DO: how should this work? (or is it coercion's job to state whether key should be treated as a literal name, or a command, or whatever?)
         fatalNotYetImplemented(self, #function)
     }
@@ -303,7 +302,7 @@ class List: Value { // TO DO: how best to constrain as array/dictionary/set? (pa
         return try self._expandAsList_(env, itemType: gAnyValueCoercion, returnType: returnType)
     }
     
-    override func _expandAsArray_<ItemType: Coercion where ItemType: FullCoercion>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] {
+    override func _expandAsArray_<ItemType: Coercion>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] where ItemType: CoercionProtocol {
         return try self.items.map{try $0.evaluate(env, returnType: itemType)} // TO DO: FIX: this seems to be invoking Value base class methods, not Text methods
     }
     
@@ -354,7 +353,7 @@ class Record: Value { // roughly analogous to struct, though with different shar
         return try self._expandAsRecord_(env, returnType: returnType)
     }
     
-    override func _expandAsArray_<ItemType: FullCoercion where ItemType: Coercion, ItemType.SwiftType: Value>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] { // TO DO: as with List._expandAsRecord_(), this may be a bit janky
+    override func _expandAsArray_<ItemType: CoercionProtocol>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType] where ItemType: Coercion, ItemType.SwiftType: Value { // TO DO: as with List._expandAsRecord_(), this may be a bit janky
         return try self.fields.map{try $0.evaluate(env, returnType: itemType)}
     }
     
@@ -410,11 +409,11 @@ class Command: Value {
     
     override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value { return self }
     override func _expandAsCommand_(_ env: Scope, returnType: Coercion) throws -> Command { return self }
-    override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { // note: returnType is passed here purely for error reporting use, and doesn't support FullCoercion API which evaluate requires,
+    override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { // note: returnType is passed here purely for error reporting use, and doesn't support CoercionProtocol API which evaluate requires,
         return try self.evaluate(env, returnType: gCoercionCoercion) // ...so for now we just kludge it
     }
     
-    override func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    override func evaluate<ReturnType: Coercion>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: CoercionProtocol {
         // TO DO: this isn't quite right, e.g. if returnType is `gCommandCoercion`, it should return self; if returnType is `ThunkCoercion`, should the entire command be deferred, including proc lookup, or should the proc be looked up now and stored as a closure that is invoked when the thunk is forced? etc.
         return try env.callProcedure(self, commandScope: env, returnType: returnType)
     }
@@ -440,7 +439,7 @@ class Thunk: Value { // TO DO: memoize? (kinda depends on difference between `as
         return "Thunk(\(self.value), \(self.type))" // TO DO: this needs to escape any `"` chars within self.string by doubling them
     }
     
-    override func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    override func evaluate<ReturnType: Coercion>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: CoercionProtocol {
         if returnType.defersExpansion {
             return try returnType._coerce_(self, env: self.env)
         } else {
@@ -491,7 +490,7 @@ class ExpressionSequence: Value { // TO DO: can/should these be omitted where no
     
     // TO DO: another possibility is to define _evaluateAsProcedureCall_ (_callAsProcedure_? _call_?) on all Values, which this method can then call, providing the necessary clue about how to deal with pairs and other non-commands; unlike _expandAsCommand_ (which is really only useful for coercing Name to Command, and throwing error if it's anything else... although strictly speaking an expression group should maybe also coerce to Command, as it's just a collection of the things and should be more or less transparent from runtime's POV, c.f. kiwi's composite commands)
     
-    override func evaluate<ReturnType: Coercion where ReturnType: FullCoercion>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    override func evaluate<ReturnType: Coercion>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: CoercionProtocol {
         // TO DO: how should returnType.defersExpansion be handled? should it apply to entire expression, or just to final result? (bear in mind that some coercions, e.g. `as expression`, need to do non-standard processing of values; it may be that `as` operator should check RH operand's Coercion.defersExpansion itself before doing anything with LH operand); for now, probably just do the simplest thing that gets stuff working
         var result: Value = gNullValue
         for expression in self.expressions {

@@ -15,7 +15,7 @@ typealias ReturnType = Coercion
 // 
 
 
-class ProxyCoercion: Coercion, FullCoercion { // wrapper for a coercion constructor Command that has yet to be evaluated; allows a signature to be constructed without an environment being available to construct the specified Coercion instance at the time; subsequently using or evaluating the ProxyCoercion wrapper will evaluate the constructor command to give the actual Coercion to be used
+class ProxyCoercion: Coercion, CoercionProtocol { // wrapper for a coercion constructor Command that has yet to be evaluated; allows a signature to be constructed without an environment being available to construct the specified Coercion instance at the time; subsequently using or evaluating the ProxyCoercion wrapper will evaluate the constructor command to give the actual Coercion to be used
     
     typealias SwiftType = Value
     
@@ -38,7 +38,7 @@ class ProxyCoercion: Coercion, FullCoercion { // wrapper for a coercion construc
 
     // when used as a Coercion, the command is evaluated to obtain the Coercion object which is then used as its result
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: problematic as force()'s result isn't FullCoercion
+    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: problematic as force()'s result isn't CoercionProtocol
         fatalNotYetImplemented(self, #function)
         //return try value.evaluate(env, returnType: self.force(env))
     }
@@ -61,7 +61,7 @@ class FieldSignature: Pair {
     let name: Name
     let type: Coercion
     
-    init(_ key: Name, _ value: Coercion) { // problem: really needs to be FullCoercion, with SwiftType: Value; however, we can't make class generic as arrays of field sigs are always mixed
+    init(_ key: Name, _ value: Coercion) { // problem: really needs to be CoercionProtocol, with SwiftType: Value; however, we can't make class generic as arrays of field sigs are always mixed
         self.name = key
         self.type = value
         super.init(key, value) // TO DO: kludgy
