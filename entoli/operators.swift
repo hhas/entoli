@@ -98,7 +98,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     
     // TO DO: `contains`, `is in`, `starts with`, `ends with` operators, and complements (`does not contain`, etc)
     
-    // Boolean
+    // Boolean // TO DO: might be best to uppercase these operator names to avoid misuse by novices who use them as English conjunctions instead of logic operators
     (("not",     .phrase, .Right), 100, .prefix,  parsePrefixOperator, []),
     (("and",     .phrase,  .full),  98, .infix,   parseInfixOperator,  []),
     (("xor",     .phrase,  .full),  96, .infix,   parseInfixOperator,  []), // note: `!=` only works as XOR if both operands are already Bools, whereas `xor` will coerce its operands as necessary, and is visually self-explanatory
@@ -125,7 +125,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     // note that `do` and `done` are left-auto-delimited and right-auto-delimited respectively; being intended for writing multi-line expression groups, they should normally be followed/preceded by LineBreak tokens that will explicitly delimit them on the other side. This reduces chance of conflicts when used within a longer
     // expression blocks
     (("do",       .phrase, .Left),  50, .atom,    parseAtomDoBlock,    []),
-    (("do",       .phrase, .Left),  50, .postfix, parsePostfixDoBlock, []), // TO DO: might argue for using colon pairs; is there anywhere other than `to PROCNAME do ... done` where postfixed do blocks are used? (the rationale is that the do block appends to argument record, similar to how semicolon pair prefixes to argument record); the flipside is that it might be better as an autocorrect in this particular use case; also bear in mind that colon becomes required when using period-terminated blocks (e.g. `To draw square: forward 100, turn left 90,..., forward 100.`)
+    (("do",       .phrase, .Left),  50, .postfix, parsePostfixDoBlock, []), // TO DO: might argue for using colon pairs; is there anywhere other than `to PROCNAME do ... done` where postfixed do blocks are used? (the rationale is that the do block appends to argument record, similar to how semicolon pair prefixes to argument record); the flipside is that it might be better as an autocorrect in this particular use case; also bear in mind that colon becomes required when using period-terminated blocks (e.g. `To draw square: forward 100, turn left 90,..., forward 100.`) Also avoids any confusion when writing lambdas, e.g. `{arg}:cmd,cmd.`, `{arg}:do...done.`
     (("done",     .phrase, .Right),  0, .atom,    parseMisplacedToken, []), // note: `do` block parsefuncs look for `.Operator(done)` to indicate end of block; if `done` keyword is encountered anywhere else, `parseMisplacedToken` automatically reports a syntax error // TO DO: still tempted to call this `end` (though what problems could that cause when `end` is used as a method [attribute] name, e.g. `end of some list`, `end of documents`; might work if blocks require it to appear alone on line)
     
     // define native procedure

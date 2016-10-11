@@ -14,7 +14,7 @@
 // note: primitive proc glue should code-generate one unpackArgument() call for each parameter in sig
 // TO DO: this func should probably be generalized to work on any record, allowing it to be applied by coercion handlers as well (note: would probably be easier to wrap it in a function that does this, possibly as method on RecordSignature)
 
-// TO DO: unpacking records should support use cases where first (e.g. 'target') arg is optional and the second is not, e.g. `forward 100`, where forward is defined as `forward {turtle: optional turtle, distance: number} -> turtle`; thus, `forward 10, turn 90; forward 20.` would operate on current default turtle, whereas `{name:"Bob", color:red} as turtle; forward 10; turn 90; forward 20.` would operate on a newly created turtle named "Bob" (the code editor being smart enough to recommend semi-colons [pipes] if the user didn't already include them herself).
+// TO DO: unpacking records should support use cases where first (e.g. 'target') arg is optional and the second is not, e.g. `forward 100`, where forward is defined as `forward {moving: optional turtle, by: length} -> turtle`; thus, `forward 10, turn 90, forward 20.` would operate on current default turtle, whereas `{name:"Bob", color:red}; forward 10; turn 90; forward 20.` would operate on a newly created turtle named "Bob" (the code editor being smart enough to recommend semi-colons [pipes] if the user didn't already include them herself).
 
 
 func evalRecordField<ReturnType: CoercionProtocol>(_ fields: inout [Value], fieldStructure: (name: Name, type: ReturnType), commandScope: Scope) throws -> ReturnType.SwiftType {
@@ -79,11 +79,11 @@ class PrimitiveProcedure: Procedure {
     // also, gluegen should take into account presence/absence of procedureScope and/or commandScope param in Swiftfunc (which in turn might provide some useful metadata about func's scope [sic] of effect); bear in mind too that function's params might already be defined and named [if it's preexisting Swift func co-opted for use here], and those names may not match those in signature; plus existing Swift funcs won't throw native entoli errors so some extra wrapping will be needed there (including in cases where func indicates error condition by returning nil with no additional info)
     
     
-    enum Env {
+    enum Env { // TO DO: rename (ProcEnv?) // TO DO: what cases should this define?
         case none
         case commandScope
-        case procedureScope
-        case procedureBody
+        case procedureScope // currently unused
+        case procedureBody // currently unused
         case fullClosure
     }
     
@@ -111,7 +111,7 @@ class PrimitiveProcedure: Procedure {
     static let scalarPrefixParameterType  = RecordSignature(leftFieldSignature)
     static let scalarPostfixParameterType = RecordSignature(rightFieldSignature)
     
-    convenience init(name: String, scalarArithmeticOperatorFunction: @escaping ScalarArithmeticFunction) {
+    convenience init(name: String, scalarArithmeticOperatorFunction: @escaping ScalarArithmeticFunction) { // TO DO: scalar math funcs shouldn't need to capture their original scope as they don't have any side effects
         let signature = ProcedureSignature(name: Name(name),
             parameterType: PrimitiveProcedure.scalarInfixParameterType, returnType: gScalarCoercion)
         func wrapperFunction(_ arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
@@ -138,9 +138,9 @@ class PrimitiveProcedure: Procedure {
     }
     
     // TO DO: how practical to make Proc.call() methods non-generic? (it should be enough for them just to return Value; the entoli runtime doesn't care, and primitive callers can probably live with it)
-
-    override func call<ReturnType: CoercionProtocol>
-        (_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType: Coercion, ReturnType.SwiftType: Value {
+    
+    // command scope allows proc to lazily evaluate its operands in their original scope; procedureScope allows proc to refer to slots within its own lexical scope
+    override func call<ReturnType>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType: CoercionProtocol, ReturnType: Coercion, ReturnType.SwiftType: Value {
         let tmpValue = try self.function(command.argument.fields, commandScope, procedureScope)
         return try tmpValue.evaluate(procedureScope, returnType: returnType) // TO DO: problem: how to intersect proc's returnType with with caller's requested returnType? (there is an implicit constraint here in that returnType's CoercionProtocol.SwiftType should always be Value)
     }

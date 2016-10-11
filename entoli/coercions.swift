@@ -28,6 +28,7 @@
 
 // TO DO: really hate the Coercion/CoercionProtocol schism on ReturnType
 
+// TO DO: would it be practical/possible to make a coercion implement both native and all primitive coerce and wrap methods as overloads? e.g. TextCoercion would implement coerce()->Text AND coerce()->String, and the wrapped library procedure would bind one or other depending on its actual parameter type (Text/String). This might eliminate a ton of pain and complexity. (note: would still need multiple subclasses for distinguishing e.g. `whole number` from `decimal number`)
 
 
 class Coercion: Value {

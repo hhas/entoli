@@ -8,7 +8,7 @@
 private let DEBUG = false
 
 
-// TO DO: if period-delimited expression lists are used for short-form (single-line) blocks, and `do...done` for long-form (multi-line) blocks, is there still a reason to support parenthesized expression lists for blocks as well? It would simplify language and eliminate potential source of errors if parens were used for grouping single expressions (e.g. math operators) only.
+// TO DO: if period-delimited expression lists are used for short-form (single-line) blocks, and `do...done` for long-form (multi-line) blocks, is there still a reason to support parenthesized expression lists for blocks as well? It would simplify language and eliminate potential source of errors if parens were used for grouping single expressions (e.g. math operators) only. (Note: argument for parensed expression lists is that it allows arbitrary length, nestable groups using built-in punctuation tokens only, whereas `do...done` blocks use keywords which are imported.)
 
 
 //**********************************************************************

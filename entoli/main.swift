@@ -96,15 +96,16 @@ do {
     let script = " [(2 + 3 * 4 - 1.5), 3.14 div 1]"
   //  let script = " store {5, x}. x () " // note: empty expression group is equivalent to passing `{}` or `nothing`
 //    let script = " to foo {} 3 + 1. foo " // test native procedure definition (currently doesn't work as ParameterTypeCoercion is TBC)
-    
+    print("PARSE: \(script)")
     let value = try Parser(lexer: Lexer(code: script)).parseScript()
-    print(script, "=>", try value.evaluate(env, returnType: gAnythingCoercion))
+    print("=>", try value.evaluate(env, returnType: gAnythingCoercion))
 //    print(env)
     print("\n================================================\n")
 
     
     do {
         let value = Text("2")
+        print("COERCE: \(value)")
         // test Entoli data evaluation
         print("Any:   ", try value.evaluate(env, returnType: gAnyValueCoercion))
         print("Text:  ", try value.evaluate(env, returnType: gTextCoercion))   // -> "2" (Text)
@@ -118,6 +119,7 @@ do {
     print("\n================================================\n")
     
     // test procedure call, `+ {2, 3}` (or `2 + 3` if operator syntax sugar is used)
+    print("CALL:")
     let command = Command("+", Text("2"), Text("3"))
     let result = try env.callProcedure(command, commandScope: env, returnType: gAnyValueCoercion)
     print(command, "=>", result, "\n") // -> `'+' {"2", "3"}` -> Text("5.0")
