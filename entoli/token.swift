@@ -14,19 +14,10 @@ enum OperatorType {
     case symbol
 }
 
-enum OperatorForm { // TO DO: distinguish keyword from symbol
-    case atom
-    case prefix
-    case infix
-    case postfix
-    
-    var hasLeftOperand: Bool { return (self == .infix || self == .postfix) }
-}
-
 
 enum AutoDelimit { // e.g. Given word sequence `red is blue`, should it be parsed as a single name, or as an `is` operator with `red` and `blue` operands?
-    case Left
-    case Right
+    case left
+    case right
     case full // `red is blue` will be parsed as operation; to make it a single name, user must single-quote it: `'red is blue'`
     case none // `red is blue` will be parsed as single name; to make it an operation, user must punctuate it: `'red' is 'blue'`, `(red) is (blue)`, etc.
     
@@ -38,18 +29,32 @@ enum AutoDelimit { // e.g. Given word sequence `red is blue`, should it be parse
     // - if .Left, `op B` parses to `op (B)`, but `A op` parses to name 'A op'
     // - if .None, *only* `(A) op (B)` parses to operation `(A) op (B)`
     //
-    var left:  Bool { return (self == .Left  || self == .full) }
-    var right: Bool { return (self == .Right || self == .full) }
+    var left:  Bool { return (self == .left  || self == .full) }
+    var right: Bool { return (self == .right || self == .full) }
 }
 
 
-typealias ParseFuncType = (Parser, _ leftExpr: Value?, _ operatorName: String, _ precedence: Int) throws -> Value
-
 typealias OperatorName = (text: String, type: OperatorType, autoDelimit: AutoDelimit)
 
-typealias OperatorDefinition = (name: OperatorName, precedence: Int, form: OperatorForm, parseFunc: ParseFuncType, aliases: [OperatorName])
 
-typealias OperatorDefinitions = (prefixDefinition: OperatorDefinition?, infixDefinition: OperatorDefinition?)
+enum ParseFunc {
+    
+    typealias Prefix = (_ parser: Parser, _ operatorName: String, _ precedence: Int) throws -> Value
+    typealias Infix  = (_ parser: Parser, _ leftExpr: Value, _ operatorName: String, _ precedence: Int) throws -> Value
+    
+    case atom(Prefix)
+    case prefix(Prefix)
+    case infix(Infix)
+    case postfix(Infix)
+}
+
+
+typealias OperatorDefinition = (name: OperatorName, precedence: Int, parseFunc: ParseFunc, aliases: [OperatorName])
+
+typealias PrefixOperatorDefinition = (name: OperatorName, precedence: Int, parseFunc: ParseFunc.Prefix, aliases: [OperatorName])
+typealias InfixOperatorDefinition = (name: OperatorName, precedence: Int, parseFunc: ParseFunc.Infix, aliases: [OperatorName])
+
+typealias OperatorDefinitions = (prefixDefinition: PrefixOperatorDefinition?, infixDefinition: InfixOperatorDefinition?)
 
 
 //**********************************************************************
@@ -105,8 +110,8 @@ struct Token: CustomStringConvertible {
     let partial: Int // >0 = missing N close tokens; <0 = missing N open tokens
     
     // one or both of the following are non-nil when token type is .Operator
-    let prefixOperator: OperatorDefinition?
-    let infixOperator:  OperatorDefinition?
+    let prefixOperator: PrefixOperatorDefinition?
+    let infixOperator:  InfixOperatorDefinition?
     // the following is non-nil when token type is .NumericWord
     let numericInfo:   Numeric?
     

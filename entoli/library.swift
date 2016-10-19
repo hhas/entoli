@@ -17,7 +17,7 @@
 
 // one thing to remember is that primitive funcs should be pure Swift logic - no glue code - so that compiler can emit Swift code just by chaining primitive funcs together when there is sufficient entoli type info to eliminate intermediate Value boxing and unboxing (Q. what about inlining and/or ability to output source code directly?)
 
-// TO DO: how/where to merge proc's returnType with caller's required type (Q. how? making this a generic func screws up class wrapper; making return type Any might avoid the problem); might be best if Coercion.union() always returns a NativeCoercionProtocol, and have that return an opaque value that is easily unwrapped, e.g. if caller wants Array<Int> and func's return type is ListType(itemType:IntegerType()), we don't want to wrap and unwrap every single item
+// TO DO: how/where to merge proc's returnType with caller's required type (Q. how? making this a generic func screws up class wrapper; making return type Any might avoid the problem); might be best if Coercion.union() always returns a NativeSwiftCast, and have that return an opaque value that is easily unwrapped, e.g. if caller wants Array<Int> and func's return type is ListType(itemType:IntegerType()), we don't want to wrap and unwrap every single item
 
 // note: one issue with library-defined operators is that scripts won't parse/format correctly unless those libraries are present (or at least their operator definitions, which should exist as part of the documentation; suggesting the problem might be ameliorated by library repository making that documentation available even when [e.g. commercial] libraries aren't; another option, of course, is to reduce scripts to command-only format for exchange, although that isn't good for readability; yet another option is to copy custom operator definitions to script's header for reference, thereby at least localizing the ugliness)
 
@@ -30,10 +30,6 @@
 
 
 // worth moving these to PrimitiveProcedure as `init(name:Name,scalarArithmeticFunction:ScalarArithmeticFunction)`, etc?
-
-let scalarPrefixParameterType = RecordSignature(FieldSignature(gRightOperandName, gScalarCoercion))
-let scalarInfixParameterType = RecordSignature(FieldSignature(gLeftOperandName, gScalarCoercion), FieldSignature(gRightOperandName, gScalarCoercion))
-let scalarPostfixParameterType = RecordSignature(FieldSignature(gLeftOperandName, gScalarCoercion))
 
 let leftScalarOperand = (gLeftOperandName, gScalarCoercion)
 let rightScalarOperand = (gRightOperandName, gScalarCoercion)
@@ -74,8 +70,8 @@ private let proc_storeValue = (name: "store",
                                // TO DO: should value's type be gNoCoercion, allowing func_storeValue to determine if it is an `as` command and use that as slot's type if mutable? Alternatively, define a TypedValueCoercion that unpacks to `(Value,Coercion)` tuple? (Yet another option is just to let the `as` operator annotate the value as it expands and coerces it, and then check that any time the slot is mutated. (There is also the question of how much attention the slot should pay to the value's existing type tags versus a literal `as` operator declared within the assignment, especially since the same value may have different tags depending on prior usage - e.g. a Text value might or might not have an 'integer' tag, which may be more specific than the user intends the slot to be.)
                                parameterType: (value:    (Name("value"), gAnyValueCoercion),
                                                slotName: (Name("named"), gNameKeyStringCoercion)),
-                               returnType: gNoResultCoercion, // since the primitive func doesn't return a result, its generated wrapper will return `nothing` which should be passed through as-is; gNoResultCoercion simply provides a human-readable description that will appear in documentation
-                               envType: PrimitiveProcedure.Env.commandScope,
+                               returnType: gNoResult, // since the primitive func doesn't return a result, its generated wrapper will return `nothing` which should be passed through as-is; gNoResult simply provides a human-readable description that will appear in documentation
+                               procScope: PrimitiveProcedure.ProcScope.commandScope,
                                function: func_storeValue)
 
 
@@ -90,18 +86,19 @@ private let proc_storeValue = (name: "store",
 
 
 private func func_defineProcedure(_ env: Scope, procName: Name, parameterType: ParameterType, returnType: ReturnType, body: Value) throws {
-
+    // TO DO: implement
 }
 
 private let proc_defineProcedure = (name: "to",
                                     // TO DO: need to decide `to` proc's signature; e.g. {NAME [PARAM-TYPE], BODY, [RESULT-TYPE]} would probably be more appropriate when writing raw command (even better if the result type were included with the name and param type), though currently makeDefineProcedureCommand uses the following:
-                                    parameterType: (procName:       (Name("name"),           gNameCoercion),
-                                                    parameterType:  (Name("parameter type"), gParameterTypeCoercion),
-                                                    returnType:     (Name("result type"),    gReturnTypeCoercion),
-                                                    body:           (Name("code"),           gAnythingCoercion)
+                                    parameterType: (
+                                        procName:      (Name("name"), gNameCoercion),
+                                        parameterType: (Name("using"), gParameterTypeCoercion),
+                                        returnType:    (Name("returning"), gReturnTypeCoercion),
+                                        body:          (Name("code"), gAnythingCoercion)
                                     ),
-                                    returnType: gNoResultCoercion,
-                                    envType: PrimitiveProcedure.Env.commandScope,
+                                    returnType: gNoResult,
+                                    procScope: PrimitiveProcedure.ProcScope.commandScope, // `to` command's dynamic scope = new proc's lexical scope
                                     function: func_defineProcedure)
 
 
@@ -154,7 +151,7 @@ func loadLibrary(_ env: Scope) throws {
                                                 FieldSignature(proc_storeValue.parameterType.value.0, proc_storeValue.parameterType.slotName.1),
                                                 FieldSignature(proc_storeValue.parameterType.value.0, proc_storeValue.parameterType.slotName.1)),
                                             proc_storeValue.returnType),
-                                     envType: proc_storeValue.envType, function: call_storeValue))
+                                     procScope: proc_storeValue.procScope, function: call_storeValue))
     try env.store(PrimitiveProcedure(name: proc_defineProcedure.name,
                                      type: (RecordSignature(
                                                 FieldSignature(proc_defineProcedure.parameterType.procName.0, proc_defineProcedure.parameterType.procName.1),
@@ -162,7 +159,7 @@ func loadLibrary(_ env: Scope) throws {
                                                 FieldSignature(proc_defineProcedure.parameterType.returnType.0, proc_defineProcedure.parameterType.returnType.1),
                                                 FieldSignature(proc_defineProcedure.parameterType.body.0, proc_defineProcedure.parameterType.body.1)),
                                             proc_defineProcedure.returnType),
-                                     envType: proc_defineProcedure.envType, function: call_defineProcedure))
+                                     procScope: proc_defineProcedure.procScope, function: call_defineProcedure))
     try env.store(PrimitiveProcedure(name: "+",   scalarArithmeticOperatorFunction: (+)))
     try env.store(PrimitiveProcedure(name: "-",   scalarArithmeticOperatorFunction: (-)))
     try env.store(PrimitiveProcedure(name: "×",   scalarArithmeticOperatorFunction: (*)))

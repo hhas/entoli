@@ -15,7 +15,7 @@ typealias ReturnType = Coercion
 // 
 
 
-class ProxyCoercion: Coercion, CoercionProtocol { // wrapper for a coercion constructor Command that has yet to be evaluated; allows a signature to be constructed without an environment being available to construct the specified Coercion instance at the time; subsequently using or evaluating the ProxyCoercion wrapper will evaluate the constructor command to give the actual Coercion to be used
+class ProxyCoercion: Coercion, SwiftCast { // wrapper for a coercion constructor Command that has yet to be evaluated; allows a signature to be constructed without an environment being available to construct the specified Coercion instance at the time; subsequently using or evaluating the ProxyCoercion wrapper will evaluate the constructor command to give the actual Coercion to be used
     
     typealias SwiftType = Value
     
@@ -27,7 +27,7 @@ class ProxyCoercion: Coercion, CoercionProtocol { // wrapper for a coercion cons
     
     private func force(_ env: Scope) throws -> Coercion { // TO DO: is there any remotely safe way to memoize?
         // TO DO: this evaluation really needs guaranteed to be safe, idempotent, and without side-effects; could coercion constructor procs [also] be defined in their own restricted scope, independent of standard script scopes for use by `as` operator, `to` proc, etc. If that namespace's contents can be guaranteed then early binding should be possible (main caveat would be where a type command is parameterized with the result of another command, e.g. `number{min:n1,max:n2}`, as that would need to be evaled on each use, but as long as constructor proc declares its param types correctly then type args and constraint args should be easy enough to distinguish)
-        return try self.coercionConstructor.evaluate(env, returnType: gCoercionCoercion)
+        return try self.coercionConstructor.evaluate(env, returnType: gTypeCoercion)
     }
     
     // when used as a Value, evaluating returns the Coercion object specified by the command
@@ -38,7 +38,7 @@ class ProxyCoercion: Coercion, CoercionProtocol { // wrapper for a coercion cons
 
     // when used as a Coercion, the command is evaluated to obtain the Coercion object which is then used as its result
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: problematic as force()'s result isn't CoercionProtocol
+    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: problematic as force()'s result isn't SwiftCast
         fatalNotYetImplemented(self, #function)
         //return try value.evaluate(env, returnType: self.force(env))
     }
@@ -61,7 +61,7 @@ class FieldSignature: Pair {
     let name: Name
     let type: Coercion
     
-    init(_ key: Name, _ value: Coercion) { // problem: really needs to be CoercionProtocol, with SwiftType: Value; however, we can't make class generic as arrays of field sigs are always mixed
+    init(_ key: Name, _ value: Coercion) { // problem: really needs to be SwiftCast, with SwiftType: Value; however, we can't make class generic as arrays of field sigs are always mixed
         self.name = key
         self.type = value
         super.init(key, value) // TO DO: kludgy

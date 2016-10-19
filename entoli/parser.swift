@@ -8,7 +8,7 @@
 private let DEBUG = false
 
 
-// TO DO: if period-delimited expression lists are used for short-form (single-line) blocks, and `do...done` for long-form (multi-line) blocks, is there still a reason to support parenthesized expression lists for blocks as well? It would simplify language and eliminate potential source of errors if parens were used for grouping single expressions (e.g. math operators) only. (Note: argument for parensed expression lists is that it allows arbitrary length, nestable groups using built-in punctuation tokens only, whereas `do...done` blocks use keywords which are imported.)
+// TO DO: if period-delimited expression lists are used for short-form (single-line) blocks, and `do...done` for long-form (multi-line) blocks, is there still a reason to support parenthesized expression lists for blocks as well? It would simplify language and eliminate potential source of errors if parens were used for grouping single expressions (e.g. math operators) only. (Note: argument for parensed expression lists is that it allows arbitrary length, nestable groups using built-in punctuation tokens only, whereas `do...done` blocks use keywords which are imported.) Note that a comma/semicolon-separated block is still a single expression [arguably a dodgy concept since only semicolons actually represent composition; commas don't], so parenthesizing it doesn't really change semantics; it just makes the grouping explicit (and eliminates the need for an explicit trailing period). The question then becomes whether period separators should be allowed too, as those would describe a sequence of block expressions, e.g. `(Foo, bar. Baz)`, which does then require parens to be blocks and not just grouping. Mostly a question of principle of least surprise. The worry is that commands could inadvertently (or deliberately) appear within a parensed expression without actually affecting its output, though might still act in other ways (e.g. side-effects) when that expression is evaluated, e.g. `(die, 2 + 2) * 3`. [Technically, any command in any imperative language could perform the same side-effects, e.g. `func twoPlusTwo() {die; return 2 + 2}; twoPlusTwo() * 3;` - the only difference being is it happens inside the procedure rather than its call site.]
 
 
 //**********************************************************************
@@ -155,7 +155,7 @@ class Parser {
         case .recordLiteral: // {...}; a sequence of values and/or name-value pairs; mostly used to pass proc args
             return try self.parseRecord()
         case .expressionSequenceLiteral: // (...) // a sequence of zero or more expressions, grouped by parentheses; also be aware that `(x:1)` will be treated as an ordinary pair, not a `store` command, unlike in (e.g.) `do...done` blocks
-            let result = ExpressionSequence(expressions: try self.parseExpressionSequence({$0.type == .expressionSequenceLiteralEnd}))
+            let result = ExpressionSequence(expressions: try self.parseExpressionSequence({$0.type == .expressionSequenceLiteralEnd}), format: .parenthesis)
             try self.lexer.skip(.expressionSequenceLiteralEnd)
             return result
             // atomic literals
@@ -188,7 +188,7 @@ class Parser {
                 assert(token.infixOperator != nil, "BUG in Parser.parseAtom(): .Operator token contains neither prefix nor infix definition: \(token)")
                 throw LeftOperandNotFoundError(description: "parseAtom() encountered an infix operator: \(token.infixOperator!)") // note: when speculatively parsing a command argument, this indicates the command has no argument so will be used as leftExpr; elsewhere it's a syntax error
             }
-            let result = try operatorDefinition.parseFunc(self, nil, operatorDefinition.name.text, precedence)
+            let result = try operatorDefinition.parseFunc(self, operatorDefinition.name.text, precedence)
             if DEBUG {print("... and returned it: \(result)")}
             return result
             // OTHER

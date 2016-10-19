@@ -69,27 +69,30 @@ extension Command { // convenience constructors used by operator parsefuncs
 
 // caution: postfix ops MUST label their operand `gNameRight` to avoid any possible confusion with prefix ops of the same name, as they cannot be distinguished by number of arguments alone (the above convenience constructors will label all operands automatically and are recommended for constructing commands for all unary and binary operators)
 
-func parseAtomOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
+func parseAtomOperator(_ parser: Parser, operatorName: String, precedence: Int) throws -> Value {
     return Command(operatorName)
 }
 
-func parsePrefixOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
+func parsePrefixOperator(_ parser: Parser, operatorName: String, precedence: Int) throws -> Value {
     return Command(operatorName, leftOperand: try parser.parseExpression(precedence))
 }
 
-func parseInfixOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
-    return Command(operatorName, leftOperand: leftExpr!, rightOperand: try parser.parseExpression(precedence))
+func parseInfixOperator(_ parser: Parser, leftExpr: Value, operatorName: String, precedence: Int) throws -> Value {
+    return Command(operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence))
 }
 
-func parseRightInfixOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
-    return Command(operatorName, leftOperand: leftExpr!, rightOperand: try parser.parseExpression(precedence-1))
+func parseRightInfixOperator(_ parser: Parser, leftExpr: Value, operatorName: String, precedence: Int) throws -> Value {
+    return Command(operatorName, leftOperand: leftExpr, rightOperand: try parser.parseExpression(precedence-1))
 }
 
-func parsePostfixOperator(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
-    return Command(operatorName, rightOperand: leftExpr!)
+func parsePostfixOperator(_ parser: Parser, leftExpr: Value, operatorName: String, precedence: Int) throws -> Value {
+    return Command(operatorName, rightOperand: leftExpr)
 }
 
-func parseMisplacedToken(_ parser: Parser, leftExpr: Value?, operatorName: String, precedence: Int) throws -> Value {
+func parseMisplacedToken(_ parser: Parser, operatorName: String, precedence: Int) throws -> Value {
+    throw SyntaxError(description: "Found misplaced \(parser.lexer.currentToken.type) token: \(parser.lexer.currentToken.value)") // TO DO: should probably throw sub-error here, and leave parser to construct full error message and throw as SyntaxError
+}
+func parseMisplacedToken(_ parser: Parser, leftExpr: Value, operatorName: String, precedence: Int) throws -> Value {
     throw SyntaxError(description: "Found misplaced \(parser.lexer.currentToken.type) token: \(parser.lexer.currentToken.value)") // TO DO: should probably throw sub-error here, and leave parser to construct full error message and throw as SyntaxError
 }
 
@@ -109,8 +112,8 @@ struct OperatorPart<ElementType: Hashable>: CustomStringConvertible { // Element
     
     // note: if prefix/infix definition != nil, a valid match has been made; however, if isLongest is false, there might still be a longer match to be made, in which case keep looking
     
-    var prefixDefinition: OperatorDefinition? = nil
-    var infixDefinition:  OperatorDefinition? = nil
+    var prefixDefinition: PrefixOperatorDefinition? = nil
+    var infixDefinition:  InfixOperatorDefinition? = nil
     
     var nextWords: [ElementType:OperatorPart<ElementType>] = [:]
     var isLongest: Bool { return self.nextWords.count == 0 }
@@ -120,12 +123,13 @@ struct OperatorPart<ElementType: Hashable>: CustomStringConvertible { // Element
     var description: String {return "<OperatorPart prefixOp=\(self.prefixDefinition?.name) infixOp=\(self.infixDefinition?.name) next=\(Array(self.nextWords.keys))>"}
     
     mutating func addDefinition(_ definition: OperatorDefinition) throws {
-        if definition.form.hasLeftOperand {
-            if self.infixDefinition != nil { throw SyntaxError(description: "Duplicate operator definition: \(definition)") } // error type?
-            self.infixDefinition = definition
-        } else {
+        switch definition.parseFunc {
+        case .atom(let parseFunc), .prefix(let parseFunc):
             if self.prefixDefinition != nil { throw SyntaxError(description: "Duplicate operator definition: \(definition)") } // error type?
-            self.prefixDefinition = definition
+            self.prefixDefinition = (definition.name, definition.precedence, parseFunc, definition.aliases)
+        case .infix(let parseFunc), .postfix(let parseFunc):
+            if self.infixDefinition != nil { throw SyntaxError(description: "Duplicate operator definition: \(definition)") } // error type?
+            self.infixDefinition = (definition.name, definition.precedence, parseFunc, definition.aliases)
         }
     }
 }

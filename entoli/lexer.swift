@@ -146,18 +146,24 @@ class Lexer {
         
     }
     
-    private func isValidOperatorName(_ operatorDefinition: OperatorDefinition?, isLeftDelimited: Bool, isRightDelimited: (ScriptIndex)->Bool) -> Bool { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
+    private func isPrefixOperatorName(_ operatorDefinition: PrefixOperatorDefinition?,
+                                      isLeftDelimited: Bool, isRightDelimited: (ScriptIndex)->Bool) -> Bool { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
         if let opDef = operatorDefinition { // non-nil if the operator name has been fully matched
             // note: if the matched "operator" is NOT left-self-delimiting, it must be first in word sequence; conversely, if it is NOT right-self-delimiting, it must be last. If these conditions are not met then it is not an operator, just normal word[s] within a longer phrase. e.g. The `to` prefix operator is not left-self-delimiting, so `to foo` is a valid `to` op with 'foo' as its RH operand, but `go to` is just an ordinary name (i.e. the 'to' is not special as it is not the first word in the expression).
             return (isLeftDelimited || opDef.name.autoDelimit.left)
-                    && (opDef.name.autoDelimit.right || isRightDelimited(self.cursor) || self.isFollowedByAutoLeftDelimitedOperator)
+                && (opDef.name.autoDelimit.right || isRightDelimited(self.cursor) || self.isFollowedByAutoLeftDelimitedOperator)
         }
         return false
     }
     
-    private func isValidOperatorName<T>(_ matchInfo: OperatorPart<T>?, isLeftDelimited: Bool, isRightDelimited: (ScriptIndex)->Bool) -> OperatorFixity { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
-        return (self.isValidOperatorName(matchInfo?.prefixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimited: isRightDelimited),
-                self.isValidOperatorName(matchInfo?.infixDefinition,  isLeftDelimited: isLeftDelimited, isRightDelimited: isRightDelimited))
+    private func isInfixOperatorName(_ operatorDefinition: InfixOperatorDefinition?,
+                                     isLeftDelimited: Bool, isRightDelimited: (ScriptIndex)->Bool) -> Bool { // check if matched word[s] are 1. a complete operator name, and 2. delimited as per operator definition's requirements
+        if let opDef = operatorDefinition { // non-nil if the operator name has been fully matched
+            // note: if the matched "operator" is NOT left-self-delimiting, it must be first in word sequence; conversely, if it is NOT right-self-delimiting, it must be last. If these conditions are not met then it is not an operator, just normal word[s] within a longer phrase. e.g. The `to` prefix operator is not left-self-delimiting, so `to foo` is a valid `to` op with 'foo' as its RH operand, but `go to` is just an ordinary name (i.e. the 'to' is not special as it is not the first word in the expression).
+            return (isLeftDelimited || opDef.name.autoDelimit.left)
+                && (opDef.name.autoDelimit.right || isRightDelimited(self.cursor) || self.isFollowedByAutoLeftDelimitedOperator)
+        }
+        return false
     }
 
     
@@ -196,10 +202,11 @@ class Lexer {
             do {
                 let match = partialMatches[partialMatchIndex]
                 // check if we've found a complete, valid (i.e. correctly delimited) operator name
-                let isValid = self.isValidOperatorName(match.info, isLeftDelimited: match.isLeftDelimited, isRightDelimited: isRightDelimited)
-                if isValid.prefix || isValid.infix { // found a full, correctly delimited operator name
+                let isPrefix = self.isPrefixOperatorName(match.info.prefixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimited: isRightDelimited)
+                let isInfix = self.isInfixOperatorName(match.info.infixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimited: isRightDelimited)
+                if isPrefix || isInfix { // found a full, correctly delimited operator name
                     if DEBUG {print("FOUND A FULL MATCH: `\(match.info.name)`")}
-                    fullMatch = (match, isValid)
+                    fullMatch = (match, (isPrefix, isInfix))
                     partialMatches = [match]
                     if match.info.isLongest { return true }
                 }
