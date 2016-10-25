@@ -32,9 +32,9 @@ class ProxyCoercion: Coercion, SwiftCast { // wrapper for a coercion constructor
     
     // when used as a Value, evaluating returns the Coercion object specified by the command
     
-    override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { return try self.force(env) }
+    override func _expandAsCoercion_(_ env: Scope) throws -> Coercion { return try self.force(env) }
     
-    override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value { return try self.force(env) }
+    override func _expandAsAny_(_ env: Scope) throws -> Value { return try self.force(env) }
 
     // when used as a Coercion, the command is evaluated to obtain the Coercion object which is then used as its result
     

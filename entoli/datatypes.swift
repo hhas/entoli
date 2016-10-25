@@ -60,43 +60,49 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
     // note: _expandAs... methods are used by Coercions to convert between standard entoli Values (text,name,command,pair,list,record), resolving any unevaluated expressions as necessary
     // TO DO: rather than throw, should most/all of these call _expandAsType_ catchall, which can then throw CoercionError by default; this would allow e.g. GroupExpression to override _expandAsType_() rather than evaluate(), which might be safer
     
-    func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value {
+    func _expandAsAny_(_ env: Scope) throws -> Value { // TO DO: note that `returnType: Coercion` may or may not be a NativeCoercion (both native and Swift coercions call _expand_ methods)
         fatalNotYetImplemented(self, #function)
     }
-    func _expandAsText_(_ env: Scope, returnType: Coercion) throws -> Text {
-        throw CoercionError(value: self, coercion: returnType)
+    func _expandAsText_(_ env: Scope) throws -> Text {
+        throw ExpansionError.unsupportedType
     }
-    func _expandAsName_(_ env: Scope, returnType: Coercion) throws -> Name {
-        throw CoercionError(value: self, coercion: returnType)
+    func _expandAsName_(_ env: Scope) throws -> Name {
+        throw ExpansionError.unsupportedType
     }
     // TO DO: need _expandAsTuplePair_, and implement _expandAsPair_ based on that
-    func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair
+    func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType) throws -> Pair
                                             where KeyType: Coercion, KeyType: SwiftCast, KeyType.SwiftType: Value,
                                                 ValueType: Coercion, ValueType: SwiftCast, ValueType.SwiftType: Value {
-        throw CoercionError(value: self, coercion: returnType)
+        throw ExpansionError.unsupportedType
     }
-    func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType]
+    func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
                                     where ItemType: Coercion, ItemType: SwiftCast {
         return [try self.evaluate(env, returnType: itemType)]
     }
-    func _expandAsList_<ItemType>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> List
-                                    where ItemType: Coercion, ItemType: SwiftCast, ItemType.SwiftType: Value {
-        return List(items: try self._expandAsArray_(env, itemType: itemType, returnType: returnType), itemType: itemType)
+    func _expandAsList_(_ env: Scope, itemType: NativeCoercion) throws -> List {
+        return List(items:  [try self.evaluate(env, returnType: itemType)], itemType: itemType)
     }
-    func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record {
+    
+    
+    func _expandAsRecord_(_ env: Scope) throws -> Record { // need to pass fieldTypes or similar if expanding here
         // TO DO: what about passing `type:RecordSignature?` or is it simpler to convert to record first, then call Record.toRecordSignature to map fields to template? (since no. of fields are small, it probably doesn't make all that much difference); note: main problem with passing signature is that all fields need to be native types
         return Record(self)
     }
-    func _expandAsCommand_(_ env: Scope, returnType: Coercion) throws -> Command { // names and commands can coerce to commands (note: while named pairs are cast to 'store' commands in certain evaluation scopes, this is parser's job, not runtime's, so Pair does not implement _expandAsCommand_)
-        throw CoercionError(value: self, coercion: returnType)
+    func _expandAsCommand_(_ env: Scope) throws -> Command { // names and commands can coerce to commands (note: while named pairs are cast to 'store' commands in certain evaluation scopes, this is parser's job, not runtime's, so Pair does not implement _expandAsCommand_)
+        throw ExpansionError.unsupportedType
     }
     
-    func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion {
-        throw CoercionError(value: self, coercion: returnType)
+    func _expandAsCoercion_(_ env: Scope) throws -> Coercion {
+        throw ExpansionError.unsupportedType
     }
     
     // Value.evaluate() is the standard entry point for evaluating any given value // TO DO: rename `evaluate(as returnType: ReturnType, in env: Scope)`?
+    // TO DO: evaluate methods should check if value already contains cached representation for the given returnType
+    // TO DO: evaluate methods should trap coercion sub-errors and rethrow as permanent CoercionError (Q. should they also rethrow chained CoercionErrors to provide full trace to failed item, e.g. in lists and records?)
     func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: SwiftCast {
+        return try returnType._coerce_(self, env: env)
+    }
+    func evaluate(_ env: Scope, returnType: NativeCoercion) throws -> Value {
         return try returnType._coerce_(self, env: env)
     }
 }
@@ -119,22 +125,22 @@ class NullValue: Name { // TO DO: need to think about how 'constant' names work;
     
     // ugh; given that `nothing` serves a special role (default argument handling), should it be a unique class and defined as operator? (main concern is that it must never be masked by a command; probably need a set of "forbidden names" in Scope.store())
     
-    override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value { throw NullValueCoercionError(coercion: returnType) }
-    override func _expandAsText_(_ env: Scope, returnType: Coercion) throws -> Text { throw NullValueCoercionError(coercion: returnType) }
-    override func _expandAsName_(_ env: Scope, returnType: Coercion) throws -> Name { throw NullValueCoercionError(coercion: returnType) }
+    override func _expandAsAny_(_ env: Scope) throws -> Value { throw ExpansionError.nullValue }
+    override func _expandAsText_(_ env: Scope) throws -> Text { throw ExpansionError.nullValue }
+    override func _expandAsName_(_ env: Scope) throws -> Name { throw ExpansionError.nullValue }
     
     // TO DO: simplify sig by grouping key and value types into tuple
-    override func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair
+    override func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType) throws -> Pair
                                                     where KeyType: Coercion, KeyType: SwiftCast, KeyType.SwiftType: Value,
                                                         ValueType: Coercion, ValueType: SwiftCast, ValueType.SwiftType: Value {
-        throw NullValueCoercionError(coercion: returnType)
+        throw ExpansionError.nullValue
     }
-    override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType]
+    override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
                                             where ItemType: Coercion, ItemType: SwiftCast {
-        throw NullValueCoercionError(coercion: returnType)
+        throw ExpansionError.nullValue
     }
-    override func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record { throw NullValueCoercionError(coercion: returnType) }
-    override func _expandAsCommand_(_ env: Scope, returnType: Coercion) throws -> Command { throw NullValueCoercionError(coercion: returnType) }
+    override func _expandAsRecord_(_ env: Scope) throws -> Record { throw ExpansionError.nullValue }
+    override func _expandAsCommand_(_ env: Scope) throws -> Command { throw ExpansionError.nullValue }
 }
 
 let gNullValue = NullValue() // note: the main reason for this being a 'special' value rather than just, say, an empty record is so that it will throw NullValueCoercionErrors within Coercions which CoercionModifiers, e.g. `DefaultValue` can easily intercept and replace with default value (c.f. kiwi); however, see notes about about potential problems with reliably distinguishing special from non-special names
@@ -185,8 +191,8 @@ class Text: Value { // TO DO: how to annotate with numerics, units, dates, etc?
     
     // expansion
     
-    override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value { return self }
-    override func _expandAsText_(_ env: Scope, returnType: Coercion) throws -> Text { return self }
+    override func _expandAsAny_(_ env: Scope) throws -> Value { return self }
+    override func _expandAsText_(_ env: Scope) throws -> Text { return self }
     
     
     static func ==(lhs: Text, rhs: Text) -> Bool { // TO DO: all Values should be Equatable
@@ -219,10 +225,10 @@ class Name: Value {
     
     // expansion
     
-    override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value { return self }
-    override func _expandAsName_(_ env: Scope, returnType: Coercion) throws -> Name { return self }
-    override func _expandAsCommand_(_ env: Scope, returnType: Coercion) throws -> Command { return try self.toCommand() }
-    override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { // note: returnType is passed here purely for error reporting use, and doesn't support SwiftCast API which evaluate requires,
+    override func _expandAsAny_(_ env: Scope) throws -> Value { return self }
+    override func _expandAsName_(_ env: Scope) throws -> Name { return self }
+    override func _expandAsCommand_(_ env: Scope) throws -> Command { return try self.toCommand() }
+    override func _expandAsCoercion_(_ env: Scope) throws -> Coercion { // note: returnType is passed here purely for error reporting use, and doesn't support SwiftCast API which evaluate requires,
         return try self.toCommand().evaluate(env, returnType: gTypeCoercion) // ...so for now we just kludge it
     }
 }
@@ -269,14 +275,14 @@ class Pair: Value { // TO DO: use generic Pair<KeyT,ValueT> rather than subclass
     // expansion
     
     // TO DO: would it be possible/practical to parameterize on returnType? (this'd require all _expand... methods to be generics, but assuming it'd work could likely provide a much tidier API since everything could be done using that)
-    override func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType, returnType: Coercion) throws -> Pair
+    override func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType) throws -> Pair
                                                      where KeyType: Coercion, KeyType: SwiftCast, KeyType.SwiftType: Value,
                                                            ValueType: Coercion, ValueType: SwiftCast, ValueType.SwiftType: Value {
         return try Pair(self.key.evaluate(env, returnType: keyType), self.value.evaluate(env, returnType: valueType))
     }
     
-    override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value {
-        return try self._expandAsPair_(env, keyType: gAnyValueCoercion, valueType: gAnyValueCoercion, returnType: returnType) // TO DO: what if key is Name? pretty sure it needs left as-is, otherwise applying two expands to a pair will change its key; FIX
+    override func _expandAsAny_(_ env: Scope) throws -> Value {
+        return try self._expandAsPair_(env, keyType: gAnyValueCoercion, valueType: gAnyValueCoercion) // TO DO: what if key is Name? pretty sure it needs left as-is, otherwise applying two expands to a pair will change its key; FIX
     }
     
     override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
@@ -298,11 +304,11 @@ class List: Value { // TO DO: how best to constrain as array/dictionary/set? (pa
     
     // TO DO: should the original ListCoercion(...) type spec also be included? (will depend on how mutability works: if min/max are specified for editable list, these should be enforced when list changes size)
     
-    private(set) var itemType: Coercion? // TO DO: need to decide how/when this is set/unset/enforced; also, mutability should be part of type
+    private(set) var itemType: NativeCoercion? // TO DO: need to decide how/when this is set/unset/enforced; also, mutability should be part of type
     
     // TO DO: adding a named Pair to a List is problematic, as normal evaluation rules say it should eval as `store`, but that is undesirable in list; best if first item is checked to see if it's a Pair; if it is, and key is Name, store Name as dictionary key (i.e. parenthesizing name will cause it to eval as command, returning whatever value type it likes [including another Name, which is how AS-style 'constants' can be implemented, caveat the parameter-grabbing problem which isn't ideal but should always be caught at runtime as 'too many args' error, and can be ameliorated at edit-time by auto-correct parenthesizing or otherwise punctuating name based on its 'proc' definition])
     
-    init(items: [Value], itemType: Coercion? = nil) { // TO DO: problem here is ordered/key-value/unique aren't fully interchangeable
+    init(items: [Value], itemType: NativeCoercion? = nil) { // TO DO: problem here is ordered/key-value/unique aren't fully interchangeable
         self.items = items
         self.itemType = itemType
     }
@@ -318,17 +324,23 @@ class List: Value { // TO DO: how best to constrain as array/dictionary/set? (pa
     
     // evaluation // TO DO: what about expanding as generator/lazy array, for use by primitive procs?
     
-    override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value {
-        return try self._expandAsList_(env, itemType: gAnyValueCoercion, returnType: returnType)
+    override func _expandAsAny_(_ env: Scope) throws -> Value {
+        return try self._expandAsList_(env, itemType: gAnyValueCoercion)
     }
     
     // TO DO: passing itemType as separate param is kinda smelly; would be better to have ListCoercionProtocol; alternatively, might be best to get rid of returnType: entirely and let Coercion._coerce_ tag the returned Value, and Value.evaluate() rethrow with full error details
-    override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType]
+    // TO DO: get rid of this and provide toArray() method instead? this'd leave calling Coercion to coerce each item, avoiding need to pass itemType (or returnType)
+    override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
                                             where ItemType: Coercion, ItemType: SwiftCast {
         return try self.items.map{try $0.evaluate(env, returnType: itemType)} // TO DO: FIX: this seems to be invoking Value base class methods, not Text methods
     }
     
-    override func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record { // TO DO: is this right? converts [1,2,3] to {1,2,3}; shouldn't it be {[1,2,3]}?
+    
+    override func _expandAsList_(_ env: Scope, itemType: NativeCoercion) throws -> List {
+        return List(items:  [try self.evaluate(env, returnType: itemType)], itemType: itemType)
+    }
+    
+    override func _expandAsRecord_(_ env: Scope) throws -> Record { // TO DO: is this right? converts [1,2,3] to {1,2,3}; shouldn't it be {[1,2,3]}? A. NO, it's wrong: FIX
         return Record(try self.items.map{try $0.evaluate(env, returnType: gAnyValueCoercion)})
     }
 }
@@ -370,21 +382,21 @@ class Record: Value { // roughly analogous to struct, though with different shar
     }
     
     // evaluation
-    override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value {
-        return try self._expandAsRecord_(env, returnType: returnType)
+    override func _expandAsAny_(_ env: Scope) throws -> Value {
+        return try self._expandAsRecord_(env)
     }
     
-    override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType]
+    override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
                                             where ItemType: Coercion, ItemType: SwiftCast, ItemType.SwiftType: Value { // TO DO: as with List._expandAsRecord_(), this may be a bit janky
         return try self.fields.map{try $0.evaluate(env, returnType: itemType)}
     }
     
-    override func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record { // TO DO: define RecordCoercionProtocol for use here? // TO DO: this method is wrong:
+    override func _expandAsRecord_(_ env: Scope) throws -> Record { // TO DO: define RecordCoercionProtocol for use here? // TO DO: this method is wrong:
         // note: when called in `to NAME {...} ...` operator's argument record, returnType: is ParameterTypeCoercion
         return Record(try self.fields.map{try $0.evaluate(env, returnType: gAnyValueCoercion)}) // TO DO: HACK; returnType should be some sort of PairCoercion; with the exact type specified by returnType
     }
     
-    override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { // note: returnType is ignored as it should always be gTypeCoercion
+    override func _expandAsCoercion_(_ env: Scope) throws -> Coercion { // note: returnType is ignored as it should always be gTypeCoercion
         fatalNotYetImplemented(self, #function) // TO DO: `VALUE as {name:type,...}` should coerce VALUE to record of specified form; basically allows much more readable shorthand for `VALUE as record {structure: {name:type,...}}`
     }
 }
@@ -429,9 +441,9 @@ class Command: Value {
 
     // expansion // TO DO: what, if anything, needs to be done? (e.g. thunk)
     
-    override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value { return self }
-    override func _expandAsCommand_(_ env: Scope, returnType: Coercion) throws -> Command { return self }
-    override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { // note: returnType is passed here purely for error reporting use, and doesn't support SwiftCast API which evaluate requires,
+    override func _expandAsAny_(_ env: Scope) throws -> Value { return self }
+    override func _expandAsCommand_(_ env: Scope) throws -> Command { return self }
+    override func _expandAsCoercion_(_ env: Scope) throws -> Coercion { // note: returnType is passed here purely for error reporting use, and doesn't support SwiftCast API which evaluate requires,
         return try self.evaluate(env, returnType: gTypeCoercion) // ...so for now we just kludge it
     }
     

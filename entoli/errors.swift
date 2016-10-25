@@ -96,6 +96,14 @@ struct CoercionError: Error {
 }
 
 
+enum ExpansionError: Error { // raised by Value._expandAsTYPE_() methods; should be caught and rethrown as CoercionError by Value.evaluate()
+    case nullValue
+    case unsupportedType
+    // what else? e.g. bounds error; other(String)
+}
+
+
+
 
 func fatalNotYetImplemented(_ object: Any, _ methodName: String, _ message: String = "") -> Never  {
     fatalError("\(type(of: object)) does not yet implement \(methodName). \(message)")
@@ -105,10 +113,6 @@ func fatalNotYetImplemented(_ object: Any, _ methodName: String, _ message: Stri
 
 struct NotSupportedError: Error {} // not an allowed operation
 
-
-struct NullValueCoercionError: Error {
-    let coercion: Coercion
-}
 
 
 struct ScopeError: Error { // locked slot, name not found, etc

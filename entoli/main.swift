@@ -149,7 +149,7 @@ if EVAL_TEST2 != 0 {
         try loadLibrary(env)
         
         //let script = "to add {} 2 + 2. add."
-        let script = "to add {x} x + 2. add 3."
+        let script = "to add {} 2 + 2. add."
         //  let script = " store {5, x}. x () " // note: empty expression group is equivalent to passing `{}` or `nothing`
         //    let script = " to foo {} 3 + 1. foo " // test native procedure definition (currently doesn't work as ParameterTypeCoercion is TBC)
         print("PARSE: \(script)\n")
