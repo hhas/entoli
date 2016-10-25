@@ -6,10 +6,16 @@
 // TO DO: figure how to package this as a standard module (the same procedures + [optional] operators architecture should work across all libraries; users should be able to import a module's procs, and optionally import the module's operator sugar on top; in addition, sugar may need its own versioning scheme so that a script can continue to use an older, known, sugar even when the module is updated - that allows modules to add new operators without accidentally injecting them into existing scripts that only expect the old operators)
 //
 
-// TO DO: if using `!` and `?` as expression separators that also work as behavioural modifiers, it's probably simplest to implement them as postfix operators and convert them to commands that wrap the preceding expression, annotating them with formatter hints to suppress trailing `,`/`.`
+// TO DO: if using `!` and `?` as expression separators that also work as behavioural modifiers, it's probably simplest to implement them as postfix operators and convert them to commands that wrap the preceding expression, annotating them with formatter hints to suppress trailing `,`/`.` (Problem: `!` and `?` don't fit well into the 'comma = expr separator, period = block separator' idiom.)
 
 
-// TO DO: operator parsefuncs should always annotate command to indicate it was created from operator
+// TO DO: operator parsefuncs should always annotate command to indicate it was created from operator; that'll allow pretty printer to preserve the user's preferred format (actually, it might be better just to use the operator format when it's available; as long as copy&paste operates on ASTs rather than raw text it'll always transfer code in operator-less format between scripts)
+
+
+// TO DO: update `parseProcedureDefinition` to take a COMMAND:EXPR pair; also need to decide how best to pass optional return type, e.g. `to foo {x:text, y: optional number} returning text: ...`, which also raises question of whether to accept a true pair or whether to read the colon directly, as if `returning` is part of the `to` operator (which would be preferable as it probably doesn't have any value as a standalone operator) then the colon needs to be part of the `to` operator too (it can't be an actual Pair token, because that sort of interleaving isn't supported by Parser). Still need to think through what users are most likely to write and make sure parsefunc can handle those (e.g. auto-correct should also accept `to NAME{}EXPR`, `to NAME,EXPR`, `to NAME returning TYPE,EXPR` and normalize them) as it's such an important operator it can't afford to frustrate.
+
+
+// TO DO:
 
 
 let StandardOperatorsTable = Operators().add(StandardOperators) // TO DO: where to put this? (both parser and formatter require access to formatting tables, which in turn need to be composed according to what modules are imported)
@@ -80,21 +86,27 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     // caution: it is safer to use longest match for canonical name, e.g. `A is equal B` will rewrite to `A is equal to equal B`, making the mistake obvious, whereas shortest would rewrite to `A is equal B`, concealing it (a highlighting editor would still give some clue since "is" and "equal B" would be colored differently, but a less experienced user could miss that whereas an extra word is much harder to overlook; using longest match as canonical name should also be more auto-complete friendly)
     // important: operators that take an optional `as` clause MUST have higher precendence than the `as` token in order, e.g. `"foo" is "FOO" as case-insensitive text`
     // TO DO: if splitting operators into task-specific sets, they will need some way to indicate if `as` or other 'standard' tokens are also required
-    (("is before",             .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [("lt",                    .phrase, .full)]),
-    (("is before or equal to", .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [("le",                    .phrase, .full),
+    (("is before",             .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [
+        ("lt",                    .phrase, .full)]),
+    (("is before or equal to", .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [
+        ("le",                    .phrase, .full),
         ("is or before",          .phrase, .full),
         ("is equal or before",    .phrase, .full),
         ("is equal to or before", .phrase, .full),
         ("is not after",          .phrase, .full)]),
-    (("is after",              .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [("gt",                    .phrase, .full)]),
-    (("is after or equal to",  .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [("ge",                    .phrase, .full),
+    (("is after",              .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [
+        ("gt",                    .phrase, .full)]),
+    (("is after or equal to",  .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [
+        ("ge",                    .phrase, .full),
         ("is or after",           .phrase, .full),
         ("is equal or after",     .phrase, .full),
         ("is equal to or after",  .phrase, .full),
         ("is not before",         .phrase, .full)]),
-    (("is not equal to",       .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [("ne",                    .phrase, .full),
+    (("is not equal to",       .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [
+        ("ne",                    .phrase, .full),
         ("is not",                .phrase, .left)]),
-    (("is equal to",           .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [("eq",                    .phrase, .full),
+    (("is equal to",           .phrase, .full), 400, .infix(parseGeneralComparisonOperator), [
+        ("eq",                    .phrase, .full),
         ("is",                    .phrase, .left)]),
     
     // TO DO: `contains`, `is in`, `starts with`, `ends with` operators, and complements (`does not contain`, etc)
@@ -220,7 +232,7 @@ func parseAtomDoBlock(_ parser: Parser, operatorName: String, precedence: Int) t
     if !(lexer.currentToken.type == .operator && lexer.currentToken.value == "done") {
         throw SyntaxError(description: "Expected end of `do...done` block but found \(lexer.currentToken)")
     }
-    return ExpressionSequence(expressions: result, format: .block)}
+    return ExpressionBlock(expressions: result, format: .block)}
 
 
 func parsePostfixDoBlock(_ parser: Parser, leftExpr: Value, operatorName: String, precedence: Int) throws -> Value {

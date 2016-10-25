@@ -62,15 +62,16 @@ func wrapScalarComparisonOperator(_ function: @escaping ScalarComparisonFunction
 // (note: this tuple doesn't have a standard type as parameter tuple does not have fixed length/type, and a variable-length structure such as Array doesn't provide the static type info required by evalRecordField() generic, which needs to know the *exact* Coercion class in order to determine its correct return type; thus we can't type the other fields either, which is not ideal as it'd allow problems to be spotted during authoring rather than glue generation; still, there's a good chance all this implementation will radically change in future anyway, so no point sweating details too much right now)
 
 
-private func func_storeValue(_ env: Scope, slotName: String, value: Value) throws {
-    try env.store(slotName, value: value) // TO DO: `editable` flag, etc; Q. could type, flags, docs, etc. all be provided by `as clause` and annotations? if so, another possibility would be to define `store` as a unary operator that takes a named pair as its RH operand, c.f. AS's `property NAME : VALUE`, but able to work in any evaluation context (eliminating the need for >1 assignment syntax)
+private func func_storeValue(_ env: Scope, name: String, value: Value) throws {
+    try env.store(name, value: value) // TO DO: `editable` flag, etc; Q. could type, flags, docs, etc. all be provided by `as clause` and annotations? if so, another possibility would be to define `store` as a unary operator that takes a named pair as its RH operand, c.f. AS's `property NAME : VALUE`, but able to work in any evaluation context (eliminating the need for >1 assignment syntax)
 }
 
 private let proc_storeValue = (name: "store",
                                // TO DO: should value's type be gNoCoercion, allowing func_storeValue to determine if it is an `as` command and use that as slot's type if mutable? Alternatively, define a TypedValueCoercion that unpacks to `(Value,Coercion)` tuple? (Yet another option is just to let the `as` operator annotate the value as it expands and coerces it, and then check that any time the slot is mutated. (There is also the question of how much attention the slot should pay to the value's existing type tags versus a literal `as` operator declared within the assignment, especially since the same value may have different tags depending on prior usage - e.g. a Text value might or might not have an 'integer' tag, which may be more specific than the user intends the slot to be.)
-                               parameterType: (value:    (Name("value"), gAnyValueCoercion),
-                                               slotName: (Name("named"), gNameKeyStringCoercion)),
-                               returnType: gNoResult, // since the primitive func doesn't return a result, its generated wrapper will return `nothing` which should be passed through as-is; gNoResult simply provides a human-readable description that will appear in documentation
+                               parameter: (
+                                    value: (Name("value"), gAnyValueCoercion),
+                                    name:  (Name("named"), gNameKeyStringCoercion)),
+                               result: gNoResult, // since the primitive func doesn't return a result, its generated wrapper will return `nothing` which should be passed through as-is; gNoResult simply provides a human-readable description that will appear in documentation
                                procScope: PrimitiveProcedure.ProcScope.commandScope,
                                function: func_storeValue)
 
@@ -85,20 +86,19 @@ private let proc_storeValue = (name: "store",
 //**********************************************************************
 
 
-private func func_defineProcedure(_ env: Scope, procName: Name, parameterType: ParameterType, returnType: ReturnType, body: Value) throws {
-    // TO DO: implement
+private func func_defineProcedure(_ env: Scope, name: Name, using: ParameterType, returning: ReturnType, body: Value) throws {
+    try env.store(NativeProcedure(signature: ProcedureSignature(name: name, parameterType: using, returnType: returning), body: body))
 }
 
 private let proc_defineProcedure = (name: "to",
-                                    // TO DO: need to decide `to` proc's signature; e.g. {NAME [PARAM-TYPE], BODY, [RESULT-TYPE]} would probably be more appropriate when writing raw command (even better if the result type were included with the name and param type), though currently makeDefineProcedureCommand uses the following:
-                                    parameterType: (
-                                        procName:      (Name("name"), gNameCoercion),
-                                        parameterType: (Name("using"), gParameterTypeCoercion),
-                                        returnType:    (Name("returning"), gReturnTypeCoercion),
-                                        body:          (Name("code"), gAnythingCoercion)
+                                    parameter: (
+                                        name:      (Name("name"), gNameCoercion),
+                                        using:     (Name("using"), gParameterTypeCoercion),
+                                        returning: (Name("returning"), gReturnTypeCoercion),
+                                        body:      (Name("code"), gAnythingCoercion)
                                     ),
-                                    returnType: gNoResult,
-                                    procScope: PrimitiveProcedure.ProcScope.commandScope, // `to` command's dynamic scope = new proc's lexical scope
+                                    result: gNoResult,
+                                    procScope: PrimitiveProcedure.ProcScope.commandScope, // `to` command's dynamic scope = proc's lexical scope
                                     function: func_defineProcedure)
 
 
@@ -109,11 +109,12 @@ private let proc_defineProcedure = (name: "to",
 
 private func call_storeValue(_ arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
     var arguments = arguments
-    let arg_value = try evalRecordField(&arguments, fieldStructure: proc_storeValue.parameterType.0, commandScope: commandScope)
-    let arg_slotName = try evalRecordField(&arguments, fieldStructure: proc_storeValue.parameterType.1, commandScope: commandScope)
+    // next 2 lines are generated
+    let arg_value = try evalRecordField(&arguments, fieldStructure: proc_storeValue.parameter.0, commandScope: commandScope)
+    let arg_name = try evalRecordField(&arguments, fieldStructure: proc_storeValue.parameter.1, commandScope: commandScope)
     if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
     do {
-        try proc_storeValue.function(commandScope, arg_slotName, arg_value)
+        try proc_storeValue.function(commandScope, arg_name, arg_value) // generated line
     } catch {
         throw ProcedureError(name: proc_storeValue.name, arguments: arguments, // TO DO: include entire proc definition, not just name? (this'd require looking up name now in procedureScope, in case scope's state subsequently mutates, although if slot is locked - which it usually should be for procs - that shouldn't happen; alternatively, defining PrimitiveProcedure instance as top-level generated `let` should make it directly available)
                              commandScope: commandScope, procedureScope: procedureScope, originalError: error)
@@ -124,13 +125,14 @@ private func call_storeValue(_ arguments: [Value], commandScope: Scope, procedur
 
 private func call_defineProcedure(_ arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
     var arguments = arguments
-    let arg_procName = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.0, commandScope: commandScope)
-    let arg_parameterType = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.1, commandScope: commandScope)
-    let arg_returnType = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.2, commandScope: commandScope)
-    let arg_body = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameterType.3, commandScope: commandScope)
+    // next 4 lines are generated
+    let arg_name = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameter.0, commandScope: commandScope)
+    let arg_parameter = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameter.1, commandScope: commandScope)
+    let arg_result = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameter.2, commandScope: commandScope)
+    let arg_body = try evalRecordField(&arguments, fieldStructure: proc_defineProcedure.parameter.3, commandScope: commandScope)
     if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
     do {
-        try proc_defineProcedure.function(commandScope, arg_procName, arg_parameterType, arg_returnType, arg_body)
+        try proc_defineProcedure.function(commandScope, arg_name, arg_parameter, arg_result, arg_body) // generated line
     } catch {
         throw ProcedureError(name: proc_defineProcedure.name, arguments: arguments, // TO DO: include entire proc definition, not just name? (this'd require looking up name now in procedureScope, in case scope's state subsequently mutates, although if slot is locked - which it usually should be for procs - that shouldn't happen; alternatively, defining PrimitiveProcedure instance as top-level generated `let` should make it directly available)
             commandScope: commandScope, procedureScope: procedureScope, originalError: error)
@@ -148,17 +150,17 @@ private func call_defineProcedure(_ arguments: [Value], commandScope: Scope, pro
 func loadLibrary(_ env: Scope) throws {
     try env.store(PrimitiveProcedure(name: proc_storeValue.name,
                                      type: (RecordSignature(
-                                                FieldSignature(proc_storeValue.parameterType.value.0, proc_storeValue.parameterType.slotName.1),
-                                                FieldSignature(proc_storeValue.parameterType.value.0, proc_storeValue.parameterType.slotName.1)),
-                                            proc_storeValue.returnType),
+                                                FieldSignature(proc_storeValue.parameter.value.0, proc_storeValue.parameter.value.1),
+                                                FieldSignature(proc_storeValue.parameter.name.0, proc_storeValue.parameter.name.1)),
+                                            proc_storeValue.result),
                                      procScope: proc_storeValue.procScope, function: call_storeValue))
     try env.store(PrimitiveProcedure(name: proc_defineProcedure.name,
                                      type: (RecordSignature(
-                                                FieldSignature(proc_defineProcedure.parameterType.procName.0, proc_defineProcedure.parameterType.procName.1),
-                                                FieldSignature(proc_defineProcedure.parameterType.parameterType.0, proc_defineProcedure.parameterType.parameterType.1),
-                                                FieldSignature(proc_defineProcedure.parameterType.returnType.0, proc_defineProcedure.parameterType.returnType.1),
-                                                FieldSignature(proc_defineProcedure.parameterType.body.0, proc_defineProcedure.parameterType.body.1)),
-                                            proc_defineProcedure.returnType),
+                                                FieldSignature(proc_defineProcedure.parameter.name.0, proc_defineProcedure.parameter.name.1),
+                                                FieldSignature(proc_defineProcedure.parameter.using.0, proc_defineProcedure.parameter.using.1),
+                                                FieldSignature(proc_defineProcedure.parameter.returning.0, proc_defineProcedure.parameter.returning.1),
+                                                FieldSignature(proc_defineProcedure.parameter.body.0, proc_defineProcedure.parameter.body.1)),
+                                            proc_defineProcedure.result),
                                      procScope: proc_defineProcedure.procScope, function: call_defineProcedure))
     try env.store(PrimitiveProcedure(name: "+",   scalarArithmeticOperatorFunction: (+)))
     try env.store(PrimitiveProcedure(name: "-",   scalarArithmeticOperatorFunction: (-)))

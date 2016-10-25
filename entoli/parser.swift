@@ -8,6 +8,9 @@
 private let DEBUG = false
 
 
+// TO DO: commas should create ExpressionBlock
+
+
 // TO DO: if period-delimited expression lists are used for short-form (single-line) blocks, and `do...done` for long-form (multi-line) blocks, is there still a reason to support parenthesized expression lists for blocks as well? It would simplify language and eliminate potential source of errors if parens were used for grouping single expressions (e.g. math operators) only. (Note: argument for parensed expression lists is that it allows arbitrary length, nestable groups using built-in punctuation tokens only, whereas `do...done` blocks use keywords which are imported.) Note that a comma/semicolon-separated block is still a single expression [arguably a dodgy concept since only semicolons actually represent composition; commas don't], so parenthesizing it doesn't really change semantics; it just makes the grouping explicit (and eliminates the need for an explicit trailing period). The question then becomes whether period separators should be allowed too, as those would describe a sequence of block expressions, e.g. `(Foo, bar. Baz)`, which does then require parens to be blocks and not just grouping. Mostly a question of principle of least surprise. The worry is that commands could inadvertently (or deliberately) appear within a parensed expression without actually affecting its output, though might still act in other ways (e.g. side-effects) when that expression is evaluated, e.g. `(die, 2 + 2) * 3`. [Technically, any command in any imperative language could perform the same side-effects, e.g. `func twoPlusTwo() {die; return 2 + 2}; twoPlusTwo() * 3;` - the only difference being is it happens inside the procedure rather than its call site.]
 
 
@@ -106,13 +109,13 @@ class Parser {
         } catch is LeftOperandNotFoundError { // parseAtom() found an infix operator; return name and let parseOperation deal with it
             argument = nil
         }
-        if argument == nil { // name is not followed by a new expression, so it is either just a name or an argument-less command; in either case, return it unchanged as Name
+        if argument == nil { // name is not followed by a new expression, so it is either just a name or an argument-less command; in either case, return it unchanged as Name // TO DO: problem with this is that in an expr[seq] context it needs to eval as Command
             self.lexer.backtrackTo(backtrackIndex)
             if DEBUG {print("... no argument found, so parseArgument backtracked to \(self.lexer.currentToken)")}
             return name // TO DO: if next token is `do...done` block (a postfix structure), confirm that this gets attached to command correctly (note that its parsefunc will need to cast name to command first)
         } else { // TO DO: also, what if `nothing` literal is found?
            
-            if let expr = argument as? ExpressionSequence { // note: if argument literal is `()` (which is synonymous with `nothing`, as that's what it returns when evaled, and not something the user would intend here as it's simpler just to omit the argument entirely), the parser automatically 'corrects' it by replacing it with an empty record (which is also equivalent to omitting argument entirely). This should avoid runtime errors due to users habitually typing `foo()` instead of `foo{}` (note: to explicitly pass nothing, use `foo{nothing}`, which is functionally identical to `foo{}` or `foo`). OTOH, `foo(1)`, `foo(1,2,3)` is not 'auto-corrected' as its intent is ambiguous (the user may have intended it to be a group whose result is passed as single argument to `foo`), but will be visibly incorrect when formatted as `foo{(1)}`, `foo{(1,2,3)}`; it might also be worth parser/formatter flagging it as questionable when performing a syntax check (though am inclined not to do that in parser itself)
+            if let expr = argument as? ExpressionBlock { // note: if argument literal is `()` (which is synonymous with `nothing`, as that's what it returns when evaled, and not something the user would intend here as it's simpler just to omit the argument entirely), the parser automatically 'corrects' it by replacing it with an empty record (which is also equivalent to omitting argument entirely). This should avoid runtime errors due to users habitually typing `foo()` instead of `foo{}` (note: to explicitly pass nothing, use `foo{nothing}`, which is functionally identical to `foo{}` or `foo`). OTOH, `foo(1)`, `foo(1,2,3)` is not 'auto-corrected' as its intent is ambiguous (the user may have intended it to be a group whose result is passed as single argument to `foo`), but will be visibly incorrect when formatted as `foo{(1)}`, `foo{(1,2,3)}`; it might also be worth parser/formatter flagging it as questionable when performing a syntax check (though am inclined not to do that in parser itself)
                 if expr.expressions.count == 0 { argument = gEmptyRecord }
             }
             if !(argument is Record) { argument = Record([argument!]) } // non-record values are treated as first item in a record arg
@@ -155,7 +158,7 @@ class Parser {
         case .recordLiteral: // {...}; a sequence of values and/or name-value pairs; mostly used to pass proc args
             return try self.parseRecord()
         case .expressionSequenceLiteral: // (...) // a sequence of zero or more expressions, grouped by parentheses; also be aware that `(x:1)` will be treated as an ordinary pair, not a `store` command, unlike in (e.g.) `do...done` blocks
-            let result = ExpressionSequence(expressions: try self.parseExpressionSequence({$0.type == .expressionSequenceLiteralEnd}), format: .parenthesis)
+            let result = ExpressionBlock(expressions: try self.parseExpressionSequence({$0.type == .expressionSequenceLiteralEnd}), format: .parenthesis)
             try self.lexer.skip(.expressionSequenceLiteralEnd)
             return result
             // atomic literals
@@ -291,6 +294,7 @@ class Parser {
                 if let command = try? (value as! Pair).toStoreCommand() { value = command }
             }
             result.append(value)
+            self.lexer.flush() // TO DO: check this is OK
         }
         return result
     }
@@ -301,12 +305,8 @@ class Parser {
     
     
     func parseScript() throws -> EntoliScript { // parse entire document (result is expression group)
-        var result = [Value]()
-        while self.lexer.lookaheadBy(1).type != .endOfCode {
-            result.append(try self.parseExpression())
-            if DEBUG {print("TOP-LEVEL parse() completed expr: \(result.last)")}
-            self.lexer.flush()
-        }
+        let result = try self.parseExpressionSequence({$0.type == .endOfCode}, isBlock: true) // TO DO: check this works ok
+        if DEBUG {print("TOP-LEVEL parse() completed expr: \(result.last)")}
         return EntoliScript(expressions: result)
     }
 }

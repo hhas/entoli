@@ -5,6 +5,12 @@
 //
 //
 
+import Foundation
+
+// TO DO: what about implementing `evaluate()->Value` funcs as dynamic alternative to the static `evaluate<ReturnType>()->ReturnType.SwiftType`?
+
+// TO DO: what about implementing NativeCoercion protocol that can be used as parameter type instead of `Coercion` (which can't coerce) and `SwiftCast` (which requires generics)
+
 
 // TO DO: if/when Swift supports `override` in extensions, move cast and evaluation methods to extensions
 
@@ -18,7 +24,7 @@
 
 // also need to think about how AOT compilation might change code behavior (since all movements from entoli to Swift datatypes will require primitive coercions to specific types, where previously entoli code might accept any type)
 
-// TO DO: how best to support selective stepped eval (e.g. step by command/block); simplest would be to transform code before execution (e.g. using SteppedExpressionSequence in place of ExpressionSequence), rather than passing flags which ExpressionSequence must always check
+// TO DO: how best to support selective stepped eval (e.g. step by command/block); simplest would be to transform code before execution (e.g. using SteppedExpressionSequence in place of ExpressionBlock), rather than passing flags which ExpressionBlock must always check
 
 
 // note: value-to-value conversion methods have `as` prefix and should be supported on all objects (throwing a CoercionError if not appropriate)
@@ -28,14 +34,19 @@
 
     // TO DO: a named pair _must_ evaluate as `store`, except in list (where both operands are evaled as exprs and a key-value pair returned), record (remains as a name-value pair, with eval of right operand determined by arg/expr context), or [parensed?] pair value (remains as pair, with coercion context determining eval)
 
+// TO DO: implement ExpressibleByStringLiteral, etc.
 
-class Value: CustomStringConvertible { // TO DO: should this be named Expression, or have Expression protocol? (i.e. are there any Value classes that *can't* be evaluated as atomic/group expressions?)
+
+
+class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: should this be named Expression, or have Expression protocol? (i.e. are there any Value classes that *can't* be evaluated as atomic/group expressions?)
     
     var annotations = [Any]() // TO DO: structure, API, literalRepresentation
     
     // literal representations // TO DO: implement `literalRepresentation` methods that take additional options (e.g. always/never quote names) for formatting values as entoli literals
-        
-    var description: String {return "\(type(of: self))(...)"} // TO DO: subclasses should override to return their Swift literal representation
+    
+    var description: String {return "\(type(of: self))(...)"} // subclasses should override to return short developer-readable description (eventually this might just call renderer)
+    
+    var debugDescription: String {return "\(type(of: self))(...)"} // subclasses should override to return their Swift literal representation
     
     var typename: String {return String(describing: type(of: self)) } // TO DO: this should return native entoli type name (`text`, `name`, `expression`, etc)
     
@@ -84,9 +95,8 @@ class Value: CustomStringConvertible { // TO DO: should this be named Expression
         throw CoercionError(value: self, coercion: returnType)
     }
     
-    // Value.evaluate() is the standard entry point for evaluating any given value
-    
-    func evaluate<ReturnType: SwiftCast>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
+    // Value.evaluate() is the standard entry point for evaluating any given value // TO DO: rename `evaluate(as returnType: ReturnType, in env: Scope)`?
+    func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: SwiftCast {
         return try returnType._coerce_(self, env: env)
     }
 }
@@ -133,14 +143,10 @@ let gNullValue = NullValue() // note: the main reason for this being a 'special'
 //**********************************************************************
 //
 
-func ==(lhs: Text, rhs: Text) -> Bool { // TO DO: all Values should be Equatable
-    return lhs.string.lowercased() == rhs.string.lowercased() // TO DO: call Text.keyString, and let Text cache lowercase string for reuse
-}
-
-
 
 class Text: Value { // TO DO: how to annotate with numerics, units, dates, etc?
     let string: String
+    
     
     init(_ string: String) {
         self.string = string
@@ -148,9 +154,9 @@ class Text: Value { // TO DO: how to annotate with numerics, units, dates, etc?
     
     // literal representations // TO DO: entoli literal needs to escape any `"` chars by doubling them
     
-    override var description: String {
-        return "\(type(of: self))(\(self.string.debugDescription))" // TO DO: this isn't ideal as tab chars don't appear as `\t`; need to check if there are any other chars that don't display as they would be written in a Swift string literal
-    }
+    override var description: String { return "\"\(self.string.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+    override var debugDescription: String { return "\(type(of: self))(\(self.string.debugDescription))" } // TO DO: this isn't ideal as tab chars don't appear as `\t`; need to check if there are any other chars that don't display as they would be written in a Swift string literal
+    
     
     // conversion // TO DO: these should self.annotate
     
@@ -182,13 +188,17 @@ class Text: Value { // TO DO: how to annotate with numerics, units, dates, etc?
     override func _expandAsAny_(_ env: Scope, returnType: Coercion) throws -> Value { return self }
     override func _expandAsText_(_ env: Scope, returnType: Coercion) throws -> Text { return self }
     
+    
+    static func ==(lhs: Text, rhs: Text) -> Bool { // TO DO: all Values should be Equatable
+        return lhs.string.lowercased() == rhs.string.lowercased() // TO DO: instead of normalizing each time, call Text.normalizedString, and let Text cache lowercase string for reuse
+    }
 }
 
 
 class Name: Value {
     
     let string: String
-    let keyString: String // TO DO: ideally this would be calculated on first use then stored, but lazy modifier doesn't work with `self`, so for now just store it on init as well
+    let keyString: String // TO DO: ideally this would be calculated on first use then stored, but lazy modifier doesn't work with `self`, so for now just store it on init as well // TO DO: rename `normalizedString`
     
     init(_ string: String) {
         self.string = string
@@ -199,9 +209,9 @@ class Name: Value {
     
     // TO DO: for entoli literal representation, this needs to escape any `'` chars within self.string; in addition, quotes should be omitted if unnecessary
     
-    override var description: String {
-        return "\(type(of: self))(\(self.string.debugDescription))"
-    }
+    override var description: String { return "'\(self.string)'" }
+    
+    override var debugDescription: String { return "\(type(of: self))(\(self.string.debugDescription))" }
     
     // conversion
     
@@ -235,7 +245,8 @@ class Pair: Value { // TO DO: use generic Pair<KeyT,ValueT> rather than subclass
     
     // TO DO: `A:B:C` is right-associative; formatter may want to parenthesize RH pair for clarity
         
-    override var description: String { return "Pair(\(self.key), \(self.value))" }
+    override var description: String { return "\(self.key): \(self.value)" }
+    override var debugDescription: String { return "Pair(\(self.key.debugDescription), \(self.value.debugDescription))" }
     
     // conversion
     
@@ -302,9 +313,8 @@ class List: Value { // TO DO: how best to constrain as array/dictionary/set? (pa
     
     // literal representations
     
-    override var description: String {
-        return "List(" + items.map{$0.description}.joined(separator: ", ") + ")"
-    }
+    override var description: String {return "[" + items.map{$0.description}.joined(separator: ", ") + "]"}
+    override var debugDescription: String {return "List(" + items.map{$0.debugDescription}.joined(separator: ", ") + ")"}
     
     // evaluation // TO DO: what about expanding as generator/lazy array, for use by primitive procs?
     
@@ -312,12 +322,13 @@ class List: Value { // TO DO: how best to constrain as array/dictionary/set? (pa
         return try self._expandAsList_(env, itemType: gAnyValueCoercion, returnType: returnType)
     }
     
+    // TO DO: passing itemType as separate param is kinda smelly; would be better to have ListCoercionProtocol; alternatively, might be best to get rid of returnType: entirely and let Coercion._coerce_ tag the returned Value, and Value.evaluate() rethrow with full error details
     override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType, returnType: Coercion) throws -> [ItemType.SwiftType]
                                             where ItemType: Coercion, ItemType: SwiftCast {
         return try self.items.map{try $0.evaluate(env, returnType: itemType)} // TO DO: FIX: this seems to be invoking Value base class methods, not Text methods
     }
     
-    override func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record {
+    override func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record { // TO DO: is this right? converts [1,2,3] to {1,2,3}; shouldn't it be {[1,2,3]}?
         return Record(try self.items.map{try $0.evaluate(env, returnType: gAnyValueCoercion)})
     }
 }
@@ -337,9 +348,8 @@ class Record: Value { // roughly analogous to struct, though with different shar
     
     // literal representations
     
-    override var description: String {
-        return "Record(" + fields.map{$0.description}.joined(separator: ", ") + ")"
-    }
+    override var description: String { return "{" + fields.map{$0.description}.joined(separator: ", ") + "}" }
+    override var debugDescription: String { return "Record(" + fields.map{$0.debugDescription}.joined(separator: ", ") + ")" }
     
     // special conversion, given a record, convert it to a RecordSignature (assuming all its fields contain Name:Value pairs where the value evals to a Coercion)
     
@@ -369,8 +379,9 @@ class Record: Value { // roughly analogous to struct, though with different shar
         return try self.fields.map{try $0.evaluate(env, returnType: itemType)}
     }
     
-    override func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record {
-        return Record(try self.fields.map{try $0.evaluate(env, returnType: gAnyValueCoercion)})
+    override func _expandAsRecord_(_ env: Scope, returnType: Coercion) throws -> Record { // TO DO: define RecordCoercionProtocol for use here? // TO DO: this method is wrong:
+        // note: when called in `to NAME {...} ...` operator's argument record, returnType: is ParameterTypeCoercion
+        return Record(try self.fields.map{try $0.evaluate(env, returnType: gAnyValueCoercion)}) // TO DO: HACK; returnType should be some sort of PairCoercion; with the exact type specified by returnType
     }
     
     override func _expandAsCoercion_(_ env: Scope, returnType: Coercion) throws -> Coercion { // note: returnType is ignored as it should always be gTypeCoercion
@@ -409,9 +420,8 @@ class Command: Value {
     
     // literal representations
     
-    override var description: String {
-        return "Command(\(self.name), \(self.argument))" // note that if argument record contains a single [unnamed] numeric/quoted text value or list value (which are self-delimiting literals), it may display that value instead of the enclosing record for neatness; the default description() method should always display canonical form for reference/debugging use
-    }
+    override var description: String { return "\(self.name) \(self.argument))" } // note that if argument record contains a single [unnamed] numeric/quoted text value or list value (which are self-delimiting literals), it may display that value instead of the enclosing record for neatness; the default description() method should always display canonical form for reference/debugging use
+    override var debugDescription: String { return "Command(\(self.name.debugDescription), \(self.argument.debugDescription))" }
     
     // conversion
     
@@ -468,9 +478,9 @@ class Thunk: Value { // TO DO: memoize? (kinda depends on difference between `as
 
 // TO DO: how to prevent `(name:value)` being treated as `store` command? (pass flag to parseExpressionSequence; do parsefunc and script parse should pass true)
 
-// TO DO: think the only way to dodge bullets (and keep special-case syntax rules comprehensible) with Pairs is to subclass ExpressionSequence as `ExpressionBlock` and that as `EntoliScript` for `do` blocks and scripts, and have these special-case name:value pairs as store commands (probably best that they convert them to some form of `store` commands as they're parsed [e.g. flagging/wrapping/subclassing them so that they still format as pairs]; may be an idea to define `Store` as a Value/Pair/Command subclass, although that isn't ideal); a safer option might be for ExpressionBlock to recognize and convert them itself; that should avoid any awkward metaprogramming surprises (although one can argue that the formatter can and should make the decision on when to display a `store` command using name:value syntax instead, as much like operators it's acting here as syntactic sugar for the underlying command+proc)
+// TO DO: think the only way to dodge bullets (and keep special-case syntax rules comprehensible) with Pairs is to subclass ExpressionBlock as `ExpressionBlock` and that as `EntoliScript` for `do` blocks and scripts, and have these special-case name:value pairs as store commands (probably best that they convert them to some form of `store` commands as they're parsed [e.g. flagging/wrapping/subclassing them so that they still format as pairs]; may be an idea to define `Store` as a Value/Pair/Command subclass, although that isn't ideal); a safer option might be for ExpressionBlock to recognize and convert them itself; that should avoid any awkward metaprogramming surprises (although one can argue that the formatter can and should make the decision on when to display a `store` command using name:value syntax instead, as much like operators it's acting here as syntactic sugar for the underlying command+proc)
 
-class ExpressionSequence: Value { // TO DO: can/should these be omitted where not needed? also, need to think carefully about allowing multiple expressions (punctuation-based grouping is kinda needed as `do...done` blocks are only available if that operator is loaded); one possibility is for expression groups to coerce differently depending on whether they contain one or arbitrary no. of expressions; thus a math operator would ask for `number` and would throw coercion error if passed `(do evil. 2)`, and only asking for commands would accept it (e.g. `if{bool,commands}`)
+class ExpressionBlock: Value { // TO DO: can/should these be omitted where not needed? also, need to think carefully about allowing multiple expressions (punctuation-based grouping is kinda needed as `do...done` blocks are only available if that operator is loaded); one possibility is for expression groups to coerce differently depending on whether they contain one or arbitrary no. of expressions; thus a math operator would ask for `number` and would throw coercion error if passed `(do evil. 2)`, and only asking for commands would accept it (e.g. `if{bool,commands}`)
     
     enum Format {
         case sentence
@@ -492,9 +502,9 @@ class ExpressionSequence: Value { // TO DO: can/should these be omitted where no
     override var description: String {
         switch self.format {
         case .sentence:
-            return expressions.map{$0.description}.joined(separator: ", ")
+            return expressions.map{$0.description}.joined(separator: ", ") + ". "
         case .parenthesis:
-            return "(" + expressions.map{$0.description}.joined(separator: ". ") + ")"
+            return "(" + expressions.map{$0.description}.joined(separator: ". ") + ")" // TO DO: what separator? (this ties in with question of whether or not parens should be grouping only, e.g. around a single operator expression, or whether they should be able to wrap a sequence of expressions)
         case .block:
             return "do\n" + expressions.map{$0.description}.joined(separator: "\n\t") + "\ndone" // TO DO: this really needs external formatter to ensure correct indentation and trailing line break
         case .script:
@@ -528,9 +538,9 @@ class ExpressionSequence: Value { // TO DO: can/should these be omitted where no
         // TO DO: how should returnType.defersExpansion be handled? should it apply to entire expression, or just to final result? (bear in mind that some coercions, e.g. `as expression`, need to do non-standard processing of values; it may be that `as` operator should check RH operand's Coercion.defersExpansion itself before doing anything with LH operand); for now, probably just do the simplest thing that gets stuff working
         var result: Value = gNullValue
         for expression in self.expressions {
-            print("EVALING: \(expression)")
+            print("EVAL EXPR: \(expression)")
             do {
-                result = try expression.evaluate(env, returnType: gAnythingCoercion) // TO DO: what type? also, how to break out of loop, e.g. when returning result? (and what, if anything, needs to be done wrt error handling, especially if error is capturing scope plus remaining commands as continuation, allowing it to resume from where it left off)
+                result = try expression.evaluate(env, returnType: gAnythingCoercion) // TO DO: what type? also, how to break out of loop, e.g. when returning result? (and what, if anything, needs to be done wrt error handling, especially if error is capturing scope plus remaining commands as continuation, allowing it to resume from where it left off) // TO DO: FIX: if expression is a Name, it needs to eval as a Command; simplest might be to separate `expand` and `perform` into separate methods; also need to decide how Pair.evaluate() needs to work
             } catch {
                 throw EvaluationError(description: "Can't evaluate the following expression (\(error)): \(expression)")
             }
@@ -543,7 +553,7 @@ class ExpressionSequence: Value { // TO DO: can/should these be omitted where no
 
 
 
-class EntoliScript: ExpressionSequence { // TO DO: rename `Script[Object]`?
+class EntoliScript: ExpressionBlock { // TO DO: rename `Script[Object]`?
     
     init(expressions: [Value]) {
         super.init(expressions: expressions, format: .script)

@@ -47,6 +47,7 @@ class Coercion: Value {
     var defersExpansion: Bool { return false } // determines if Thunk.evaluate() should force and return its thunked value, or call ReturnType._coerce_(self,...) and let it decide what it wants to do with the Thunk (e.g. NoCoercion will return Thunk unchanged, ThunkCoercion with thunk it again)
     
     func defaultValue(_ env: Scope) throws -> Value {
+        // called by DefaultValue coercion when no value is given and it doesn't contain a default value itself; this avoids the need to write `DefaultValue(type: textCoercion, value: Text(""))`,  `DefaultValue(type: intCoercion, value: Text("0"))`, etc. since obvious defaults for these types can be inferred. One downside is that there's no way to check additional constraints, e.g. `DefaultValue(type: IntCoercion(min:10))` will throw a runtime error; OTOH, so will `DefaultValue(type: IntCoercion(min:10), Text("0"))`, so the problem isn't specific to inferred defaults, just easier to miss. (This is also why it can't return SwiftType, since constraint checking is performed by _coercion_;.)
         throw ImplementationError(description: "\(self) coercion does not provide a standard default value, and no other default was specified.") // note: the `default` type command (commonly used to define optional parameters to native procedures) should ensure that a valid default always exists or error if not, so the only time this error should occur is if a primitive procedure's signature has forgotten to supply one (i.e. developer error)
     }
 
@@ -502,10 +503,10 @@ class TypeCoercion: Coercion, SwiftCast { // coerce value to a Coercion instance
 
 class ParameterTypeCoercion: Coercion, SwiftCast {
 
-    typealias SwiftType = ParameterType
+    typealias SwiftType = ParameterType // RecordSignature
     
     func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
-        fatalNotYetImplemented(self, #function)
+        return try value._expandAsRecord_(env, returnType: self).toRecordSignature()
     }
 }
 
@@ -590,7 +591,7 @@ class MayBeNil<ReturnType>: Coercion, SwiftCast where ReturnType: Coercion, Retu
 //
 
 
-class DefaultValue<ReturnType>: Coercion, SwiftCast where ReturnType: Coercion, ReturnType: SwiftCast, ReturnType.SwiftType: Value {
+class DefaultValue<ReturnType>: Coercion, SwiftCast where ReturnType: Coercion, ReturnType: SwiftCast {
     
     typealias SwiftType = ReturnType.SwiftType
     
@@ -627,19 +628,23 @@ class DefaultValue<ReturnType>: Coercion, SwiftCast where ReturnType: Coercion, 
         }
         return expandedValue
     }
+    
+    func wrap(_ value: SwiftType, env: Scope) throws -> Value {
+        return try self.type.wrap(value, env: env)
+    }
 }
 
 
 
-class Precis<CoercionType>: Coercion, SwiftCast where CoercionType: Coercion, CoercionType: SwiftCast { // provides a custom description of Coercion object for documentation putposes
+class Precis<ReturnType>: Coercion, SwiftCast where ReturnType: Coercion, ReturnType: SwiftCast { // provides a custom description of Coercion object for documentation putposes
     
-    typealias SwiftType = CoercionType.SwiftType
+    typealias SwiftType = ReturnType.SwiftType
     
     override var defersExpansion: Bool { return true }
     
-    let type: CoercionType
+    let type: ReturnType
     
-    init(type: CoercionType, description: String = "") {
+    init(type: ReturnType, description: String = "") {
         self.type = type
     }
     

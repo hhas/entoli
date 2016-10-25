@@ -92,13 +92,13 @@ class RecordSignature: Record { // TO DO: use generics rather than subclassing? 
 }
 
 
-class ProcedureSignature: Command { //
+class ProcedureSignature: Command {
     
     let returnType: ReturnType // TO DO: should this include 'fails'? would be cleaner, esp if using icon-style error handling, which in turn might allow a degree of continuation since remaining procs could be captured by the error value as it passes through them, along with their scope... will really have to think that one through, plus it'd presumably be limited to native procs)
     
     // note: it would be better if signature was simpler (less initialization overhead); alternatively, use structs/tuples to declare primitive procs, and only create ProcedureSignature instances for native procs and when introspecting primitive procs
     
-    init(name: Name, parameterType: ParameterType, returnType: ReturnType) { // TO DO: this shouldn't throw as declarations will be top-level in swift
+    init(name: Name, parameterType: ParameterType, returnType: ReturnType) { // TO DO: replace Name and ParameterType args with Command arg? (problem is that this can't accommodate ReturnType, which leaves the API awkwardly asymmetric) // TO DO: this shouldn't throw as declarations will be top-level in swift
         self.returnType = returnType
         super.init(name: name, argument: parameterType)
     }

@@ -25,9 +25,9 @@ enum AutoDelimit { // e.g. Given word sequence `red is blue`, should it be parse
     //
     // e.g. Assume `A` and `B` are UnquotedWord tokens, and `(A/B)` is any explicitly delimited operand (group/list/quoted/etc literal):
     //
-    // - if .Full, `A op B` *always* parses to operation `(A) op (B)`
-    // - if .Left, `op B` parses to `op (B)`, but `A op` parses to name 'A op'
-    // - if .None, *only* `(A) op (B)` parses to operation `(A) op (B)`
+    // - if .full, `A op B` *always* parses to operation `(A) op (B)`
+    // - if .left, `op B` parses to `op (B)`, but `A op` parses to name 'A op'
+    // - if .none, *only* `(A) op (B)` parses to operation `(A) op (B)`
     //
     var left:  Bool { return (self == .left  || self == .full) }
     var right: Bool { return (self == .right || self == .full) }
@@ -126,7 +126,7 @@ struct Token: CustomStringConvertible {
     }
     
     var description: String {
-        return "«\(self.type) \(self.range) `\(self.value)`»" // TO DO: extended representations for numerics and operators
+        return "«TokenType.\(self.type) \(self.range) `\(self.value)`»" // TO DO: extended representations for numerics and operators
     }
 }
 

@@ -65,7 +65,7 @@ if LEXER_TEST != 0 { // print each token in source
 
 
 
-let PARSER_TEST = 1
+let PARSER_TEST = 0
 
 if PARSER_TEST != 0 { // parse source into AST
     let p = Parser(lexer: Lexer(code: source))
@@ -138,5 +138,28 @@ if EVAL_TEST != 0 {
     } catch { print("\nA TEST FAILED:",error) }
 }
 
+
+
+let EVAL_TEST2 = 1
+
+if EVAL_TEST2 != 0 {
+    do {
+        // initialize an environment
+        let env = Scope()
+        try loadLibrary(env)
+        
+        //let script = "to add {} 2 + 2. add."
+        let script = "to add {x} x + 2. add 3."
+        //  let script = " store {5, x}. x () " // note: empty expression group is equivalent to passing `{}` or `nothing`
+        //    let script = " to foo {} 3 + 1. foo " // test native procedure definition (currently doesn't work as ParameterTypeCoercion is TBC)
+        print("PARSE: \(script)\n")
+        let value = try Parser(lexer: Lexer(code: script)).parseScript()
+        print(value)
+        print("=>", try value.evaluate(env, returnType: gAnythingCoercion))
+        //    print(env)
+        print("\n================================================\n")
+        
+    } catch { print("\nA TEST FAILED:",error) }
+}
 
 
