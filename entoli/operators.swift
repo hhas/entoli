@@ -51,6 +51,8 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     
     // note: `+` and `-` right-auto-delimit only (the presence/absence of explicit left-delimiter should be sufficient to distinguish inter-word hyphen from negation/subtraction operator); e.g. `-x` will be read as a prefix `-` (negation) operator with `x` operand, but `foo-bar` will be read as unquoted name where `-` is just an ordinary hyphen character in a hyphenated word (sidenote: `0-9` will still read as infix `-` (subtraction) operator since numbers always self-delimit). Aggressive normalization ("autocorrect") of user code as it is typed should avoid confusion, as symbols determined to be operators will have any "missing" whitespace automatically inserted on each side by pretty printer, and will be styled differently to non-operator chars in editor.
     
+    // TO DO: need a human- and machine-readable string-based notation for describing operator syntax, possibly incorporated into `ParseFunc` enums; documentation generator, auto-complete, etc can then use this to describe a command's operator syntax when available
+    
     // note: operator names are defined as tuples of form: (canonical/alias name, char/word-based literal, auto-delimit option)
     
     // 'calculation' operators
@@ -206,8 +208,6 @@ func parseProcedureDefinition(_ parser: Parser, operatorName: String, precedence
     let procBody = try parser.parseExpression()
     
     return makeDefineProcedureCommand(procName, parameterType: parameterType, returnType: returnType, body: procBody)
-    
-  //  let proc = NativeProcedure(signature: ProcedureSignature(name: procName, parameterType: parameterType, returnType: returnType), body: procBody)
 }
 
 

@@ -432,7 +432,7 @@ class Command: Value {
     
     // literal representations
     
-    override var description: String { return "\(self.name) \(self.argument))" } // note that if argument record contains a single [unnamed] numeric/quoted text value or list value (which are self-delimiting literals), it may display that value instead of the enclosing record for neatness; the default description() method should always display canonical form for reference/debugging use
+    override var description: String { return "\(self.name) \(self.argument)" } // note that if argument record contains a single [unnamed] numeric/quoted text value or list value (which are self-delimiting literals), it may display that value instead of the enclosing record for neatness; the default description() method should always display canonical form for reference/debugging use
     override var debugDescription: String { return "Command(\(self.name.debugDescription), \(self.argument.debugDescription))" }
     
     // conversion
@@ -443,9 +443,7 @@ class Command: Value {
     
     override func _expandAsAny_(_ env: Scope) throws -> Value { return self }
     override func _expandAsCommand_(_ env: Scope) throws -> Command { return self }
-    override func _expandAsCoercion_(_ env: Scope) throws -> Coercion { // note: returnType is passed here purely for error reporting use, and doesn't support SwiftCast API which evaluate requires,
-        return try self.evaluate(env, returnType: gTypeCoercion) // ...so for now we just kludge it
-    }
+    override func _expandAsCoercion_(_ env: Scope) throws -> Coercion { return try self.evaluate(env, returnType: gTypeCoercion) } // hmmm…
     
     override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
                                         where ReturnType: Coercion, ReturnType: SwiftCast {
@@ -554,7 +552,7 @@ class ExpressionBlock: Value { // TO DO: can/should these be omitted where not n
             do {
                 result = try expression.evaluate(env, returnType: gAnythingCoercion) // TO DO: what type? also, how to break out of loop, e.g. when returning result? (and what, if anything, needs to be done wrt error handling, especially if error is capturing scope plus remaining commands as continuation, allowing it to resume from where it left off) // TO DO: FIX: if expression is a Name, it needs to eval as a Command; simplest might be to separate `expand` and `perform` into separate methods; also need to decide how Pair.evaluate() needs to work
             } catch {
-                throw EvaluationError(description: "Can't evaluate the following expression (\(error)): \(expression)")
+                throw EvaluationError(description: "Can't evaluate the following expression:\n\n\t\(expression)\n\n\(error)")
             }
             print("RESULT: \(result)")
         }
@@ -572,6 +570,10 @@ class EntoliScript: ExpressionBlock { // TO DO: rename `Script[Object]`?
     }
     
     override var description: String {
+        return self.expressions.map({$0.description}).joined(separator: "\n")
+    }
+    
+    override var debugDescription: String {
         return "EntoliScript(\(self.expressions))"
     }
     // TO DO: need to think about persistent state, and when Script should create and maintain its own Scope instance, even across multiple calls, versus using a Scope supplied to it (e.g. in REPL-style use); the latter use case is already covered by inherited `evaluate` method; the former should also be implemented, though preferably in a way that avoids confusion on how correctly to use it (e.g. OSA API suffers from lack of clarity here), and also avoids unnecessary overhead of initializing a new env every time (note: builtin env should be inited once and write-locked, allowing it to be shared by all scripts - the rule being that the builtin env contains no native/primitive state; one might even argue for providing a separate lightweight per-script storage that any module could use rather than modifying its scope... though one could argue that if module loader wants to cache loaded modules for efficient reuse it should just read them into cache first then vend a cloned instance; much will come down to questions of e.g. script localization preferences)

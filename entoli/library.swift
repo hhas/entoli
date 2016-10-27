@@ -67,10 +67,10 @@ private func func_storeValue(_ env: Scope, name: String, value: Value) throws {
 }
 
 private let proc_storeValue = (name: "store",
-                               // TO DO: should value's type be gNoCoercion, allowing func_storeValue to determine if it is an `as` command and use that as slot's type if mutable? Alternatively, define a TypedValueCoercion that unpacks to `(Value,Coercion)` tuple? (Yet another option is just to let the `as` operator annotate the value as it expands and coerces it, and then check that any time the slot is mutated. (There is also the question of how much attention the slot should pay to the value's existing type tags versus a literal `as` operator declared within the assignment, especially since the same value may have different tags depending on prior usage - e.g. a Text value might or might not have an 'integer' tag, which may be more specific than the user intends the slot to be.)
+                               // TO DO: should value's type be gDoNotEvaluate, allowing func_storeValue to determine if it is an `as` command and use that as slot's type if mutable? Alternatively, define a TypedValueCoercion that unpacks to `(Value,Coercion)` tuple? (Yet another option is just to let the `as` operator annotate the value as it expands and coerces it, and then check that any time the slot is mutated. (There is also the question of how much attention the slot should pay to the value's existing type tags versus a literal `as` operator declared within the assignment, especially since the same value may have different tags depending on prior usage - e.g. a Text value might or might not have an 'integer' tag, which may be more specific than the user intends the slot to be.)
                                parameter: (
                                     value: (Name("value"), gAnyValueCoercion),
-                                    name:  (Name("named"), gNameKeyStringCoercion)),
+                                    name:  (Name("named"), gNameKeyStringCoercion)), // TO DO: rename "in"? e.g. `store {value: 2, in: x}`
                                result: gNoResult, // since the primitive func doesn't return a result, its generated wrapper will return `nothing` which should be passed through as-is; gNoResult simply provides a human-readable description that will appear in documentation
                                procScope: PrimitiveProcedure.ProcScope.commandScope,
                                function: func_storeValue)
@@ -90,15 +90,15 @@ private func func_defineProcedure(_ env: Scope, name: Name, using: ParameterType
     try env.store(NativeProcedure(signature: ProcedureSignature(name: name, parameterType: using, returnType: returning), body: body))
 }
 
-private let proc_defineProcedure = (name: "to",
+private let proc_defineProcedure = (name: "to", // TO DO: decide proc name (currently it's the same as the operator, but there might be an argument for a long descriptive name here, e.g. `define procedure`); BTW, there might also be an argument for separating proc creation from proc storage, in which case a `to` operator would just take the proc value as its RH operand (currently to create a lambda value one would store the named proc first, then use `NAME as procedure` to retrieve it as a portable value); the `to` operator also has the advantage of being more forgiving on syntax whereas having a distinct proc value would either require a custom operator or else a standard colon pair (the former is sticky as we're running out of symbols to write it, and the latter sticky as it always requires a colon and will parse as an expr sequence if that's omitted)
                                     parameter: (
                                         name:      (Name("name"), gNameCoercion),
-                                        using:     (Name("using"), gParameterTypeCoercion),
-                                        returning: (Name("returning"), gReturnTypeCoercion),
-                                        body:      (Name("code"), gAnythingCoercion)
+                                        using:     (Name("input"), gParameterTypeCoercion), // TO DO: also accept gNameCoercion/PairType(gNameCoercion,gTypeCoercion), in which case the entire input [record?] is bound to that name (this won't be available on `to` operator though as `to PROC(PARAM)…` syntax will be a common typo that auto-correct will have to change to `to PROC{PARAM}…` to prevent confusion, and while writing it as `to 'PROC' 'PARAM'…` would avoid parser ambiguity it wouldn't be clear why parens can't disambiguate `PARAM` too)
+                                        returning: (Name("output"), gReturnTypeCoercion),
+                                        body:      (Name("body"), gDoNotEvaluate) // don't thunk expression here as it'll be evaled with a new sub-env containing params // TO DO: what to name this arg? e.g. `body`, `code`, `expression`, `action`?
                                     ),
                                     result: gNoResult,
-                                    procScope: PrimitiveProcedure.ProcScope.commandScope, // `to` command's dynamic scope = proc's lexical scope
+                                    procScope: PrimitiveProcedure.ProcScope.commandScope, // `to` command's scope = proc's lexical scope
                                     function: func_defineProcedure)
 
 
@@ -162,6 +162,9 @@ func loadLibrary(_ env: Scope) throws {
                                                 FieldSignature(proc_defineProcedure.parameter.body.0, proc_defineProcedure.parameter.body.1)),
                                             proc_defineProcedure.result),
                                      procScope: proc_defineProcedure.procScope, function: call_defineProcedure))
+    
+    // TO DO: how to do overloaded procs, e.g. `'+' {right:}` and `'+' {left:,right:}`? (note that operator table already generates both, though only the latter will currently evaluate; for now, using +/- prefix operators will always throw a 'missing argument' error because there aren't yet `'+'{right:}`/`'-'{right:}` proc installed for those) IIRC, one idea was to install first proc as normal; then, if an overload is also installed (either in same load sequence or, slot permissions-willing, installed later) to swap out the original proc 
+    
     try env.store(PrimitiveProcedure(name: "+",   scalarArithmeticOperatorFunction: (+)))
     try env.store(PrimitiveProcedure(name: "-",   scalarArithmeticOperatorFunction: (-)))
     try env.store(PrimitiveProcedure(name: "×",   scalarArithmeticOperatorFunction: (*)))

@@ -8,6 +8,9 @@
 // TO DO: how practical for procs to declare they're idempotent? this'd be particularly useful for ProxyCoercions as it'd allow them to memoize the constructed Coercion on first use, rather than reconstructing it every time it's applied; problem is native procs don't know if they're idempotent as commands within their body are late-bound; also bear in mind that type args/operands can't be evaled until scope is fully populated by top-level exprs being evaled, but `to` commands need to eval param types in order to add themselves to scope (thus their full initialization really wants to be deferred until after the scope is fully populated)
 
 
+// TO DO: decide on 'procedure' vs 'handler' (personal habit tends to the latter, plus it's shorter to write [and same no. of syllables characters as 'command', which is neater], but ultimately it'll depend on which term is more meaningful to users [and 'procedure' probably has the edge there due to its common meaning])
+
+
 //**********************************************************************
 
 
@@ -36,8 +39,9 @@ func evalRecordField<ReturnType: SwiftCast>(_ fields: inout [Value], fieldStruct
     } else {
         fieldValue = gNullValue
     }
-//    print("\nExpanding `\(fieldStructure.name.keyString)` field to \(fieldStructure.type): `\(fieldValue)`\n")
-     do {
+    print("\nExpanding `\(fieldStructure.name.keyString)` field to \(fieldStructure.type): `\(fieldValue)`\n")
+    do {
+        if fieldStructure.type is DoNotEvaluate { return fieldValue as! ReturnType.SwiftType } // TO DO: HACKY; also, what about ThunkCoercion and other deferreds? (e.g. Thunk needs to defer evaluation too; however, its _coerce_ method still needs to be called now so it can wrap the expr in a Thunk and return that.) The problem here is that the coercion needs to be in charge; right now it's ignored until it's used to coerce the last expr's result. Will need to check what Value.evaluate() methods are currently implemented.
         return try fieldValue.evaluate(commandScope, returnType: fieldStructure.type)
     } catch {
         throw MismatchedField(description: "Failed to coerce \(fieldStructure.name) field to \(fieldStructure.type): \(error)") // note: caller will need to catch and rethrow with additional error info (including both records)
@@ -105,6 +109,7 @@ class PrimitiveProcedure: Procedure {
     
     // TO DO: how practical to make Proc.call() methods non-generic? (it should be enough for them just to return Value; the entoli runtime doesn't care, and primitive callers can probably live with it)
     
+    // TO DO: need to review this, make sure scopes are used correctly
     // command scope allows proc to lazily evaluate its operands in their original scope; procedureScope allows proc to refer to slots within its own lexical scope
     override func call<ReturnType>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType: SwiftCast, ReturnType: Coercion, ReturnType.SwiftType: Value {
         let tmpValue = try self.function(command.argument.fields, commandScope, procedureScope)

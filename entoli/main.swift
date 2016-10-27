@@ -149,12 +149,29 @@ if EVAL_TEST2 != 0 {
         try loadLibrary(env)
         
         //let script = "to add {} 2 + 2. add."
-        let script = "to add {} 2 + 2. add."
+        //let script = "to add {} (1+5,3*7,2 + 2). add."
+        //let script = "y: 2. to add {x} (x) + y. add 3."
+        
+        // TO DO: need to figure out exactly where a Name should be evaled as a Command instead of a Name (can't trust parser as the decision is context-sensitive, e.g. `x as name` will treat `x` as Name [basically a special-case for preventing `x` being evaled as Command in a command context], whereas `x as text` would treat `x` as Command; similarly, `{x:1}` will treat `x` as Name whereas `[x:1]` will treat it as Command, while `x:1` in a block will be treated as `store{1,x}`). Part of reworking evaluate->coerce->expand call chain.
+        
+        // TO DO: prob. best for Coercion.coerce() to be entry point, as coercions know more about context requirements than values do; only question is what values need special handling
+        
+        // Q. what are special coercions (i.e. that don't tell value to expand itself normally)? `NAME as procedure` (returns the named procedure as closure value), `EXPR as expression` (returns the expression[seq] without evaluating it [presumably] as thunk); DoNotEvaluate (in primitives, returns EXPR as-is, allowing proc to construct its own env in which to evaluate it)
+        
+        // Q. when an EXPR is thunked, it can be evaled by coercing to any [or any other type]; to keep it as a thunk (e.g. when passing as argument) need to re-coerce to `expression` each time
+        
+        // note: unlike kiwi, entoli [currently?] doesn't allow procs to inject slots into a thunk; e.g. a regexp proc that takes either text or expr as replacement value can't inject `matches` into the latter
+        
+        
+        let script = "to add {x} 1 + x{}. add 3." // this works
+  //      let script = "to add {x} 1 + x. add 3." // this fails because 'x' is a Name, which can't coerce to scalar
+    
         //  let script = " store {5, x}. x () " // note: empty expression group is equivalent to passing `{}` or `nothing`
         //    let script = " to foo {} 3 + 1. foo " // test native procedure definition (currently doesn't work as ParameterTypeCoercion is TBC)
         print("PARSE: \(script)\n")
         let value = try Parser(lexer: Lexer(code: script)).parseScript()
         print(value)
+        print("\nEVAL SCRIPT:")
         print("=>", try value.evaluate(env, returnType: gAnythingCoercion))
         //    print(env)
         print("\n================================================\n")
