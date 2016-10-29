@@ -113,15 +113,14 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
 
 // note: suspect special names will only work as Name subclasses (or as dedicated subclass[es] of Value) if they're also defined as operators
 
-class NullValue: Name { // TO DO: need to think about how 'constant' names work; need to be defined as [.StoredValue] command in appropriate scope that returns Name; also need to decide if any of these 'constants' are important enough to define as atoms (probably not, as that'd create inconsistency between constant names that are defined as built-ins vs those defined by libraries, e.g. scriptable apps)
-    
-    init() {
-        super.init("nothing") // TO DO: use `nothing`? `missing value`? what else...`did nothing`? `test failed`, `evaluation error` [`command failed`?]; note that these 'special' built-in names *must* be reserved in Scope so that users can't accidentally override them (though be aware that named pairs in records still allow the same names to be used as [literal] names on LHS, so will need to give some thought to that [probably correct behavior, since parameter records should permit any keys, even when the same words would have special meaning elsewhere]; though given Swift's stubborn refusal to allow initializers to return anything except specified type there could still be holes where a 'special' name ends up as an ordinary Name instance, so we're going to have to think about suitability/safety of using anything except Name type to represent them, otherwise risk is that primitive code tests for `...is NullValue` rather than `keystring ==...`, which it will want to do for efficiency; suppose if 'special' names are fixed then an enum could be assigned internally within Name class to indicate if name is special or non-special, in which case equality tests should rely on that; this should also not affect record keys; expand methods below would need to check enum to decide what, if any, coercions are allowed, which again is less convenient; the alternative would be for most Name constructors to respect `reservedNames` set and refuse to construct 'special' names by default); fwiw, other possibility might be to make all Name constructors private, forcing client code to use classfuncs that are guaranteed to return the correct [sub]class for any given name string
-    }
+class NullValue: Value { // TO DO: need to think about how 'constant' names work; need to be defined as [.StoredValue] command in appropriate scope that returns Name; also need to decide if any of these 'constants' are important enough to define as atoms (probably not, as that'd create inconsistency between constant names that are defined as built-ins vs those defined by libraries, e.g. scriptable apps)
     
     // literal representations
     
-    override var description: String { return "gNullValue" }
+    let keyString = "nothing" // TO DO: what should native name be? `nothing`? `missing value`? what else...`did nothing`? `test failed`, `evaluation error` [`command failed`?]; note that these 'special' built-in names *must* be reserved in Scope so that users can't accidentally override them (though be aware that named pairs in records still allow the same names to be used as [literal] names on LHS, so will need to give some thought to that [probably correct behavior, since parameter records should permit any keys, even when the same words would have special meaning elsewhere]; though given Swift's stubborn refusal to allow initializers to return anything except specified type there could still be holes where a 'special' name ends up as an ordinary Name instance, so we're going to have to think about suitability/safety of using anything except Name type to represent them, otherwise risk is that primitive code tests for `...is NullValue` rather than `keystring ==...`, which it will want to do for efficiency; suppose if 'special' names are fixed then an enum could be assigned internally within Name class to indicate if name is special or non-special, in which case equality tests should rely on that; this should also not affect record keys; expand methods below would need to check enum to decide what, if any, coercions are allowed, which again is less convenient; the alternative would be for most Name constructors to respect `reservedNames` set and refuse to construct 'special' names by default); fwiw, other possibility might be to make all Name constructors private, forcing client code to use classfuncs that are guaranteed to return the correct [sub]class for any given name string
+    
+    override var description: String { return self.keyString }
+    override var debugDescription: String { return "gNullValue" }
     
     // ugh; given that `nothing` serves a special role (default argument handling), should it be a unique class and defined as operator? (main concern is that it must never be masked by a command; probably need a set of "forbidden names" in Scope.store())
     
@@ -213,7 +212,7 @@ class Name: Value {
     
     // literal representations
     
-    // TO DO: for entoli literal representation, this needs to escape any `'` chars within self.string; in addition, quotes should be omitted if unnecessary
+    // TO DO: for entoli literal representation, this needs to escape any `'` chars within self.string; in addition, quotes should be omitted if unnecessary (impractical here, since `description` var knows nothing about where it's being used, but full renderer will be able to track details such as nesting depth and lexical context)
     
     override var description: String { return "'\(self.string)'" }
     
@@ -409,6 +408,7 @@ class Record: Value { // roughly analogous to struct, though with different shar
 
 
 class Command: Value {
+    // note that while a Command value has a pair-based structure, it doesn't subclass Pair as its behavior is _not_ substitutable (i.e. if the user passes a command where a pair is expected, the user expects the command to perform the corresponding procedure which then returns a pair value, not be dismantled into a `Name:AnyOrNothing` pair itself); i.e. when deciding on whether one Value should subclass another, both API substitutability _and_ behavioral substitutability must be guaranteed (i.e. don't want to get into embarrassing situations such as NSArray vs NSMutableArray where the latter guarantees the same API as the former but does _not_ guarantee the same behavior, since an NSMutableArray's contents may change at any time, including while it's being used in code that assumes its immutability since it asked for an NSArray). 
     
     let name: Name, argument: Record, key: String
     

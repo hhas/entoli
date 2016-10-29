@@ -4,10 +4,13 @@
 //
 //
 
+// TO DO: rename 'constraints'? (will be easier to talk about 'applying constraints to parameters'); don't really want to call them 'types' given the specific meaning that already has (not to mention the various popular meanings); another advantage of 'constraint' it that 'values are tagged with constraints' makes more sense, whereas 'coercion' is only one of several behaviors that entoli can use to make a given value fit a specified constraint. Plus 'constraint' is a passive noun (reactive) whereas 'coercion' is too close to an active verb (proactive).
+
+
 // TO DO: split into separate files for easier maintenance, one for base classes, and one [or more] for each value type (e.g. Text might be 2 files, one of which covers numerical text and the other everything else)
 
 
-// TO DO: only implement `wrap` methods on NativeCoercions? this'd simplify boxing and tagging, since the NativeCoercion need only attach itself to the new Value, whereas a primitive coercion needs to convert itself to a NativeCoercion and attach that. This does mean reworking the whole wrap API so that one or more non-generic wrap methods can be defined on a single NativeCoercion, e.g. `TextCoercion` would implement `wrap(_:Int,env:Scope)->Value`,`wrap(_:Double,env:Scope)->Value`,`wrap(_:String,env:Scope)->Value`. PROBLEM: ListCoercion require items to be boxed as well, but its `itemType` is dynamically bound as NativeCoercion so `List.wrap()` method can't get ItemType.SwiftType. (Also, arbitrary union coercions are going to be problematic however they're done so will probably require values to be explicitly boxed before they're returned.)
+// TO DO: only implement `wrap` methods on NativeCoercions? this'd simplify boxing and tagging, since the NativeCoercion need only attach itself to the new Value, whereas a primitive coercion needs to convert itself to a NativeCoercion and attach that. This does mean reworking the whole wrap API so that one or more non-generic wrap methods can be defined on a single NativeCoercion, e.g. `TextCoercion` would implement `wrap(_:Int,env:Scope)->Value`,`wrap(_:Double,env:Scope)->Value`,`wrap(_:String,env:Scope)->Value`. PROBLEM: ListCoercion require items to be boxed as well, but its `itemType` is dynamically bound as NativeCoercion so `List.wrap()` method can't get ItemType.SwiftType. (Also, arbitrary union coercions are going to be problematic however they're done so will probably require values to be explicitly boxed before they're returned.) // A. Nope; always implement `wrap` methods on primitive coercions that correspond to their unwrap (_coerce_) behavior. That simplifies things for developers, since wrap and unwrap are always paired on the same class. It does mean that they'll have to convert themselves to a NativeCoercion in order to tag a returned value, but that should be relatively cheap to do (and can be cached).
 
 
 // TO DO: implement `description` methods (simplest would be to implement `toCommand()` for all coercions, then call that to obtain the corresponding constructor command and render that) [caveat we need to iron out `as` operator's behavior and/or install standalone coercion procs, which in turn may influence how coercion commands are written; not to mention some coercions, e.g. `editable`, `optional` will have operators as well]
@@ -97,6 +100,14 @@ extension SwiftCast where SwiftType: Value {
 
 protocol NativeCoercion {
     // TO DO: what does this need to expose?
+    
+    // TO DO: need a method to construct NativeCoercion instance with optional record arg containing additional constraints
+    
+    // TO DO: how to declare native signature and mapping to SomeNativeCoercion.init(...)? e.g. `text {may be empty: optional Boolean}`
+    
+    // TO
+    
+    
     func _coerce_(_ value: Value, env: Scope) throws -> SwiftType // subclasses must override
     func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value // Value->Value coercions don't need to implement custom wrap() methods
     func defaultValue(_ env: Scope) throws -> Value

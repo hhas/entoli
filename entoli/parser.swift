@@ -19,6 +19,9 @@ private let DEBUG = false
 // TO DO: need smarter parsing of +/- [and other overloaded prefix+infix] operators when LH operand is a command without an argument, e.g. `x + y`, in which case it should parse as `(x) + (2)`, not `x {+(2)}` as it currently does; e.g. have parseArgument() check for a potential infix operator after the command name and, if found, backtrack and return arg-less command, leaving parseOperation() to pick up infix operator as normal
 
 
+// TO DO: lookahead(by:) also needs an option to ignore any annotation tokens (or should it always ignore annotations, in which case the parser [and/or lexer] will be wholly responsible for handling annotations and ensuring they get attached to the preceding Token/Value
+
+
 //**********************************************************************
 
 
@@ -35,7 +38,7 @@ class Parser {
     
     private var precedenceForNextToken: Int { // used by parseOperation() to determine if leftExpr binds more tightly to its right (i.e. the infix/postfix operator [if any] currently being processed) than its left (the previous prefix/infix operator [if any])
         // TO DO: this gets a bit thorny with non-breaking whitespace tokens (that said, linebreaks should always delimit exprs; the only ones to worry about are in groups) (Q. what about linebreaks/comments/annotations?); lookahead should always skip those
-        let token = self.lexer.lookaheadBy(1)
+        let token = self.lexer.lookahead(by: 1)
         if token.type == .endOfCode { return Int.min } // break loop
 //        print("precedenceForNextToken: \(token)")
         let precedence = token.type.precedence
@@ -71,7 +74,7 @@ class Parser {
                 throw EndOfCodeError(description: "[1a] End of code.")
             case .quotedName, .unquotedName: // item is of form `'NAME':...` or `NAME:...` 
                 // (note: multiple names/aliases c.f. Swift funcs are not supported as that would create confusion when pairs are used as `store` shortcuts in command eval scopes as that's analogous to Swift's multiple assignment, and having different binding rules for different contexts will confuse users)
-                isNamedPair = self.lexer.lookaheadBy(1).type == .pairSeparator // literal pairs in records MUST have literal name as LH operand (note: this looks ahead 2, since currentToken is `{` and next token is QuotedName)
+                isNamedPair = self.lexer.lookahead(by: 1).type == .pairSeparator // literal pairs in records MUST have literal name as LH operand (note: this looks ahead 2, since currentToken is `{` and next token is QuotedName)
             default:
                 isNamedPair = false
             }
@@ -99,19 +102,29 @@ class Parser {
     //**********************************************************************
     // PARSE COMMAND ARGUMENT
     
+    // TO DO: where should decision be made on whether or not to convert a Name to a Command? during parsing? during evaluation?; e.g. a Name in an ExpressionBlock is treated as a Command; a Name in a colon-pair is treated as either a literal Name or a Command depending on the pair's context: in a block [special-cased as shorthand for a `store` command†, so `NAME:VALUE` -> `store {VALUE,NAME}`], list [key-value pair, so `NAME:VALUE` -> `COMMAND:VALUE`], or record [`NAME:VALUE`, where NAME must be a literal Name, and stays as a Name]
+    //
+    // († Oh, and things get extra screwy when a single pair is parenthesized, cos when is that a `store` command vs a `COMMAND:VALUE` pair? What throws it is when procs are written in short form, e.g. `To foo: (x: 1, x + 1)`, vs `do \ (x: 1), x + 1 \ done.` - in the first case, it'd store; in the second, it'd eval the pair as `x{}:1` and return the new pair value.)
+    //
+    // If converting Name to Command in the parser, then parseArgument() should only be called while parsing within those contexts where it makes sense to do so; thus `{x:1}` would keep `x` as Name, but `[x:1]` would convert `x` to Command.
+    
+    
+    // TO DO: main concern here is precedence, since a command should _always_ bind its argument if it has one (i.e. nothing else has higher precedence; a.k.a. 'nothing comes between a command and its argument'). Currently, `parseArgument` is called directly from `parseAtom()`, and so needs to do a hacky lookahead check; however, what would happen if parseAtom() returned the Name and let parseOperation() read the next token? if the next token is an operator then it should consume the Name as its LH operand; if it's not then parseOperation() should skip to the `default:` case which would normally represent a syntax error but could be special-cased to call parseAtom() if leftExpr is Name (i.e. a `NAME EXPR` Command is essentially a pair value; it just lacks an explicit separator char between the two), and treat that as the name's argument if successful.
+    
     private func parseArgument(_ name: Name) throws -> Value {
         // called by parseAtom after parsing a quoted/unquoted name
         // given a Name, return a CommandValue if it's followed by a valid argument, otherwise return Name unchanged
         // note: command name and argument will always bind more tightly to each other than to operators
         // note: this is right-associative, so `'foo' 'bar' 'baz'` will parse as `foo {bar {baz}}`
         if DEBUG {print("parseArgument (if any) for name: \(name)")}
+        // if command name is followed by an infix/postfix operator, e.g. `x + 1`, assume the command has no argument and treat it as LH operand to the operator, i.e. `(x) + (1)`; this avoids problems where the operator's fixity can be either infix (e.g. `x + 1`, `x - 1`) or prefix (e.g. `+1`, `-1`)
+        if self.lexer.lookahead(by: 1).infixOperator != nil { return name } // TO DO: return Command(name)?
+        // else try to parse
         let backtrackIndex = self.lexer.currentTokenIndex
         var argument: Value?
         do {
-            argument = try self.parseAtom() // this'll throw EOF error if command name is last
-        } catch is EndOfCodeError {
-            argument = nil
-        } catch is LeftOperandNotFoundError { // parseAtom() found an infix operator; return name and let parseOperation deal with it
+            argument = try self.parseAtom()
+        } catch is EndOfCodeError { // command's name was last token in code
             argument = nil
         }
         if argument == nil { // name is not followed by a new expression, so it is either just a name or an argument-less command; in either case, return it unchanged as Name // TO DO: problem with this is that in an expr[seq] context it needs to eval as Command
@@ -145,7 +158,7 @@ class Parser {
         let token = self.lexer.currentToken
         if token.type == .endOfCode { throw EndOfCodeError(description: "[1] End of code.") } // outta tokens
         switch token.type {
-            // PUNCTUATION TOKENS
+        // PUNCTUATION TOKENS
         case .annotationLiteral: // «...» // attaches arbitrary contents to subsequent node as metadata
             let annotation = token.value
             let value = try self.parseExpression(TokenType.annotationLiteral.precedence) // bind like glue
@@ -154,7 +167,7 @@ class Parser {
             // note: rest of these are atoms (no ops/precedence)
         case .listLiteral: // [...];  an ordered collection (array) or key-value collection (dictionary)
             var result = [Value]()
-            while self.lexer.lookaheadBy(1).type != .listLiteralEnd {
+            while self.lexer.lookahead(by: 1).type != .listLiteralEnd {
                 let value = try self.parseExpression()
                 result.append(value)
             }
@@ -172,7 +185,9 @@ class Parser {
         case .quotedName: // '...' // an explicitly delimited name literal
             // if next significant token is another expr, treat it as an RH operand (i.e. argument) and emit CommandValue, else return Name
             return try self.parseArgument(Name(token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
-            // VOCABULARY TOKENS
+        // VOCABULARY TOKENS
+        case .unquotedName: // any unquoted text that isn't identified as numericWord/operatorName
+            return try self.parseArgument(Name(token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
         case .numericWord:
             guard let numericInfo = token.numericInfo else { throw SyntaxError(description: "BUG: Numeric data is missing") } // note: this should never happen
             switch numericInfo {
@@ -187,9 +202,7 @@ class Parser {
                 result.annotations.append(numericInfo) // TO DO: how to implement annotation API?
                 return result
             }
-        case .unquotedName:
-            return try self.parseArgument(Name(token.value)) // speculatively parses for a command argument after the name; if none is found, backtracks to the name token and returns it as-is
-        case .operator:
+        case .operatorName:
             if DEBUG {print("\nparseAtom got Operator: \(token.prefixOperator) \(token.infixOperator)")}
             guard let operatorDefinition = token.prefixOperator else {
                 self.lexer.backtrackTo(previousIndex)
@@ -199,10 +212,10 @@ class Parser {
             let result = try operatorDefinition.parseFunc(self, operatorDefinition.name.text, precedence)
             if DEBUG {print("... and returned it: \(result)")}
             return result
-            // OTHER
+        // OTHER
         case .lineBreak: // a line break acts as an expression separator
             return nil
-            // INVALID TOKENS (these cannot appear where an atom or prefix operator is expected)
+        // INVALID TOKENS (these cannot appear where an atom or prefix operator is expected)
         default:
             // AnnotationLiteralEnd, RecordLiteralEnd, ListLiteralEnd, ExpressionSequenceLiteralEnd will only appear if opening '«', '{', '[', or '(' token is missing, in which case parser should treat as syntax error [current behavior] or as an incomplete structure in chunk of code whose remainder is in a previous chunk [depending how incremental parsing is done]; any other token types are infix/postfix ops which are missing their left operand
             return nil // TO DO: this should throw, and .LineBreak should be treated separately
@@ -211,7 +224,7 @@ class Parser {
     
     func parseOperation(_ leftExpr: Value, precedence: Int = 0) throws -> Value { // parse infix/postfix
         var leftExpr = leftExpr
-        if DEBUG {print("\n\nENTERED parseOperation on \(self.lexer.currentTokenIndex), leftExpr=(\(leftExpr), \(precedence)) \n\t\ttoken=\(self.lexer.currentToken)\n\t\tnext=\(self.lexer.lookaheadBy(1))\n\n")}
+        if DEBUG {print("\n\nENTERED parseOperation on \(self.lexer.currentTokenIndex), leftExpr=(\(leftExpr), \(precedence)) \n\t\ttoken=\(self.lexer.currentToken)\n\t\tnext=\(self.lexer.lookahead(by: 1))\n\n")}
         while precedence < self.precedenceForNextToken {
             let previousIndex = self.lexer.currentTokenIndex
             self.lexer.advance()
@@ -242,7 +255,7 @@ class Parser {
                 leftExpr.annotations.append("Format.PipedInput") // TO DO: suspect annotations will be dict with [mostly] constant keys, probably grouping by purpose (e.g. `gPipedArgument` flag would be added to `gFormatting` set/sub-dict; the only caveat being that nested dicts, while easier to view/search for arbitrary keys, add complexity to implementation... TBH, one could just about argue for using a linked list)
                 leftExpr.annotations.append(contentsOf: command.annotations)
                 // VOCABULARY TOKENS
-            case .operator:
+            case .operatorName:
                 if DEBUG {print("\nparseOperation got Operator: \(token.prefixOperator) \(token.infixOperator)")}
                 guard let operatorDefinition = token.infixOperator else { // found a prefix operator, so end this expression and process it on next pass
                     assert(token.infixOperator != nil, "BUG in Parser.parseOperation(): .Operator token contains neither prefix nor infix definition: \(token)")
@@ -269,11 +282,11 @@ class Parser {
     
     
     func parseExpression(_ precedence: Int = 0) throws -> Value {
-        while self.lexer.lookaheadBy(1).type == .lineBreak { // skip any line breaks prior to new expression (note: these will need preserved for display purposes; perhaps as annotations?)
+        while self.lexer.lookahead(by: 1).type == .lineBreak { // skip any line breaks prior to new expression (note: these will need preserved for display purposes; perhaps as annotations?)
             print("parseExpression skipping linebreak")
             self.lexer.advance()
         }
-        if DEBUG {print("\n\n[START] parseExpression at \(self.lexer.currentTokenIndex): \(self.lexer.lookaheadBy(1))")}
+        if DEBUG {print("\n\n[START] parseExpression at \(self.lexer.currentTokenIndex): \(self.lexer.lookahead(by: 1))")}
         guard let leftExpr = try self.parseAtom(precedence) else {
             throw SyntaxError(description: "[1] Unexpected \"\(self.lexer.currentToken)\"")
         }
@@ -291,7 +304,7 @@ class Parser {
         // note: this method reads up to, but does not advance onto, the end token; caller must do that on return
         // isBlock should be true only if the caller wants named pairs to be treated as syntactic shortcuts for `store` commands (e.g. `x:1` -> `store{value:1,named:x}`)
         var result = [Value]()
-        while !isEndToken(self.lexer.lookaheadBy(1)) {
+        while !isEndToken(self.lexer.lookahead(by: 1)) {
             var value = try self.parseExpression()
             if let command = try? value.toCommand() {
                 value = command

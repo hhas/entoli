@@ -22,6 +22,9 @@
 
 
 enum Slot {
+    
+    // TO DO: add `coercionConstructor(NativeCoercion)` case; this should avoid having to create separate Procedure instances just to act as constructors for Coercion values
+    
     case storedValue(Value) // from an interaction POV, entoli doesn't have variables, just 'procedures' that return values previously stored under the same name; however, implementing these as actual closures would create more complexity than is justified, so we just store the value directly (i.e. fake it); only core operations such as `NAME as procedure` should need to know the difference, and ideally even that coupling should be eliminated (e.g. by implementing toClosure method on Scope)
     case unboundProcedure(Procedure) // standard procedure in the scope in which it was defined
     case encapsulatedProcedure(Closure) // closure value containing both a procedure the scope in which it was originally defined (note: primitive procedures that don't interact with their lexical scope could just use an empty Scope to reduce likelihood of refcycles, though not sure how helpful that'd be in practice given that most closures contain non-trivial - i.e. native - logic, or are only used as proc arguments and not retained beyond completion of that proc)
@@ -33,7 +36,7 @@ enum Slot {
         switch self {
         case .storedValue(let value):
             if command.argument.fields.count != 0 {
-                throw BadArgument(description: "Unexpected argument for command: \(command)")// TO DO: need to nail down jargon: a command can have only zero or one arguments
+                throw BadArgument(description: "The following \(command.name) command contained an argument where nothing was expected:\n\n\t\(command).\n\n(Tip: procedures such as \(command.name) that return stored values never take arguments.)")// TO DO: need to nail down jargon: a command can have only zero or one arguments
             }
             print("GET \(command) -> \(value)")
             return try value.evaluate(procedureScope, returnType: returnType) //._coerce_(value, env: procedureScope)
@@ -73,10 +76,10 @@ class Closure: Value { // basically a Value-compatible struct enclosing proc plu
 
 
 class Scope: CustomStringConvertible {
-
+    
     private typealias Frame = [String:Slot] // technically, values should always be procs, which are simple closures over value to return (in simple case) or primitive func or entoli expr+binding record (as struct? closure?) that synthesizes return value or RuntimeError, given env and command args as arguments (note: struct would be safest choice, as that's introspectable, plus capturing entoli contexts in Swift runtime will make cycle checking even tougher to do)
     
-    private let parent: Scope!
+    private let parent: Scope! // TO DO: implicit unwrap is icky
     
     let reservedNames: Set<String> = ["", gNullValue.keyString] // TO DO: should this be static, and available to introspection // TO DO: should `parent` [possibly with some sort of prefix] be a reserved name that procedure() knows to recognize, allowing entoli code to refer to parent scope (note: this is probably part of larger question on how to distinguish and refer to local vs global scopes, library scopes, etc) // TO DO: should `store` be a protected name too? (need to give some thought to how name overloading/masking should be dealt with, particularly as it might affect program predictability/security/compilation, e.g. one option would be to treat collisions as errors unless explicit `override` operator is applied, and need to be particularly careful if importing procs into existing scopes c.f. `from MODULE import *`, which in entoli interpreter would probably be done using closures so would just be implemented as an ordinary command that does batch assignment from given scope to current scope)
     
@@ -92,7 +95,7 @@ class Scope: CustomStringConvertible {
         self.parent = parent
     }
     
-    var description: String { return "Scope:\(Array(self.frame.keys))" }
+    var description: String { return "{\(self.frame.keys.map({Name($0).description}).joined(separator:","))}" }
     
     func makeSubScope() -> Scope { // TO DO: what args? e.g. access rights; need to consider where barriers go: for modules, write barrier is on outside (i.e. the module can still manipulate its own state, though it may be preferable to lock that too once module is initialized)
         return Scope(parent: self)
@@ -123,7 +126,7 @@ class Scope: CustomStringConvertible {
         try self.store(name.keyString, slot: .storedValue(name))
     }
     
-    func procedure(_ name: Name) throws -> (Slot, Scope) { // walk stack until named slot is found then returns it, else throws 'not found' error
+    private func procedure(_ name: Name) throws -> (Slot, Scope) { // walk stack until named slot is found then returns it, else throws 'not found' error
         // note: stacks will usually be quite shallow, having local [proc] scope, script [module] scope, and entoli scope [contains stdlib procs visible to main script by default]; reference-based lookups will require jumping to other scopes, e.g. `foo of library "bar"`
         let key = name.keyString
         var procedureScope: Scope! = self
@@ -134,7 +137,7 @@ class Scope: CustomStringConvertible {
         throw NameNotFoundError(name: name, scope: self)
     }
     
-    // TO DO: `closure(name:Name)throws->Closure` for use by `as procedure` coercion? note that this'd need to create swift closure for .StoredValue slots, or else Closure class needs modified to hold Value and/or Procedure (should be safe enough using swift closures tho')
+    // TO DO: `closure(name:Name)throws->Closure` for use by `as procedure` coercion? note that this'd need to take the value from a .storedValue slot and wrap it in a Swift closure which can then be wrapped in a .unboundProcedure(PrimitiveProcedure), or else Closure class needs modified to hold enum of .value(Value) or .closure(Procedure,Scope); TBH, would probably be best for Closure just to copy the entire Slot (unless it's already a Slot.encapsulatedProcedure(Closure), of course, in which case it just needs to return that Closure as-is) - that'll also future-proof Closure against future updates to Slot (such as overloaded procs, which might be implemented as a Proc subclass or as a Slot.overloadedSlot(Dictionary<ProcSig,Slot>))
     
     
     func callProcedure<ReturnType>(_ command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType

@@ -64,7 +64,7 @@ typealias OperatorDefinitions = (prefixDefinition: PrefixOperatorDefinition?, in
 let gOperatorDefinedPrecedence = -2
 
 
-enum TokenType { // TO DO: implement human-readable names for use in error messages
+enum TokenType { // TO DO: implement human-readable names for use in error messages // TO DO: move this enum onto Token class and rename (`Kind`? `Form`?)
     case startOfCode
     case endOfCode
     // Punctuation
@@ -86,7 +86,7 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
     case unquotedWord // everything else that is not one of the above predefined token types // TO DO: get rid of this once vocab lexing is done
     // Vocabulary (note: Lexer converts unquoted words and related tokens to the following token types, according to hardcoded rules and lookup tables)
     case numericWord // atomic; a word that represents a whole/decimal/hexadecimal number, optionally including exponent and/or unit type prefix/suffix
-    case `operator` // atomic/prefix/infix/postfix; a recognized operator (basically syntactic sugar for a standard command), including its definition
+    case operatorName // atomic/prefix/infix/postfix; a recognized operator (basically syntactic sugar for a standard command), including its definition
     case unquotedName // atomic, or special-case prefix; equivalent to QuotedName in function, but constructed from contiguous sequence of non-special unquoted words
     
     var precedence: Int {
@@ -96,7 +96,7 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
         case .itemSeparator:        return 50
         case .pairSeparator:        return 60
         case .pipeSeparator:        return 5000 // TO DO: confirm this, as it creates a non-trivial transform, e.g. `foo; bar + 1` -> `bar{foo} + 1`
-        case .operator:             return gOperatorDefinedPrecedence
+        case .operatorName:             return gOperatorDefinedPrecedence
         default:                    return 0
         }
     }
@@ -110,8 +110,8 @@ struct Token: CustomStringConvertible {
     let partial: Int // >0 = missing N close tokens; <0 = missing N open tokens
     
     // one or both of the following are non-nil when token type is .Operator
-    let prefixOperator: PrefixOperatorDefinition?
-    let infixOperator:  InfixOperatorDefinition?
+    let prefixOperator: PrefixOperatorDefinition? // atom/prefix
+    let infixOperator:  InfixOperatorDefinition? // infix/postfix
     // the following is non-nil when token type is .NumericWord
     let numericInfo:   Numeric?
     
@@ -126,7 +126,7 @@ struct Token: CustomStringConvertible {
     }
     
     var description: String {
-        return "«TokenType.\(self.type) \(self.range) `\(self.value)`»" // TO DO: extended representations for numerics and operators
+        return "«Token .\(self.type) `\(self.value)`»" // TO DO: extended representations for numerics and operators
     }
 }
 

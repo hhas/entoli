@@ -119,8 +119,7 @@ class PrimitiveProcedure: Procedure {
 
 }
 
-extension PrimitiveProcedure {
-    // convenience constructors for standard math operators
+extension PrimitiveProcedure { // convenience constructors for standard math operators
     
     static let leftFieldSignature         = FieldSignature(gLeftOperandName, gScalarCoercion)
     static let rightFieldSignature        = FieldSignature(gRightOperandName, gScalarCoercion)
@@ -183,7 +182,7 @@ class NativeProcedure: Procedure {
         do {
             return try self.body.evaluate(subEnv, returnType: returnType)
         } catch {
-            throw EvaluationError(description: "Error in \(command) call to \(self.signature): \(error)")
+            throw EvaluationError(description: "The \(self.signature) procedure failed while handling the following command:\n\n\t\(command)\n\n\(error)") // TO DO: use chained error
         }
     }
 }

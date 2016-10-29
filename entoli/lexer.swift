@@ -3,6 +3,11 @@
 //  entoli
 //
 //
+//  Note that the meanings assigned to (...), [...], and {...} syntaxes are determined by 1. use of standard math notation (i.e. parentheses = grouping), 2. requirement not to overload meaning (i.e. parentheses cannot also be used for labeled/unlabeled tuples [records]†), 3. visual similarity to Swift (i.e. brackets = ordered lists [Set], key-value lists [Dictionary], and unique lists [Set]), 4. visual similarity to AppleScript (i.e. curly braces = records [labeled/unlabeled tuples]).
+//
+//  † Using parens for tuples wouldn't work anyway as a Swift-like tuple syntax requires static type info to disambiguate its meaning (since Swift overloads parens to indicate grouping and argument/parameter lists as well). See also the pain of Python tuple syntax, where empty tuple is `()`, multi-item tuple can be `(1,2,…)` or `1,2,…` (since technically it's the commas, not the parens that denote a Python tuple), and single-item tuple _must_ be `(1,)` or `1,`, NOT `(1)` (which is a group). Using curly braces to denote argument lists may feel weird (at least to C* programmers, who are used to using them to denote blocks), but traditional C* `foo(...)` command syntax is really just a degenerate form of unary `foo ARG` syntax where ARG is always some tuple, so `foo {...}` is completely consistent with that (since entoli commands really do use unary `foo ARG` syntax). As an aide-memoire, [Obj]C programmers can think of entoli records as equivalent to C structs (both are product values whose literals are denoted by curly braces), not C block syntax; Swift programmers are SOOL as Swift's equivalent is labeled/unlabeled tuples, which use parens, not braces, so will just have to suck it up and get used to the difference.
+
+
 
 //  TO DO: consider evolving lexer (and parser?) in same direction as numeric-parser.swift is starting to go, as functions that take accummulated results plus cursor position and return new accummulated results plus new cursor position; Q. given that lexer/parser also want to support incremental parsing, and ideally some degree of live AST editing, in order to support 'smart' editors, how would such an approach fit with that?
 
@@ -13,13 +18,15 @@
 // TO DO: how hard to change expression separator from period to comma, and use period as block terminator? This'd allow users to write `To PROCNAME {name1, name2}, do this, do that, do the other; else fib, fub, zub.` It might also help reduce confusion over when to use commas versus periods (not that the expression parser really cares as it already treats both as separators anyway). It also allows REPL to trigger auto-eval as soon as user types period after one or more exprs. And blocks should be fully composable, being exprs themselves, so will be perfectly happy being sub-separated this way. All of which allows the `do` operator to become more of a convenience, for pairing blocks to [e.g.] `if', `repeat`, etc. (Though still need to think how ops such as `else` and `catching` will interact.) One disadvantage is nesting, since `do...done` are much easier to balance - and see are balanced - than `do xxxx.`, plus they avoid ugly case of multiple continguous periods, which are painful to read when immediately adjoining or look unnatural and are easy to miss when split across multiple lines, and in both cases look like a typo (or ellispis), not a block terminator.
 
 
+
 private let DEBUG = false
 
 
 //**********************************************************************
+// Note: unquoted text is greedily parsed for potential operator names using longest possible match (e.g. the symbol-based operator name `>=` will preferentially match over `>`; similarly, the word-based operator name `is not equal to` will preferentially match over `is not`, which in turn will preferentially match over `is`); PartialOperatorMatch structs are used to gather the intermediate results; each time a full match is arrived at that particular struct is preserved as the longest current full match before continuing; once the longest partial match fails, the longest full operator match is converted to an operator Token and the lexer backtracked to resume parsing from the point where that match ended.
 
  
-private struct PartialOperatorMatch<T:Hashable> {
+private struct PartialOperatorMatch<T:Hashable> { // T must be Character or String // TO DO: don't think Swift's type system is smart enough to express `Character || String` unfortunately, so for now T is just constrained to Hashable for implementation's sake, but it'd be nice if this could be tightened in future
     let precedingWords: [Lexer.UnquotedWord] // any preceding unquoted words already matched to LH side of match (if the operator is successfully matched, these will be added to cache as UnquotedName token, followed by the Operator token)
     let currentPartialWord: Lexer.PartialWord? // when matching a symbol operator in-word, the word's preceding characters (if any); nil when matching phrase operators // TO DO: make this non-nil? // TO DO: add endIndex to tuple (avoids dodgy coupling in update func)
     let isLeftDelimited: Bool // is there an explicit delimiter on LH side of match? (if false, the operator definition's autoDelimit flag will be used)
@@ -229,7 +236,7 @@ class Lexer {
             nameToken = Token(type: .unquotedName, value: self.joinWords(words), range: self.wordsRange(words))
         }
         if DEBUG {print("FULLY MATCHED \(T.self) OPERATOR: <\(match.info.name)>     range=\(match.startIndex..<match.endIndex)")}
-        let operatorToken = Token(type: .operator, value: match.info.name!, range: match.startIndex..<match.endIndex,
+        let operatorToken = Token(type: .operatorName, value: match.info.name!, range: match.startIndex..<match.endIndex,
                                                    operatorDefinitions: (fixity.prefix ? match.info.prefixDefinition : nil,
                                                                          fixity.infix  ? match.info.infixDefinition  : nil))
         return nameToken == nil ? [operatorToken] : [nameToken!, operatorToken]
@@ -514,7 +521,7 @@ class Lexer {
     
     // TO DO: CAUTION: lookahead will screw up cache if ignoreVocabulary changes, as tokens appended to cache read with one ignore setup need to be thrown out if read with another; currently this shouldn't be a problem since only parseRecord does this, and it backtracks and flushes before re-reading with different ignoreVocabulary setting
     
-    func lookaheadBy(_ offset: UInt, ignoreVocabulary: Bool = false) -> Token { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
+    func lookahead(by offset: UInt, ignoreVocabulary: Bool = false) -> Token { // TO DO: what about annotations? (should prob. also ignore those by default, but need to confirm)
         if offset == 0 { return self.currentToken }
         var count: UInt = 0
         var lookaheadTokenIndex: Int = self.currentTokenIndex

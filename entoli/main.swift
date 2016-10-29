@@ -163,8 +163,9 @@ if EVAL_TEST2 != 0 {
         // note: unlike kiwi, entoli [currently?] doesn't allow procs to inject slots into a thunk; e.g. a regexp proc that takes either text or expr as replacement value can't inject `matches` into the latter
         
         
-        let script = "to add {x} 1 + x{}. add 3." // this works
-  //      let script = "to add {x} 1 + x. add 3." // this fails because 'x' is a Name, which can't coerce to scalar
+   //     let script = "to add {x} 1 + x{}. add 3." // this works
+        let script = "to add {x} 1 + x. add 3." // this fails because 'x' is a Name, which can't coerce to scalar
+  //      let script = "to add {x} x + 1. add 3." // this parses correctly now (`+` in this context is obviously intended as an infix operator with `x` as its LH operand; previously it was being treated as prefix operator to `1`, causing it to parse as `x{+1}`)
     
         //  let script = " store {5, x}. x () " // note: empty expression group is equivalent to passing `{}` or `nothing`
         //    let script = " to foo {} 3 + 1. foo " // test native procedure definition (currently doesn't work as ParameterTypeCoercion is TBC)

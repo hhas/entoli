@@ -15,7 +15,7 @@
 // TO DO: update `parseProcedureDefinition` to take a COMMAND:EXPR pair; also need to decide how best to pass optional return type, e.g. `to foo {x:text, y: optional number} returning text: ...`, which also raises question of whether to accept a true pair or whether to read the colon directly, as if `returning` is part of the `to` operator (which would be preferable as it probably doesn't have any value as a standalone operator) then the colon needs to be part of the `to` operator too (it can't be an actual Pair token, because that sort of interleaving isn't supported by Parser). Still need to think through what users are most likely to write and make sure parsefunc can handle those (e.g. auto-correct should also accept `to NAME{}EXPR`, `to NAME,EXPR`, `to NAME returning TYPE,EXPR` and normalize them) as it's such an important operator it can't afford to frustrate.
 
 
-// TO DO:
+// TO DO: if `returning` was an infix operator, it could be used to describe return type in situations where `as` is unsuitable, e.g. `BLOCK returning expression` would eval the block, requiring its result to be an expr, whereas `BLOCK as expression` returns the [thunked] block without evaluating it; thus `(foo {x: number} returning text: EXPR)` or `({x: number} returning text: EXPR)` would describe procedures/lambdas using standard syntax. Main issue is context-sensitivity, as the meaning of `returning` would change - it might be a little like a Thunk in that it just wraps the LH operand in a custom pair, in which case it's up to consumer to tell that pair what it wants done (eval expr with given return type [BLOCK as expression]; use pair as-is [PARAMTYPE returning RESULTTYPE])
 
 
 let StandardOperatorsTable = Operators().add(StandardOperators) // TO DO: where to put this? (both parser and formatter require access to formatting tables, which in turn need to be composed according to what modules are imported)
@@ -58,13 +58,18 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     // 'calculation' operators
     
     // arithmetic
+    // exponent
     (("^", .symbol, .full),   500, .infix(parseRightInfixOperator),  []), // TO DO: what to use as exponent operator? (`^`, `exp`?)
+    // prefix + and - (negation) operators (technically `+` is a no-op [assuming it gets a numeric operand] but is included for symmetry)
     (("+", .symbol, .right),  490, .prefix(parsePrefixOperator),     []),
-    (("-", .symbol, .right),  490, .prefix(parsePrefixOperator),     [("–", .symbol, .none)]), // note: also accepts n-dash as synonym // TO DO: not 100% decided about this, as n- and m-dashes could arguably be used in unquoted text to mean themselves
+    (("-", .symbol, .right),  490, .prefix(parsePrefixOperator),     [("–" /* allow n-dash to be used as synonym */, .symbol, .none)]), // caution: `-` right-auto-delimits only; this ensures that `foo-bar` will parse as a single hyphenated word, but does mean users need to be more careful in their use of white space to disambiguate // TO DO: not 100% decided about allowing n-dash as synonyms, as n- and m-dashes could arguably be used in unquoted text to mean themselves (OTOH, what unquoted text would need them?)
+    // multiplication and division (traditional computing symbols are accepted as synonyms for ease of typing)
     (("×", .symbol, .full),   480, .infix(parseInfixOperator),       [("*", .symbol, .full)]),
     (("÷", .symbol, .full),   480, .infix(parseInfixOperator),       [("/", .symbol, .full)]),
+    // infix + (addition) and - (subtraction) operators
     (("+", .symbol, .right),  470, .infix(parseInfixOperator),       []),
     (("-", .symbol, .right),  470, .infix(parseInfixOperator),       [("–", .symbol, .none)]), // note: also accepts n-dash as synonym // TO DO: subtraction and hyphenation symbol is same, so adjoining whitespace is required to distinguish the two
+    // integer division and modulus
     (("div", .phrase, .full), 480, .infix(parseInfixOperator),       []), // TO DO: allow `//` as alias?
     (("mod", .phrase, .full), 480, .infix(parseInfixOperator),       []), // TO DO: allow whitespace-delimited `%` as alias? (note: `%` is a unit suffix)
     
@@ -166,9 +171,9 @@ func readTypeOperand(_ parser: Parser, precedence: Int) throws -> Command { // p
 
 func parseGeneralComparisonOperator(_ parser: Parser, leftExpr: Value, operatorName: String, precedence: Int) throws -> Value {
     let rightOperand = try parser.parseExpression(precedence) // note that this should _not_ consume `as` clause itself, as comparison operators [must] have higher precedence than `as` token
-    let nextToken = parser.lexer.lookaheadBy(1) // if next token is .Operator("as"), consume it and then consume its RH operand and use that as the type to which both operands should be cast before comparing; if omitted, operator will use default `text` type instead
+    let nextToken = parser.lexer.lookahead(by: 1) // if next token is .Operator("as"), consume it and then consume its RH operand and use that as the type to which both operands should be cast before comparing; if omitted, operator will use default `text` type instead
     var operands = [leftExpr, rightOperand]
-    if nextToken.type == .operator && nextToken.value == gAsOperatorKeyString {
+    if nextToken.type == .operatorName && nextToken.value == gAsOperatorKeyString {
         parser.lexer.advance() // advance onto .Operator("as") token
         operands.append(Pair(Name(gAsOperatorKeyString), try readTypeOperand(parser, precedence: gAsOperatorPrecedence)))
     }
@@ -197,8 +202,8 @@ func parseProcedureDefinition(_ parser: Parser, operatorName: String, precedence
         throw SyntaxError(description: "Expected procedure's name after `to` operator, but found \(op1.typename) value instead: \(op1)")
     }
     // 2. read `as` clause, if given, specifying return type
-    let nextToken = parser.lexer.lookaheadBy(1)
-    if nextToken.type == .operator && nextToken.value == gAsOperatorKeyString {
+    let nextToken = parser.lexer.lookahead(by: 1)
+    if nextToken.type == .operatorName && nextToken.value == gAsOperatorKeyString {
         parser.lexer.advance() // advance onto .Operator("as") token
         returnType = try readTypeOperand(parser, precedence: gAsOperatorPrecedence) // note: this is a command, not a coercion, as it's still to be evaled // TO DO: this doesn't handle trailing comma (really need to try to get rid of those now)
     } else {
@@ -216,11 +221,11 @@ func parseAtomDoBlock(_ parser: Parser, operatorName: String, precedence: Int) t
     var result = [Value]()
     let lexer = parser.lexer
     while lexer.currentToken.type != .endOfCode {
-        while lexer.lookaheadBy(1).type == .lineBreak { // eat any linebreaks before testing for `done`
+        while lexer.lookahead(by: 1).type == .lineBreak { // eat any linebreaks before testing for `done`
             lexer.advance()
         }
-        let nextToken = lexer.lookaheadBy(1)
-        if nextToken.type == .operator && nextToken.value == "done" { break }
+        let nextToken = lexer.lookahead(by: 1)
+        if nextToken.type == .operatorName && nextToken.value == "done" { break }
         // TO DO: how best to implement this parse loop? currently this fails if there's a linebreak before `done` as unlike parseExpression this does not automatically skip linebreak tokens (not that it should anyway, since that info should be preserved for display purposes)
         //        print("READING EXPR AFTER \(lexer.currentToken):\n\t\t\(nextToken) ...")
         let value = try parser.parseExpression()
@@ -229,7 +234,7 @@ func parseAtomDoBlock(_ parser: Parser, operatorName: String, precedence: Int) t
     }
     //    print("NOW ON \(lexer.currentToken)")
     lexer.advance() // move onto `done` token
-    if !(lexer.currentToken.type == .operator && lexer.currentToken.value == "done") {
+    if !(lexer.currentToken.type == .operatorName && lexer.currentToken.value == "done") {
         throw SyntaxError(description: "Expected end of `do...done` block but found \(lexer.currentToken)")
     }
     return ExpressionBlock(expressions: result, format: .block)}
