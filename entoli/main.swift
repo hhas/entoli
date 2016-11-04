@@ -96,10 +96,10 @@ if EVAL_TEST != 0 {
      //   let script = "[3]"
         let script = " [(2 + 3 * 4 - 1.5), 3.14 div 1]"
       //  let script = " store {5, x}. x () " // note: empty expression group is equivalent to passing `{}` or `nothing`
-    //    let script = " to foo {} 3 + 1. foo " // test native procedure definition (currently doesn't work as ParameterTypeCoercion is TBC)
+    //    let script = " to foo {} 3 + 1. foo " // test native procedure definition (currently doesn't work as ParameterTypeConstraint is TBC)
         print("PARSE: \(script)")
         let value = try Parser(lexer: Lexer(code: script)).parseScript()
-        print("=>", try value.evaluate(env, returnType: gAnythingCoercion))
+        print("=>", try value.evaluate(env, returnType: gAnythingConstraint))
     //    print(env)
         print("\n================================================\n")
 
@@ -108,12 +108,12 @@ if EVAL_TEST != 0 {
             let value = Text("2")
             print("COERCE: \(value)")
             // test Entoli data evaluation
-            print("Any:   ", try value.evaluate(env, returnType: gAnyValueCoercion))
-            print("Text:  ", try value.evaluate(env, returnType: gTextCoercion))   // -> "2" (Text)
+            print("Any:   ", try value.evaluate(env, returnType: gAnyValueConstraint))
+            print("Text:  ", try value.evaluate(env, returnType: gTextConstraint))   // -> "2" (Text)
             // test Entoli->Swift data mapping
-            print("String:", try value.evaluate(env, returnType: gStringCoercion)) // -> "2" (String)
-            print("Int:   ", try value.evaluate(env, returnType: gIntCoercion))    // -> 2   (Int)
-            print("Double:", try value.evaluate(env, returnType: gDoubleCoercion)) // -> 2.0 (Double)
+            print("String:", try value.evaluate(env, returnType: gStringConstraint)) // -> "2" (String)
+            print("Int:   ", try value.evaluate(env, returnType: gIntConstraint))    // -> 2   (Int)
+            print("Double:", try value.evaluate(env, returnType: gDoubleConstraint)) // -> 2.0 (Double)
             print("")
         }
         
@@ -122,18 +122,18 @@ if EVAL_TEST != 0 {
         // test procedure call, `+ {2, 3}` (or `2 + 3` if operator syntax sugar is used)
         print("CALL:")
         let command = Command("+", Text("2"), Text("3"))
-        let result = try env.callProcedure(command, commandScope: env, returnType: gAnyValueCoercion)
+        let result = try env.callProcedure(command, commandScope: env, returnType: gAnyValueConstraint)
         print(command, "=>", result, "\n") // -> `'+' {"2", "3"}` -> Text("5.0")
         
         // `nothing` procedure simply returns `nothing` constant (aka gNullValue)
-        // print(try env.callProcedure(Command("nothing"), commandScope: env, returnType: gAnyValueCoercion)) // -> 'nothing'
+        // print(try env.callProcedure(Command("nothing"), commandScope: env, returnType: gAnyValueConstraint)) // -> 'nothing'
         
     //    try env.store(Name("wibble")) // define a named "constant" (i.e. a name that evals to itself)
-    //    print(try env.callProcedure(Command("wibble"), commandScope: env, returnType: gAnyValueCoercion)) // -> 'wibble'
+    //    print(try env.callProcedure(Command("wibble"), commandScope: env, returnType: gAnyValueConstraint)) // -> 'wibble'
         
         
-     //   print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: gDoubleCoercion)))   // -> Thunk("2", IntCoercion)
-     //   print("EVALED:", try value.evaluate(env, returnType: ThunkCoercion(returnType: gDoubleCoercion)).evaluate(env, returnType: gAnyValueCoercion)) // incorrect; currently returns Text
+     //   print("EVALED:", try value.evaluate(env, returnType: ThunkConstraint(returnType: gDoubleConstraint)))   // -> Thunk("2", IntConstraint)
+     //   print("EVALED:", try value.evaluate(env, returnType: ThunkConstraint(returnType: gDoubleConstraint)).evaluate(env, returnType: gAnyValueConstraint)) // incorrect; currently returns Text
         
     } catch { print("\nA TEST FAILED:",error) }
 }
@@ -154,7 +154,7 @@ if EVAL_TEST2 != 0 {
         
         // TO DO: need to figure out exactly where a Name should be evaled as a Command instead of a Name (can't trust parser as the decision is context-sensitive, e.g. `x as name` will treat `x` as Name [basically a special-case for preventing `x` being evaled as Command in a command context], whereas `x as text` would treat `x` as Command; similarly, `{x:1}` will treat `x` as Name whereas `[x:1]` will treat it as Command, while `x:1` in a block will be treated as `store{1,x}`). Part of reworking evaluate->coerce->expand call chain.
         
-        // TO DO: prob. best for Coercion.coerce() to be entry point, as coercions know more about context requirements than values do; only question is what values need special handling
+        // TO DO: prob. best for Constraint.coerce() to be entry point, as coercions know more about context requirements than values do; only question is what values need special handling
         
         // Q. what are special coercions (i.e. that don't tell value to expand itself normally)? `NAME as procedure` (returns the named procedure as closure value), `EXPR as expression` (returns the expression[seq] without evaluating it [presumably] as thunk); DoNotEvaluate (in primitives, returns EXPR as-is, allowing proc to construct its own env in which to evaluate it)
         
@@ -162,18 +162,19 @@ if EVAL_TEST2 != 0 {
         
         // note: unlike kiwi, entoli [currently?] doesn't allow procs to inject slots into a thunk; e.g. a regexp proc that takes either text or expr as replacement value can't inject `matches` into the latter
         
+   //     let script = "To banana mustard tango {funky monkey} 1 + funky monkey {}. Banana mustard tango 3." // this works, though currently requires the extra `{}` which it shouldn't; see below (it should also accept a colon before the procedure body, which it doesn't yet)
         
    //     let script = "to add {x} 1 + x{}. add 3." // this works
-        let script = "to add {x} 1 + x. add 3." // this fails because 'x' is a Name, which can't coerce to scalar
+        let script = "To add {x} 1 + x. Add 3." // this fails because 'x' is a Name, which can't coerce to scalar (i.e. the name needs to coerce to a command, which will then expand to the scalar value that was stored as 'x', i.e. "3")
   //      let script = "to add {x} x + 1. add 3." // this parses correctly now (`+` in this context is obviously intended as an infix operator with `x` as its LH operand; previously it was being treated as prefix operator to `1`, causing it to parse as `x{+1}`)
     
         //  let script = " store {5, x}. x () " // note: empty expression group is equivalent to passing `{}` or `nothing`
-        //    let script = " to foo {} 3 + 1. foo " // test native procedure definition (currently doesn't work as ParameterTypeCoercion is TBC)
+        //    let script = " to foo {} 3 + 1. foo " // test native procedure definition (currently doesn't work as ParameterTypeConstraint is TBC)
         print("PARSE: \(script)\n")
         let value = try Parser(lexer: Lexer(code: script)).parseScript()
         print(value)
         print("\nEVAL SCRIPT:")
-        print("=>", try value.evaluate(env, returnType: gAnythingCoercion))
+        print("=>", try value.evaluate(env, returnType: gAnythingConstraint))
         //    print(env)
         print("\n================================================\n")
         

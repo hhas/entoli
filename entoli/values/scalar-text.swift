@@ -1,5 +1,5 @@
 //
-//  scalar.swift
+//  values/scalar.swift
 //  entoli-run
 //
 //  Provides underlying Int/Double (or overflow) representation for Text values that represent numbers
@@ -82,8 +82,8 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
         switch self {
         case .integer(let n):                           return n
         case .floatingPoint(let n) where n.truncatingRemainder(dividingBy: 1) == 0:    return Int(n)
-        case .overflow(_, let t) where t is Int.Type:   throw CoercionError(value: self, description: "Number is too large to use: \(self.literalRepresentation())")
-        default:                                        throw CoercionError(value: self, description: "Not a whole number: \(self.literalRepresentation())")
+        case .overflow(_, let t) where t is Int.Type:   throw ConstraintError(value: self, description: "Number is too large to use: \(self.literalRepresentation())")
+        default:                                        throw ConstraintError(value: self, description: "Not a whole number: \(self.literalRepresentation())")
         }
     }
     
@@ -91,7 +91,7 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
         switch self {
         case .integer(let n):       return Double(n)
         case .floatingPoint(let n): return n
-        default:                    throw CoercionError(value: self, description: "Number is too large to use: \(self.literalRepresentation())")
+        default:                    throw ConstraintError(value: self, description: "Number is too large to use: \(self.literalRepresentation())")
         }
     }
     
@@ -100,12 +100,12 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
     
     private func _toInt(_ min: Int, _ max: Int) throws -> Int {
         let n = try self.toInt()
-        if n < min || n > max { throw CoercionError(value: self, description: "Whole number is too large to use: \(self.literalRepresentation())") }
+        if n < min || n > max { throw ConstraintError(value: self, description: "Whole number is too large to use: \(self.literalRepresentation())") }
         return n
     }
     private func _toUInt(_ max: UInt) throws -> UInt {
         let n = try self.toInt()
-        if n < 0 || UInt(n) > max { throw CoercionError(value: self, description: "Whole number is too large to use: \(self.literalRepresentation())") }
+        if n < 0 || UInt(n) > max { throw ConstraintError(value: self, description: "Whole number is too large to use: \(self.literalRepresentation())") }
         return UInt(n)
     }
     
@@ -138,7 +138,7 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
     }
     func toSwift() throws -> Float {
         let n = try Float(self.toDouble())
-        if n == Float.infinity { throw CoercionError(value: self, description: "Whole number is too large to use: \(self.literalRepresentation())") }
+        if n == Float.infinity { throw ConstraintError(value: self, description: "Whole number is too large to use: \(self.literalRepresentation())") }
         return n
     }
     func toSwift(_ min: Double, _ max: Double) throws -> Double {

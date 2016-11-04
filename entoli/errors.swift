@@ -92,30 +92,30 @@ struct NameNotFoundError: Error, CustomStringConvertible {
 
 
 
-struct CastError: Error {
+struct CastError: Error { // thrown by toVALUE() methods
     let value: Value
     let type: Value.Type
 }
 
 
-struct CoercionError: Error {
+struct ConstraintError: Error {
     let value: Any // TO DO: what should this be? (e.g. enum of Value, Scalar, Primitive?)
-    let coercion: Coercion?
+    let constraint: Constraint?
     let description: String? // TO DO: rename message
     // TO DO: should this also capture env:Scope?
     
-    init(value: Any, coercion: Coercion? = nil, description: String? = nil) {
+    init(value: Any, constraint: Constraint? = nil, description: String? = nil) {
         self.value = value
-        self.coercion = coercion
+        self.constraint = constraint
         self.description = description
     }
 }
 
 
-enum ExpansionError: Error { // transient errors raised by Value._expandAsTYPE_() methods; should be caught and rethrown as permanent CoercionError by Value.evaluate() if not handled in meantime (e.g. `DefaultValue._coerce_()` will catch `.nullValue` and return a default value instead)
+enum ExpansionError: Error { // transient errors raised by Value._expandAsTYPE_() methods; should be caught and rethrown as permanent ConstraintError by Value.evaluate() if not handled in meantime (e.g. `DefaultValue._coerce_()` will catch `.nullValue` and return a default value instead)
     case nullValue // `Null` value always throws this on expansion; may be intercepted by DefaultValue/MayBeNothing/MayBeNil<T>
     case unsupportedType // can't coerce to the specified type (e.g. lossy coercions such as List->Text are always disallowed)
-    case failedConstraint(String) // value coerced to the required type but failed an additional constraint requirement (e.g. List contained more than ListCoercion.max items) // TO DO: how best to pass error details? as string, or as a more complex introspectable object?
+    case failedConstraint(String) // value coerced to the required type but failed an additional constraint requirement (e.g. List contained more than ListConstraint.max items) // TO DO: how best to pass error details? as string, or as a more complex introspectable object?
 }
 
 

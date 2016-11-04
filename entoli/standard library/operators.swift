@@ -194,7 +194,7 @@ func parseProcedureDefinition(_ parser: Parser, operatorName: String, precedence
     // TO DO: sort this out; one option is to use `op1.toCommand` which will work for name, command, or parensed name/command
     if let command = op1 as? Command {
         procName = command.name
-        parameterType = try command.argument.toRecordSignature() // note: param types will be ProxyCoercions until they can be evaluated
+        parameterType = try command.argument.toRecordSignature() // note: param types will be ProxyConstraints until they can be evaluated
     } else if let name = op1 as? Name {
         procName = name
         parameterType = gEmptyRecordSignature
@@ -207,7 +207,7 @@ func parseProcedureDefinition(_ parser: Parser, operatorName: String, precedence
         parser.lexer.advance() // advance onto .Operator("as") token
         returnType = try readTypeOperand(parser, precedence: gAsOperatorPrecedence) // note: this is a command, not a coercion, as it's still to be evaled // TO DO: this doesn't handle trailing comma (really need to try to get rid of those now)
     } else {
-        returnType = gAnythingCoercion
+        returnType = gAnythingConstraint
     }
     // 4. read group expression; need to decide what structures are appropriate for this, e.g. single line of comma-separated exprs with period terminator (which will require lexer/parser mods), multi-line `do...done` block. bear in mind too that we currently don't have a clearly defined way to express return type; e.g. might define operator as `to SIG: EXPR [returning TYPE]`, though need to consider how well that'd work with single-line exprs (which'd want to put a period after TYPE, not before `returning`)
     let procBody = try parser.parseExpression()

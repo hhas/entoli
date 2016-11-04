@@ -1,11 +1,11 @@
 
 
 
-// given a value and required result type -> EVALUATE -> result of type Coercion.SwiftType
+// given a value and required result type -> EVALUATE -> result of type Constraint.SwiftType
 //
-//    Scope.evaluate() -> Coercion._coerce_() -> Value._expandAs...()_ // for simple values
+//    Scope.evaluate() -> Constraint._coerce_() -> Value._expandAs...()_ // for simple values
 //
-//    Scope.evaluate() -> ThunkCoercion._coerce_() -> Thunk(); Thunk.evaluate() -> Coercion.intersect() -> Coercion._coerce_() -> Value._expandAs...()_ // for thunks
+//    Scope.evaluate() -> ThunkConstraint._coerce_() -> Thunk(); Thunk.evaluate() -> Constraint.intersect() -> Constraint._coerce_() -> Value._expandAs...()_ // for thunks
 //
 
 
@@ -22,11 +22,11 @@ to munge {bar: text, baz: list of number} as list of text: blah, blah, blah.
 
 
 
-// TO DO: Coercion instances should be able to perform set operations (isSubset, union, etc), eliminating double application
+// TO DO: Constraint instances should be able to perform set operations (isSubset, union, etc), eliminating double application
 
 
 
-// note: `NAME as name` coercion will treat NAME as name literal if it is a Name value; to make it eval NAME as arg-less command, wrap it in parens, e.g. `(NAME) as name` (fortunately, `as` is fully auto-delimiting so never requires parens for disambiguation); in NameCoercion.resolve, make sure to typecheck passed value and return directly if it's a Name (note that names are one of those areas where conceptual clarity gets rather murky, as how they evaluate is heavily context-dependent: in some places, e.g. record fields, they're treated as symbolic name literals; in others as arg-less commands to be performed; furthermore, names can be added to scopes as procedures that return themselves; unfortunately, the alternative is to use different syntax for names vs commands, e.g. prefixing `@` to names, but that'll look nastly and will still cause confusion amongst novices as to when to include prefix and when not)
+// note: `NAME as name` coercion will treat NAME as name literal if it is a Name value; to make it eval NAME as arg-less command, wrap it in parens, e.g. `(NAME) as name` (fortunately, `as` is fully auto-delimiting so never requires parens for disambiguation); in NameConstraint.resolve, make sure to typecheck passed value and return directly if it's a Name (note that names are one of those areas where conceptual clarity gets rather murky, as how they evaluate is heavily context-dependent: in some places, e.g. record fields, they're treated as symbolic name literals; in others as arg-less commands to be performed; furthermore, names can be added to scopes as procedures that return themselves; unfortunately, the alternative is to use different syntax for names vs commands, e.g. prefixing `@` to names, but that'll look nastly and will still cause confusion amongst novices as to when to include prefix and when not)
 
 
 
@@ -38,7 +38,7 @@ to munge {bar: text, baz: list of number} as list of text: blah, blah, blah.
 
 // here's where things get sticky, as while ReturnType is a Value when working with native values only, it can be many different types when coercing down to primitive [Swift] types for use in primitive procs; one option would be to use dict of form [(eType,esType):converter,...], though that only works where ReturnType is not a generic (Array,Set,Dictionary), plus we also don't want to have to coerce Value->Value->sType as the extra boxing+unboxing is a waste of time - only thing would be if coercion handlers used the inefficient form for interpretation but emitted dedicated conversion code directly for compilation, in which case there might be some benefit to being able to reason away parts of the process
 
-// TO DO: coercion handler value and/or coercion command; i.e. how best to construct and encapsulate Coercion objects as values? unlike kiwi, they do not apply directly to input values, but are only applied via `as` operator, args to procs [e.g. sort, comparison], Proc.call(), etc; therefore they can appear as opaque values that implement primitive API; whether or not they should subclass Value or just be wrapped by one is to be decided
+// TO DO: coercion handler value and/or coercion command; i.e. how best to construct and encapsulate Constraint objects as values? unlike kiwi, they do not apply directly to input values, but are only applied via `as` operator, args to procs [e.g. sort, comparison], Proc.call(), etc; therefore they can appear as opaque values that implement primitive API; whether or not they should subclass Value or just be wrapped by one is to be decided
 
 
 // am inclined to use primitive procs as coercion constructors; the resulting value can then be bound to a name ('user-defined coercion', avoiding need for explicit kiwi-style `define type` command)
@@ -53,6 +53,6 @@ to munge {bar: text, baz: list of number} as list of text: blah, blah, blah.
 
 // TO DO: there's something valuely smelly about using generics here; shouldn't all type specs provide two overloaded coerce methods, one that returns Swift type and one that returns entoli type?
 
-// TO DO: how to implement comparableValue() method that returns comparable values for use as sort and comparison keys (e.g. TextCoercion would return lowercaseString as entoli does case-insensitive text comparisons by default; CaseSensitiveTextCoercion would return string as-is)
+// TO DO: how to implement comparableValue() method that returns comparable values for use as sort and comparison keys (e.g. TextConstraint would return lowercaseString as entoli does case-insensitive text comparisons by default; CaseSensitiveTextConstraint would return string as-is)
 
 

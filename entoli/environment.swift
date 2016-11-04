@@ -23,7 +23,7 @@
 
 enum Slot {
     
-    // TO DO: add `coercionConstructor(NativeCoercion)` case; this should avoid having to create separate Procedure instances just to act as constructors for Coercion values
+    // TO DO: add `coercionConstructor(NativeConstraint)` case; this should avoid having to create separate Procedure instances just to act as constructors for Constraint values
     
     case storedValue(Value) // from an interaction POV, entoli doesn't have variables, just 'procedures' that return values previously stored under the same name; however, implementing these as actual closures would create more complexity than is justified, so we just store the value directly (i.e. fake it); only core operations such as `NAME as procedure` should need to know the difference, and ideally even that coupling should be eliminated (e.g. by implementing toClosure method on Scope)
     case unboundProcedure(Procedure) // standard procedure in the scope in which it was defined
@@ -31,7 +31,7 @@ enum Slot {
     // TO DO: how to represent an overloaded proc? should it be possible to define overloads in sub-frames without masking those in parents? simplest option would be to require all overloads defined in same frame, and store as UnboundProcedure(OverloadedProcedure), which provides a transparent dispatch wrapper around them all
     
     func call<ReturnType>(_ command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-                            where ReturnType: Coercion, ReturnType: SwiftCast {
+                            where ReturnType: Constraint, ReturnType: SwiftCast {
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         switch self {
         case .storedValue(let value):
@@ -141,7 +141,7 @@ class Scope: CustomStringConvertible {
     
     
     func callProcedure<ReturnType>(_ command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-                                    where ReturnType: Coercion, ReturnType: SwiftCast {
+                                    where ReturnType: Constraint, ReturnType: SwiftCast {
         let (slot, procedureScope) = try self.procedure(command.name)
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         return try slot.call(command, commandScope: commandScope, procedureScope: procedureScope, returnType: returnType)
