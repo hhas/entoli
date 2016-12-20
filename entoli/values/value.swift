@@ -5,6 +5,9 @@
 //
 //
 
+// expand vs perform; all objects should implement both; the difference is that `perform` acts as command evaluator whereas `expand` is value evaluator (Q. how should a command behave? it's a first-class object, so could expand to itself, as opposed to call proc); another option is to pass flag to evaluate indicating whether to .expand, .perform, or .preferred... Q. is there any value [sic] in `expand`, given that entoli != kiwi, so doesn't have expandable tags - so what's left? Name -> Name or Command; any others?
+
+
 import Foundation
 
 // TO DO: what about implementing `evaluate()->Value` funcs as dynamic alternative to the static `evaluate<ReturnType>()->ReturnType.SwiftType`?
@@ -85,10 +88,11 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
         return List(items:  [try self.evaluate(env, returnType: itemType)], itemType: itemType)
     }
     
+    // TO DO: what about expanding record as tuple/struct/class without unnecessary reboxing/unboxing?
     
     func _expandAsRecord_(_ env: Scope) throws -> Record { // need to pass fieldTypes or similar if expanding here
         // TO DO: what about passing `type:RecordSignature?` or is it simpler to convert to record first, then call Record.toRecordSignature to map fields to template? (since no. of fields are small, it probably doesn't make all that much difference); note: main problem with passing signature is that all fields need to be native types
-        return Record(self)
+        return Record(self) // TO DO: self should be expanded with first field type
     }
     func _expandAsCommand_(_ env: Scope) throws -> Command { // names and commands can coerce to commands (note: while named pairs are cast to 'store' commands in certain evaluation scopes, this is parser's job, not runtime's, so Pair does not implement _expandAsCommand_)
         throw ExpansionError.unsupportedType
@@ -143,10 +147,14 @@ class ExpressionBlock: Value { // TO DO: can/should these be omitted where not n
         case .parenthesis:
             return "(" + expressions.map{$0.description}.joined(separator: ". ") + ")" // TO DO: what separator? (this ties in with question of whether or not parens should be grouping only, e.g. around a single operator expression, or whether they should be able to wrap a sequence of expressions)
         case .block:
-            return "do\n" + expressions.map{$0.description}.joined(separator: "\n\t") + "\ndone" // TO DO: this really needs external formatter to ensure correct indentation and trailing line break
+            return "do" + expressions.map{"\n\t\($0.description)"}.joined(separator: "") + "\ndone" // TO DO: this really needs external formatter to ensure correct indentation and trailing line break
         case .script:
             return expressions.map{$0.description}.joined(separator: "\n\n")
         }
+    }
+    
+    override var debugDescription: String {
+        return "ExpressionBlock(expressions: \(self.expressions), format: \(self.format))"
     }
     
     // conversion

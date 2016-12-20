@@ -71,7 +71,14 @@ class Pair: Value { // TO DO: use generic Pair<KeyT,ValueT> rather than subclass
 //
 
 
+// TO DO: would it simplify things if fields were [(Name?,Value)], or separate keys and values lists were used? not sure storing pairs here helps (the alternative would be for fields to be [NameValuePair], but that's kinda pointless)
+
+// TO DO: what about duplicate names? Use AS semantics, where last replaces first, or reject as malformed (excepting gNullName)
+
 class Record: Value { // roughly analogous to struct, though with different share-vs-copy semantics; note: records may be concatenated, but existing items may only have their values modified; their names are fixed and cannot be added, changed, or removed (the only way to do that is by going meta - which in turn raises question of when/where/how to do that, as a 'compiled' distributable script should generally be sealed against that sort of thing as self-modifying code, while powerful, carries risks too)
+    
+    // TO DO: one thing about storing existing pairs: mutability requires replacing the pair, not mutating its value in-place; Pair values probably should be permanently immutable -- also consider pair semantics when added to kv-list, which uses Dictionary
+    
     let fields: [Value]
     
     init(_ fields: [Value]) { // TO DO: dual list+dict storage for faster index+name lookups // TO DO: enforce name:value pairs/values (simplest probably to map all unnamed fields to pairs with empty names)
@@ -87,7 +94,20 @@ class Record: Value { // roughly analogous to struct, though with different shar
     override var description: String { return "{" + fields.map{$0.description}.joined(separator: ", ") + "}" }
     override var debugDescription: String { return "Record(" + fields.map{$0.debugDescription}.joined(separator: ", ") + ")" }
     
-    // special conversion, given a record, convert it to a RecordSignature (assuming all its fields contain Name:Value pairs where the value evals to a Constraint)
+    var count: Int { return fields.count }
+    
+    func appended(_ field: Value) -> Record {
+        return Record(self.fields + [field])
+    }
+    func appended(_ fields: [Value]) -> Record {
+        return Record(self.fields + fields)
+    }
+    func concatenated(_ record: Record) -> Record {
+        return Record(self.fields + record.fields)
+    }
+    
+    
+    // special conversion, given a record, convert it to a RecordSignature (assuming all its fields contain Name:Value pairs where the value evals to a Constraint) -- Q. if field contains name only, should that be rejected as ambiguous (since it might be field name or constraint name) or treated as NAME:anything, OR treated as '':TYPE?
     
     func toRecordSignature() throws -> RecordSignature { // result is a record whose fields are `Name:Constraint` pairs // TO DO: this is no good, needs env
         var fields = [FieldSignature]()
@@ -115,13 +135,13 @@ class Record: Value { // roughly analogous to struct, though with different shar
             return try self.fields.map{try $0.evaluate(env, returnType: itemType)}
     }
     
-    override func _expandAsRecord_(_ env: Scope) throws -> Record { // TO DO: define RecordConstraintProtocol for use here? // TO DO: this method is wrong:
+    override func _expandAsRecord_(_ env: Scope) throws -> Record { // TO DO: define RecordConstraintProtocol for use here? // TO DO: this method is wrong: need to pass field types
         // note: when called in `to NAME {...} ...` operator's argument record, returnType: is ParameterTypeConstraint
         return Record(try self.fields.map{try $0.evaluate(env, returnType: gAnyValueConstraint)}) // TO DO: HACK; returnType should be some sort of PairConstraint; with the exact type specified by returnType
     }
     
     override func _expandAsConstraint_(_ env: Scope) throws -> Constraint { // note: returnType is ignored as it should always be gTypeConstraint
-        fatalNotYetImplemented(self, #function) // TO DO: `VALUE as {name:type,...}` should coerce VALUE to record of specified form; basically allows much more readable shorthand for `VALUE as record {structure: {name:type,...}}`
+        fatalNotYetImplemented(self, #function) // TO DO: `VALUE as {name:type,...}` should coerce VALUE to record of specified form; basically allows much more readable shorthand for `VALUE as record {structure: {NAME:TYPE,...}}`
     }
 }
 

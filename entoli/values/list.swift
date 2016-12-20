@@ -55,10 +55,6 @@ class List: Value { // TO DO: how best to constrain as array/dictionary/set? (pa
     override func _expandAsList_(_ env: Scope, itemType: NativeConstraint) throws -> List {
         return List(items:  [try self.evaluate(env, returnType: itemType)], itemType: itemType)
     }
-    
-    override func _expandAsRecord_(_ env: Scope) throws -> Record { // TO DO: is this right? converts [1,2,3] to {1,2,3}; shouldn't it be {[1,2,3]}? A. NO, it's wrong: FIX
-        return Record(try self.items.map{try $0.evaluate(env, returnType: gAnyValueConstraint)})
-    }
 }
 
 

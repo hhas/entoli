@@ -20,7 +20,7 @@ let source: String
 //source = "a*b"  //   correct:   `'×' {'a', 'b'}.`
 //source = "a and b" //  correct:  `'and' {'a', 'b'}.`
 //source = " 3*4 "  //   correct:  `'×' {"3", "4"}.`
-source = " 3not b"  //   wrong:  produces  `"3". 'not' {'b'}.`, but `not` isn't a new word so should be treated as [unknown] unit suffix to `3` (the parser will warn this doesn't work right yet)
+//source = " 3not b"  //   wrong:  produces  `"3". 'not' {'b'}.`, but `not` isn't a new word so should be treated as [unknown] unit suffix to `3` (the parser will warn this doesn't work right yet)
 //source = " foo {a label:1, 2, c and not d, 4 + 6 = 10} "
 //source = "4 + 6 * 10"         // correct:   `'+' {"4", '×' {"6", "10"}}.`
 //source = "4 + 6 < 10"         // correct:   `'<' {'+' {"4", "6"}, "10"}.`
@@ -45,7 +45,22 @@ source = " 3not b"  //   wrong:  produces  `"3". 'not' {'b'}.`, but `not` isn't 
 // EntoliScript([List(Text("2"), Name("foo"), Command(Name("bar"), Record()), (Command(Name("baz"), Record())))])
 //source = " [2, foo, bar{}, (baz)] " // TO DO: problem: `foo` parses as Name but should eval as Command; OTOH, in a record it needs to eval as command OR name depending on use case, e.g. `foo {bar}` vs `to foo {param}`; also, lookahead is needed to determine if `as` operator is next (which in turn is problematic because `as` is not part of core parser so cannot be relied on to exist); TBH, even `foo{bar}` can't be converted to `foo{bar{}}` by parser as it has no way of knowing what `foo` proc wants to do with `bar`, e.g. it might want to treat it as a name, in which case user would have to parens it to have it eval as command [which hopefully returns a name] instead
 
+//source = "foo. bar 3. do, this, that, done." // TO DO: this fails with 'misplaced operatorName: `done`'; not helped by incomplete auto-delimit support (see Lexer.isFollowedByAutoLeftDelimitedOperator)
+//source = "do \n this, that. done" // TO DO: incomplete auto-delimit is probably reason `do` is not read as operator when written as `do\n` (since `\n` is also a token)
 
+
+
+
+// This example (a handler for an 'alarm rings' event) parses the source mostly correctly, caveat 1. the `5ml`, as parser needs a bit more work to handle units), and 2. comma parsing needs tweaked so that comma-separated exprs are treated as a single expression sequence (i.e. the handler body should contain all commands up to the full stop).
+
+source = "When alarm rings: say “It's a beautiful morning!”, get up, make breakfast [coffee {milk: 5ml, sugar: none}, toast]; eat {while: reading paper}, walk the dog 1.25km."
+
+// Once fully implemented, the above should parse to the following command (note: all entoli commands are unary, and handlers always expect a record as parameter, so the call mechanism will coerce and pattern-match the argument value to the expected record structure as necessary):
+//
+// 'to' {name: 'alarm rings', input: {}, output: anything or nothing, action: ('say' {"It's a beautiful morning!"}, 'get up' {}, 'eat' {'make breakfast' {['coffee' {'milk': "5ml", 'sugar': 'none'}, 'toast']}, 'while': 'reading paper'}, 'walk the dog' {"1.25km"})}
+//
+// Obviously this handler can't be executed as handlers for the `say`, `get up`, etc commands aren't defined [right now the stdlib only has handlers for arithmetic and procedures], but the first priority is to make sure the syntax works from user POV; the second is to nail down the library API so that library authors only need to define a handler's signature (including user documentation) and a function to be invoked, and all the intermediate glue code will be generated automatically as part of the library's build process. (This approach ensures consistent APIs and metadata, which in turn will allow portions of entoli scripts to be compiled down to Swift files simply by converting those entoli commands into Swift code that chains together direct calls to those underlying funcs, with lots of opportunities to further 'bake' optimized scripts to be explored in future.)
+//
 
 
 let LEXER_TEST = 0
@@ -65,13 +80,13 @@ if LEXER_TEST != 0 { // print each token in source
 
 
 
-let PARSER_TEST = 0
+let PARSER_TEST = 1
 
 if PARSER_TEST != 0 { // parse source into AST
     let p = Parser(lexer: Lexer(code: source))
     do {
         let result = try p.parseScript()
-        print("Result:", result)
+        print("Result:\n\(result)")
     } catch {
         print("ERROR:", error)
     }
@@ -140,7 +155,7 @@ if EVAL_TEST != 0 {
 
 
 
-let EVAL_TEST2 = 1
+let EVAL_TEST2 = 0
 
 if EVAL_TEST2 != 0 {
     do {

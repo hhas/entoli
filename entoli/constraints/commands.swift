@@ -68,7 +68,7 @@ class ParameterTypeConstraint: Constraint, SwiftCast, NativeConstraint {
     typealias SwiftType = ParameterType // RecordSignature
     
     func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
-        return try value._expandAsRecord_(env).toRecordSignature()
+        return try value._expandAsRecord_(env).toRecordSignature() // TO DO: this has enough info to expand directly; need to check where toRecordSignature() is actually needed
     }
 }
 

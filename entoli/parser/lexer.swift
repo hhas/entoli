@@ -70,10 +70,10 @@ class Lexer {
         "]": .listLiteralEnd,
         "{": .recordLiteral,
         "}": .recordLiteralEnd,
-        "(": .expressionSequenceLiteral,
-        ")": .expressionSequenceLiteralEnd,
-        ".": .expressionSeparator, // also decimal sep in canonical numbers (or thousands sep in localized numbers?)
-        ",": .itemSeparator, // also thousands separator in canonical numbers? (or decimal sep in localized numbers?)
+        "(": .groupLiteral,
+        ")": .groupLiteralEnd,
+        ".": .sentenceSeparator, // also decimal sep in canonical numbers (or thousands sep in localized numbers?)
+        ",": .clauseSeparator, // also thousands separator in canonical numbers? (or decimal sep in localized numbers?)
         ":": .pairSeparator,
         ";": .pipeSeparator,
         // TO DO: should "@" and "#" also be fixed tokens? (used in `@mentions` and `#hashtag`, which may appear in code as well as in annotations; the former to identify universal [persistent machine-wide URI-like] resources, the latter to tag words for search indexing)
@@ -148,7 +148,9 @@ class Lexer {
     
     private var isFollowedByAutoLeftDelimitedOperator: Bool { // TO DO: this logic should prob move into isRightDelimited func, simplifying API; might also need to be generic, depending how it's implemented (alternatively, it might recursively tokenize ahead, which is direction in which lexer is evolving anyway)
         // Consider two adjoining operators, `AB`. If A is not right-auto-delimited, the lexer will want to consume B as well, returning a name, 'AB'. However, if B is left-auto-delimited, then it will force itself to be an operator, which in turn makes A explicitly left-delimited, allowing it to be an operator as well. One option might be to add A to the cache as a MaybeOperator, then continue reading tokens until something that isn't a MaybeOperator is reached, at which point the lexer can work backwards, transforming MaybeOperators into Operators or else removing them from the cache until it's back where it's started and can replace MaybeOperator-A with Name-AB. Alternatively, methods such as isEndOfPhrase might be rejigged to take index as argument, allowing updateOperatorMatches to be called recursively in pure lookahead without adding any tokens to the cache (though its returned tokens might be collected and added at the end should they all turn out to be operators after all). While this defect isn't an immediate blocker as there are currently very few operator combinations where this ambiguity will arise (e.g. `x+-y`), it will need to be addressed at some point.
-        print("CAUTION: Auto-delimiting doesn't yet work for adjoining operators; code may parse incorrectly as a result.")
+        
+        
+        print("CAUTION: Auto-delimiting doesn't yet work for adjoining operators; code may parse incorrectly as a result. \(String(self.code.suffix(from:self.cursor)).debugDescription): \(self.currentToken)")
         return false // TO DO: fix; check if next char[s]/word[s] can form an operator; if they do, and they're auto-delimiting, then return true
         
     }
@@ -319,7 +321,7 @@ class Lexer {
                             isDone = true
                             // TO DO: break?
                     }
-                    if DEBUG {if (fullSymbolOperatorMatch != nil) {print("MATCHED SYMBOL OPERATOR!!!!", currentLongestOperator)}}
+                    if DEBUG {if (fullSymbolOperatorMatch != nil) {print("MATCHED SYMBOL OPERATOR!!!!", currentLongestOperator as Any)}}
                 }
                 isFirstChar = false
                 wordChars.append(char)

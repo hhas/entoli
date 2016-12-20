@@ -262,7 +262,9 @@ func readNumericWord(_ code: ScriptChars, startIndex: ScriptIndex, numericUnits:
     // note: this does *not* read to end of word as the rest of word may include symbol operators, e.g. `2.5cm*10` which need to be processed separately; instead, it reads to end of number/unit suffix and returns the index of the next char; the lexer should then continue to read, and report an "unknown suffix/malformed numeric" error if it doesn't find either a reserved char or a valid operator; in the case of a string->number typespec, it should scan to end of string, checking that only whitespace (which can be safely ignored) remains
     if let result = readUTF8EncodedTextLiteral(code, startIndex: startIndex) { return result } // returns either .UTF8EncodedString (or .Invalid if malformed) or nil if no match was made
     var (isNegative, idx) = readNumberSign(code, startIndex: startIndex)
-    // TO DO: readUnit using numericUnits.prefixes
+    
+    // TO DO: readUnit using numericUnits.prefixes (note: only known prefixes are read as units; anything else is treated as new word)
+    
     let scalar: Scalar
     if let (result, endIndex) = readHexadecimalNumber(code, startIndex: startIndex, isNegative: isNegative) ?? readDecimalNumber(code, startIndex: startIndex, isNegative: isNegative) {
         scalar = result
@@ -270,7 +272,16 @@ func readNumericWord(_ code: ScriptChars, startIndex: ScriptIndex, numericUnits:
     } else {
         return nil
     }
-    // TO DO: readUnit using numericUnits.suffixes
+    // TO DO: readUnit using numericUnits.suffixes (note: only known suffixes are read as units; anything else is treated as new word)
+    
+    // Q. can we use postfix symbol operator parser to read suffix? (hopefully: it has all the logic to make longest character match)
+    if idx < code.endIndex && !Lexer.reservedCharacters.contains(code[idx]) {
+        print("TO DO: parse numeric units: «\(String(code[startIndex...idx]))...»")
+        while idx < code.endIndex && !Lexer.reservedCharacters.contains(code[idx]) { // TO DO: temporary until unit parsing is done
+            idx = code.index(after:idx)
+        }
+    }
+    
     let numeric: Numeric
     switch scalar {
     case .overflow(_, let t):   numeric = .invalid(String(code[startIndex..<idx]), .overflow(t))

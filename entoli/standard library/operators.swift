@@ -135,7 +135,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     (("where",    .phrase, .full),  50, .infix(parseInfixOperator),  [("whose", .phrase, .full)]),  // filter clause; TO DO: RH operand is basically a DSL for constructing queries, albeit using existing operator definitions only (only the procs would be remapped by a sub-context created by 'whose' proc for purpose of evaluating that operand [note that 'where' proc would define its RH operand's type as `test expression`/`Boolean expression` [depending on how we eventually implement]])
     // TO DO: what about `named` and `id` prefix ops for constructing by-name and by-id selectors?
     
-    // eval clauses
+    // adverbs
     (("catching", .phrase, .full),  50, .infix(parseInfixOperator),  []), // evaluate LH operand; on error, evaluate RH operand
     (("else",     .phrase, .full),  50, .infix(parseInfixOperator),  []), // evaluate LH operand; if it returns 'did nothing', evaluate RH operand
     
@@ -150,7 +150,7 @@ let StandardOperators: [OperatorDefinition] = [ // .Symbol operators will be det
     
     // define native procedure
     // `to` operator provides cleaner syntax for defining new procs; as a commonly-used word it is auto-right-delimited only to reduce chance of conflicts when used within a longer unquoted name (e.g. `go back to start`), so must appear at start of an expression to act as operator.
-    (("to",     .phrase, .right),   0, .prefix(parseProcedureDefinition), []), // lowest precedence ensures operator will use rest of expression as its operand
+    (("to",     .phrase, .right),   0, .prefix(parseProcedureDefinition), [("when", .phrase, .right)]), // lowest precedence ensures operator will use rest of expression as its operand
 ]
 
 
@@ -209,6 +209,7 @@ func parseProcedureDefinition(_ parser: Parser, operatorName: String, precedence
     } else {
         returnType = gAnythingConstraint
     }
+    if [.pairSeparator, .clauseSeparator].contains(nextToken.type) { parser.lexer.advance() } // skip colon after signature (technically speaking, `to SIG:EXPR` is a prefix operator that takes a pair as argument, but we want to forgive imperfect user input so `to SIG,EXPR` and `to SIG EXPR` are parsed as well)
     // 4. read group expression; need to decide what structures are appropriate for this, e.g. single line of comma-separated exprs with period terminator (which will require lexer/parser mods), multi-line `do...done` block. bear in mind too that we currently don't have a clearly defined way to express return type; e.g. might define operator as `to SIG: EXPR [returning TYPE]`, though need to consider how well that'd work with single-line exprs (which'd want to put a period after TYPE, not before `returning`)
     let procBody = try parser.parseExpression()
     
@@ -218,6 +219,16 @@ func parseProcedureDefinition(_ parser: Parser, operatorName: String, precedence
 
 
 func parseAtomDoBlock(_ parser: Parser, operatorName: String, precedence: Int) throws -> Value { // TO DO: this needs to use same reader as Parser.parseAtom's `(...)` expression in order to parse names and named pairs correctly
+    
+    // note: `(name:value)` is a bit problematic; the only thing we can do is ensure consistent behavior, always treating as `store` unless in a context that treats it as a pair (list/record/`(...) as pair` coercion; Q. what when it appears as a parameter? e.g. `if {x, name:value}` - presumably that stores too)
+    
+    // (half-wish we could do bullet lists!)
+    
+    //let result = try parser.parseExpressionSequence({print("checking \($0)"); return $0.type == .operatorName && $0.value == "done"}, shouldNamedPairsStore: true) // TO DO: this doesn't work right yet
+    
+    // TO DO: need to give more thought to this
+    
+    parser.lexer.advance()
     var result = [Value]()
     let lexer = parser.lexer
     while lexer.currentToken.type != .endOfCode {
@@ -242,9 +253,8 @@ func parseAtomDoBlock(_ parser: Parser, operatorName: String, precedence: Int) t
 
 func parsePostfixDoBlock(_ parser: Parser, leftExpr: Value, operatorName: String, precedence: Int) throws -> Value {
     let exprs = try parseAtomDoBlock(parser, operatorName: operatorName, precedence: precedence)
-    print("TO DO: ATTACH POSTFIX DO BLOCK:\n\t", exprs, "\n\tTO:", leftExpr)
     if let record = leftExpr as? Record {
-        return Record(record.fields + [exprs])
+        return record.appended(exprs)
     } else {
         return Record([leftExpr, exprs])
     }

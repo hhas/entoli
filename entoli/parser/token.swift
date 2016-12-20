@@ -4,6 +4,8 @@
 //
 //
 
+// note: `?` and `!` will work as safety modifiers - they just need to be applied at the sentence level rather than individual command (coarse-grained is good - users don't want to futz with fine details). `??` can then be used to step thru a sentence one command at a time.
+
 
 //**********************************************************************
 // operator definition
@@ -76,10 +78,10 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
     case listLiteralEnd
     case recordLiteral // a sequence of values and/or name-value pairs; primarily used to represent complex procedure arguments
     case recordLiteralEnd
-    case expressionSequenceLiteral
-    case expressionSequenceLiteralEnd
-    case expressionSeparator
-    case itemSeparator
+    case groupLiteral
+    case groupLiteralEnd
+    case sentenceSeparator
+    case clauseSeparator
     case pairSeparator
     case pipeSeparator
     case lineBreak
@@ -91,12 +93,12 @@ enum TokenType { // TO DO: implement human-readable names for use in error messa
     
     var precedence: Int {
         switch self {
-        case .annotationLiteral:    return 1000
-        case .expressionSeparator:  return 50
-        case .itemSeparator:        return 50
-        case .pairSeparator:        return 60
-        case .pipeSeparator:        return 5000 // TO DO: confirm this, as it creates a non-trivial transform, e.g. `foo; bar + 1` -> `bar{foo} + 1`
-        case .operatorName:             return gOperatorDefinedPrecedence
+        case .annotationLiteral:    return 1000 // '«...»'
+        case .sentenceSeparator:    return 50   // '.'
+        case .clauseSeparator:      return 55   // ','
+        case .pairSeparator:        return 60   // ':'
+        case .pipeSeparator:        return 5000 // ';' // TO DO: confirm this, as it creates a non-trivial transform, e.g. `foo; bar + 1` -> `bar{foo} + 1`
+        case .operatorName:         return gOperatorDefinedPrecedence
         default:                    return 0
         }
     }

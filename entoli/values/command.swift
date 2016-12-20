@@ -10,6 +10,17 @@ import Foundation
 //**********************************************************************
 // name
 
+// TO DO: ideally generic procs shouldn't have to include `Constraint` requirement, only `SwiftCast`/`NativeConstraint` protocol: if a constraint needs to be stored in a property, convert it to a `NativeConstraint` first (storing it as a `Constraint` is semi-useless anyway, as it severely limits what can be done with it, and is effectively useless for tagging Values as it'll need to be converted to a native constraint before it can be used - assuming it can be easily boxed, that conversion can still be deferred at cost of an extra object alloc that can be ameliorated anyway thru caching...or just go straight to native constraint, which costs the same, where available, and treat any coercions that don't have native equivalents as opaque and have an OpaqueValue for representing them, which should do the same thing; the only issue being unpacking them again which is a pig when they're a generic type as those aren't amenable to casts where exact type isn't known)
+
+
+// TO DO: LiteralName? this'd allow us to distinguish a Name that MAY BE evaled as an arg-less command, when in an applicable context (e.g. exprseq), vs a Name that MUST always eval as a name (e.g. record field name). Note that most of the fuzziness centers around LHS of Pair values. Might even be worth putting the onus on Pair.
+
+// Q. how should expanded values indicate that they don't need expanded again? (this sort of ties in with the Name problem)
+
+// Q. what about `MustBeName` (always evals as name) vs `MayBeName` (evals as name or command; calling context decides)? (FixedName/FlexibleName?)
+
+// what about Name vs ExpandedName; the latter would always eval to self; the former as command unless NameConstraint is specified (in which case it expands to ExpandedName); for a record field, the parser would emit ExpandedName (it already special-cases pairs in [some] exprseqs as `store{VALUE,NAME}` so shouldn't need to worry about that, though can still convert name to expanded name to be sure); note: should `(NAME)` eval as command where NameConstraint is specified, or should user be required to write `NAME{}` to explicitly disambiguate? Could be fiddly; consider procs that take a name as parameter, and how a literal(?) name arg is best disambiguated from a command. (One could argue the need for `NAME{}` is self-evident, and parens should not change meaning of `NAME`; the flipside, of course, is where parens are used to group multiple exprs...though one could argue parens only ever group atomic values [which an exprseq is], in which case adding/removing parens should never modify meaning. In which case meaning of `NAME:VALUE` is always `store` except in value contexts, e.g. record, kv-list). Mind, to put an exprseq in a record, it _must_ be parensed [or do...done, assuming that works syntactically].
+
 
 class Name: Value {
     
@@ -35,14 +46,20 @@ class Name: Value {
     // expansion
     
     override func _expandAsAny_(_ env: Scope) throws -> Value { return self }
-//  override func _expandAsAny_(_ env: Scope) throws -> Value { return try self.toCommand() } // (EXPERIMENTAL; currently doesn't work either) TO DO: returning Name here is problematic when the name appears in an expression context where it should be treated as an arg-less command. OTOH expanding Name as a Command here currently breaks parameter record parsing (it likely also breaks stuff elsewhere), though that's probably a defect in the RecordSignature constraint or similar, which should be asking for known arg types in the first place. One possibility would for `Value` to provide separate `call()` and `expand()` methods, the first of which to be called in command contexts (e.g. expression sequence, list pair), the other in value contexts (e.g. record pair, `store` pair).
+//  override func _expandAsAny_(_ env: Scope) throws -> Value { return try self.toCommand() } // (EXPERIMENTAL; currently doesn't work either) TO DO: returning Name here is problematic when the name appears in an expression context where it should be treated as an arg-less command. OTOH expanding Name as a Command here currently breaks parameter record parsing (it likely also breaks stuff elsewhere), though that's probably a defect in the RecordSignature constraint or similar, which should be asking for known arg types in the first place. One possibility would for `Value` to provide separate `call()` and `expand()` methods, the first of which to be called in command contexts (e.g. expression sequence, list pair), the other in value contexts (e.g. record pair, `store` pair). // CAUTION: this is likely subtly wrong: entoli should respect any valid program, even one directly constructed as data rather than parsed from code; thus is a Name:Value Pair appears in a List it should remain as-is - as an item in an ordered/unique list, not a key-value pair in a key-value list. IOW, the parser should track context.
     
     override func _expandAsName_(_ env: Scope) throws -> Name { return self }
-    override func _expandAsCommand_(_ env: Scope) throws -> Command { return try self.toCommand() } // note: this doesn't capture env; will that be a problem?
+    override func _expandAsCommand_(_ env: Scope) throws -> Command { return try self.toCommand() } // note: this doesn't capture env; will that be a problem? // TO DO: see TODO below
     override func _expandAsConstraint_(_ env: Scope) throws -> Constraint { // TO DO: is this okay, or is there any info that should be passed?
         return try self.toCommand().evaluate(env, returnType: gTypeConstraint)
     }
 }
+
+
+// TO DO: might be better to have LiteralName, as that's what's ambiguous until evaled, either as a Name or as an argless Command depending on context
+
+
+let gNullName = Name("")
 
 
 //**********************************************************************
