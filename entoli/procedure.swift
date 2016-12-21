@@ -39,7 +39,7 @@ func evalRecordField<ReturnType: SwiftCast>(in fields: inout [Value], fieldStruc
     } else {
         fieldValue = gNullValue
     }
-    print("\nExpanding `\(fieldStructure.name)` field to \(fieldStructure.type): `\(fieldValue)`\n")
+ //   print("\nExpanding `\(fieldStructure.name)` field to \(fieldStructure.type): `\(fieldValue)`\n")
     do {
         if fieldStructure.type is DoNotEvaluate { return fieldValue as! ReturnType.SwiftType } // TO DO: HACKY; also, what about ThunkConstraint and other deferreds? (e.g. Thunk needs to defer evaluation too; however, its _coerce_ method still needs to be called now so it can wrap the expr in a Thunk and return that.) The problem here is that the coercion needs to be in charge; right now it's ignored until it's used to coerce the last expr's result. Will need to check what Value.evaluate() methods are currently implemented.
         return try fieldValue.evaluate(commandScope, returnType: fieldStructure.type)
@@ -138,7 +138,7 @@ class NativeProcedure: Procedure {
             try subEnv.store(parameter.name, value: value)
         }
         if arguments.count > 0 { throw BadArgument(description: "Unrecognized extra argument(s): \(arguments)") }
-        print("built subscope: \(subEnv)")
+//        print("built subscope: \(subEnv)")
         do {
             return try self.body.evaluate(subEnv, returnType: returnType)
         } catch {
