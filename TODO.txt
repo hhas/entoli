@@ -21,6 +21,8 @@ to munge {bar: text, baz: list of number} as list of text: blah, blah, blah.
 // TO DO: given user input [e.g.] `x()`, the empty expression group `()` after `x` should be treated same as `{}` or `nothing` here, either by parser or runtime (not sure which), as it's likely to be a common typo amongst users used to Algol-y syntax (where parens indicate both grouping and params lists); might be best if code editor 'auto-corrected' this upon user input since an empty expression group `()` returns `nothing` when evaluated anyway, either converting it to `{}` or ny deleting it entirely and inserting appropriate punctuation to end the command instead
 
 
+- what to name `do` blocks? (`do...done`, `do...it`? note that `do...end` may be annoying if `end` is already used in objspect)
+
 
 // TO DO: Constraint instances should be able to perform set operations (isSubset, union, etc), eliminating double application
 
@@ -54,5 +56,8 @@ to munge {bar: text, baz: list of number} as list of text: blah, blah, blah.
 // TO DO: there's something valuely smelly about using generics here; shouldn't all type specs provide two overloaded coerce methods, one that returns Swift type and one that returns entoli type?
 
 // TO DO: how to implement comparableValue() method that returns comparable values for use as sort and comparison keys (e.g. TextConstraint would return lowercaseString as entoli does case-insensitive text comparisons by default; CaseSensitiveTextConstraint would return string as-is)
+
+
+// TO DO: what about using pairs in commands such as `if` to permit more natural sentence syntax, e.g. by supporting general-purpose coercion from `LEFT:RIGHT` to `{LEFT,RIGHT}`? (literal pairs only, or any pair?) note that pretty printer should aggressively normalize on canonical syntax so that new users are quickly familiarized with 'correct' syntax
 
 

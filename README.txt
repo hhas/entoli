@@ -45,7 +45,7 @@ writeability of Logo, and should support spoken input and output as well.
 
   will be dispatched to the following handler:
 
-    to ask user {prompt: text, as: type, giving up after: optional: seconds}: …
+    to ask user {prompt: text, as: type, giving up after: optional seconds}: …
 
   and the `prompt`, `as`, and `giving up after` values matched, coerced, and
   bound to the new stack frame.
@@ -62,15 +62,15 @@ writeability of Logo, and should support spoken input and output as well.
 
 * English-like punctuation for separating commands:
 
-  * commas as in-block separators and periods as block terminators:
+  * commas separate multiple commands; periods terminate a list of commands:
 
       Foo, bar, baz.
 
-  * semi-colons as pseudo-pipes that pass the result of one command as the first
-    value to the next, reducing the need for explicit nesting when chaining
-    a sequence of commands:
+  * semi-colons connect related commands, acting as "pipes" that pass the result
+    of the first command as the first argument to the next, reducing the need
+    for explicit nesting:
 
-      Ask user {"Enter a number:"}; prefix "You chose "; write {to: screen}.
+      Ask user {"Type a number:"}; prefix "You entered "; write {to: screen}.
 
 
 * Few data types, e.g. integer, float, unit types, text, date, etc. are all
@@ -115,9 +115,10 @@ writeability of Logo, and should support spoken input and output as well.
 
     if 2 + 2 = 4 do
       say "Reality OK."
-    end else do
-      say "Must be Monday.", quit.
-    end
+    done else do
+      say "Must be a Monday!"
+      quit
+    done
 
   is sugar for:
 
@@ -126,7 +127,7 @@ writeability of Logo, and should support spoken input and output as well.
 
   (`else` is an operator that evaluates its right operand only if the left
   operand returns `did nothing`; similar to Icon's success/failure mechanism.
-  `do … end` is syntactic sugar for a block.)
+  `do … done` is syntactic sugar for a block.)
 
 
 * Other stuff, e.g. user documentation will be added directly to code as «...»
