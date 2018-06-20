@@ -98,7 +98,7 @@ class Lexer {
     // TO DO: how would/should lexer tie into incremental parsing support? would the editor, given knowledge of the AST (which in turn lets it determine which token user is currently modifying), simply re-lex after each edit? also, bear in mind the need to lex as code is edited (which means lexer needs to be able to suspend and resume on input stream, which this implementation - which uses String, not stream - currently doesn't allow)
     // TO DO: if per-line parsing, option to indicate already inside quoted text/name [1] or annotation
     init(code: String, operatorsTable: Operators = StandardOperatorsTable, numericUnits: NumericUnits = gDefaultNumericUnits) {
-        self.code = code.characters
+        self.code = code
         self.cursor = self.code.startIndex
         self.codeLength = self.code.endIndex
         self.operatorsTable = operatorsTable
@@ -116,7 +116,7 @@ class Lexer {
     private typealias FullSymbolOperatorMatch    = (match: PartialSymbolOperatorMatch, fixity: OperatorFixity)
     
     typealias UnquotedWord               = (text: String, startIndex: ScriptIndex, endIndex: ScriptIndex)
-    typealias PartialWord                = (chars: String.CharacterView, startIndex: ScriptIndex, endIndex: ScriptIndex)
+    typealias PartialWord                = (chars: String, startIndex: ScriptIndex, endIndex: ScriptIndex)
     
     //
     
@@ -195,12 +195,12 @@ class Lexer {
         while partialMatchIndex < partialMatches.count {
             let match = partialMatches[partialMatchIndex]
             if match.endIndex == endIndex { // TO DO: check this; supposed to prevent new match added above from being double-matched
-                if DEBUG {print("...skipping new match `\(match.info.name)`")}
+                if DEBUG {print("...skipping new match `\(String(describing: match.info.name))`")}
             } else {
-                if DEBUG {print("...updating existing match `\(match.info.name)` with `\(value)` at \((match.endIndex, endIndex))")}
+                if DEBUG {print("...updating existing match `\(String(describing: match.info.name))` with `\(value)` at \((match.endIndex, endIndex))")}
                 if let nextMatchInfo = match.info.nextWords[value] {
                     partialMatches[partialMatchIndex].update(endIndex, info: nextMatchInfo)
-                    if DEBUG {print("... and matched `\(value)` to it too: \(partialMatches[partialMatchIndex].info.name)")}
+                    if DEBUG {print("... and matched `\(value)` to it too: \(String(describing: partialMatches[partialMatchIndex].info.name))")}
                 } else {
                     if DEBUG {print("...and failed to make a match on `\(value)`, so discarding partial.")}
                     partialMatches.remove(at: partialMatchIndex)
@@ -214,7 +214,7 @@ class Lexer {
                 let isPrefix = self.isPrefixOperatorName(match.info.prefixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimited: isRightDelimited)
                 let isInfix = self.isInfixOperatorName(match.info.infixDefinition, isLeftDelimited: isLeftDelimited, isRightDelimited: isRightDelimited)
                 if isPrefix || isInfix { // found a full, correctly delimited operator name
-                    if DEBUG {print("FOUND A FULL MATCH: `\(match.info.name)`")}
+                    if DEBUG {print("FOUND A FULL MATCH: `\(String(describing: match.info.name))`")}
                     fullMatch = (match, (isPrefix, isInfix))
                     partialMatches = [match]
                     if match.info.isLongest { return true }
@@ -237,7 +237,7 @@ class Lexer {
             }
             nameToken = Token(type: .unquotedName, value: self.joinWords(words), range: self.wordsRange(words))
         }
-        if DEBUG {print("FULLY MATCHED \(T.self) OPERATOR: <\(match.info.name)>     range=\(match.startIndex..<match.endIndex)")}
+        if DEBUG {print("FULLY MATCHED \(T.self) OPERATOR: <\(String(describing: match.info.name))>     range=\(match.startIndex..<match.endIndex)")}
         let operatorToken = Token(type: .operatorName, value: match.info.name!, range: match.startIndex..<match.endIndex,
                                                    operatorDefinitions: (fixity.prefix ? match.info.prefixDefinition : nil,
                                                                          fixity.infix  ? match.info.infixDefinition  : nil))
@@ -304,7 +304,7 @@ class Lexer {
             // TO DO: since symbol ops are read first, there's no point adding them to phrase ops table as well, so can remove that duplication and related logic in ops-table and isValidOp()
             var partialSymbolOperatorMatches = [PartialSymbolOperatorMatch]()
             var fullSymbolOperatorMatch: FullSymbolOperatorMatch? = nil
-            var wordChars = String.CharacterView() // the following loop appends Characters to this until it has the entire word
+            var wordChars = "" // the following loop appends Characters to this until it has the entire word
             var isFirstChar = true // used to determine if an in-word symbol op is explicitly left-delimited (i.e. the first char in the word)
             var isDone = false // becomes true once longest match is made, allowing the loop to break early (any remaining words in sequence will be processed as new token[s] on next pass)
             repeat {
@@ -328,7 +328,7 @@ class Lexer {
             } while self.cursor < self.codeLength && !Lexer.reservedCharacters.contains(self.code[self.cursor])
             if DEBUG {print("ended char scan loop on \(self.cursor): `\(self.currentChar)`")}
             // note: while in-word symbols are matched first (as chars are being read), if the entire word makes a full phrase match then that takes precedence
-            let word = String(wordChars)
+            let word = wordChars
             let wordEndIndex = self.cursor // caution: non-inclusive; use `..<` (not `...`) to construct ScriptRange
             if updateOperatorMatches(self.operatorsTable.phrases,
                                      partialMatches: &partialPhraseOperatorMatches, fullMatch: &fullPhraseOperatorMatch,
@@ -428,7 +428,7 @@ class Lexer {
             let firstChar = self.code[self.cursor] // TO DO: prob make this `char` var and rejig stages into a single switch
             // 1. quoted text/name
             if let token = Lexer.quoteDelimiters[firstChar] { // found open quote
-                var chars = String.CharacterView()
+                var chars = ""
                 var isquote = true
                 while isquote {
                     self.cursor = self.code.index(after: self.cursor) // eat open quote
@@ -438,7 +438,7 @@ class Lexer {
                     }
                     if self.cursor == self.codeLength {
                         chars.append(contentsOf: self.code[substart..<self.cursor])
-                        return self.currentTokensCache.append(Token(type: token, value: String(chars), range: start..<self.cursor, partial: +1))
+                        return self.currentTokensCache.append(Token(type: token, value: chars, range: start..<self.cursor, partial: +1))
                     }
                     chars.append(contentsOf: self.code[substart..<self.cursor])
                     self.cursor = self.code.index(after: self.cursor) // eat close quote
@@ -447,7 +447,7 @@ class Lexer {
                         chars.append(self.code[self.cursor])
                     }
                 }
-                return self.currentTokensCache.append(Token(type: token, value: String(chars), range: start..<self.cursor))
+                return self.currentTokensCache.append(Token(type: token, value: chars, range: start..<self.cursor))
             }
             // 2. unquoted word (i.e. anything that isn't quoted, punctuation, or white space; though once called the read function may scan/consume those too where appropriate)
             if !Lexer.reservedCharacters.contains(firstChar) {

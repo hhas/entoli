@@ -118,7 +118,7 @@ class TuplePairConstraint<KeyConstraint, ValueConstraint>: Constraint, SwiftCast
 
 class PairConstraint<KeyConstraint, ValueConstraint>: TuplePairConstraint<KeyConstraint, ValueConstraint>, NativeConstraint
         where KeyConstraint: Constraint, KeyConstraint: SwiftCast, KeyConstraint.SwiftType: Value,
-            ValueConstraint: Constraint, ValueConstraint: SwiftCast, ValueConstraint.SwiftType: Value {
+ValueConstraint: Constraint, ValueConstraint: SwiftCast, ValueConstraint.SwiftType: Value {
     
     typealias SwiftType = Pair
     

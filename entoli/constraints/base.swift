@@ -114,20 +114,25 @@ extension SwiftCast {
 }
 
 
-protocol NativeConstraint {
+// TO DO: FIX; the following compiled in Swift 2.x but is broken on newer versions' the extension trick was presumably sneaky undefined behavior, allowing the compiler to accept NativeConstraint as a non-generic protocol despite _coerce_ and wrap using SwiftType (which is an associatedtype in SwiftCast) while still being precise about their return argument/return type (since they'd pick up the actual SwiftType from the Constraint class).
+
+protocol NativeConstraint { // whereas SwiftCast-only constraints are only used in primitive libraries' statically defined API signatures (providing automatic entoli<->Swift type bridging), native (Value<->Value) Constraint instances are used both there and throughout entoli's runtime too, thus we need to pass native Constraint instances freely as method arguments/results, which in turn demands a non-generic protocol describing the operations it supports
+    
     // TO DO: what does this need to expose?
     // TO DO: need a method to construct NativeConstraint instance with optional record arg containing additional constraints
     // TO DO: how to declare native signature and mapping to SomeNativeConstraint.init(...)? e.g. `text {may be empty: optional Boolean}`
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType // subclasses must override
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value // Value->Value constraints don't need to implement custom wrap() methods
+    // TO DO: since this is native, can't we define Value->Value versions of these methods in conditional extension?
+    
+  //  func _coerce_(_ value: Value, env: Scope) throws -> SwiftType // subclasses must override
+  //  func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value // Value->Value constraints don't need to implement custom wrap() methods
     func defaultValue(_ env: Scope) throws -> Value
     var defersExpansion: Bool {get} // TO DO: might be more appropriate to provide `specialExpansion(value,env)->(value,returnNow)` which gets called by Value.evaluate() prior to/instead of it doing its own thing, in which case maybe add a SpecialExpansion protocol which DoNotExpand, ThunkConstraint, etc adopt; evaluate methods will then check for that protocol (alternatively, it might be simpler always to call specialExpansion which in most cases will be a no-op)
     var nativeConstraint: NativeConstraint { get }
 }
 
 extension NativeConstraint {
-    typealias SwiftType = Value
+   // typealias SwiftType = Value // fool Swift typechecker into accepting non-generic NativeConstraint; unfortunately, whereas Swift used to give precedence to the identically named typealias in the class definition and ignored this one, now it reports
 }
 
 

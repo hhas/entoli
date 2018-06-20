@@ -63,18 +63,11 @@ enum Scalar { // represents an integer (as Swift Int) or decimal (as Swift Doubl
         }
     }
     
-    init(int code: ScriptChars, isNegative: Bool, radix: Int = 10) throws {
-        try self.init(int: String(code), isNegative: isNegative, radix: radix)
-    }
-    
     init(double code: String, isNegative: Bool) throws {
         guard let number = Double(code) else { throw EvaluationError(description: "Not a double: \(code)") } // TO DO: how to distinguish .Overflow (e.g. if `code` is "1e500") from .NotNumber? (e.g. if `code` is empty or contains spaces or other invalid chars); note that Double(String) returns nil, not Double.infinity, upon overflow, which makes it hard to determine if it's Double overflow or malformed text
         self = .floatingPoint(isNegative ? -number : number)
     }
     
-    init(double code: ScriptChars, isNegative: Bool) throws {
-        try self.init(double: String(code), isNegative: isNegative)
-    }
     
     // unwrap Swift primitives
     

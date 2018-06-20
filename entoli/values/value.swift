@@ -109,7 +109,11 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
         return try returnType._coerce_(self, env: env)
     }
     func evaluate(_ env: Scope, returnType: NativeConstraint) throws -> Value {
-        return try returnType._coerce_(self, env: env)
+        
+        print("TO DO: can't currently evaluate \(self) as \(returnType). Need to rework NativeConstraint for Swift4.")
+        
+        throw ExpansionError.unsupportedType // TO DO: fix NativeConstraint support and re-enable
+        // return try returnType._coerce_(self, env: env)
     }
 }
 

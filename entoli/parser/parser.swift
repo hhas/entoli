@@ -220,7 +220,7 @@ class Parser {
                 return result
             }
         case .operatorName:
-            if DEBUG {print("\nparseAtom got Operator: \(token.prefixOperator) \(token.infixOperator)")}
+            if DEBUG {print("\nparseAtom got Operator: \(String(describing: token.prefixOperator)) \(String(describing: token.infixOperator))")}
             guard let operatorDefinition = token.prefixOperator else {
                 self.lexer.backtrackTo(previousIndex)
                 assert(token.infixOperator != nil, "BUG in Parser.parseAtom(): .Operator token contains neither prefix nor infix definition: \(token)")
@@ -279,7 +279,7 @@ class Parser {
                 leftExpr.annotations.append(contentsOf: command.annotations)
             // VOCABULARY TOKENS
             case .operatorName:
-                if DEBUG {print("\nparseOperation got Operator: \(token.prefixOperator) \(token.infixOperator)")}
+                if DEBUG {print("\nparseOperation got Operator: \(String(describing: token.prefixOperator)) \(String(describing: token.infixOperator))")}
                 guard let operatorDefinition = token.infixOperator else { // found a prefix operator, so end this expression and process it on next pass
                     assert(token.infixOperator != nil, "BUG in Parser.parseOperation(): .Operator token contains neither prefix nor infix definition: \(token)")
                     self.lexer.backtrackTo(previousIndex)
@@ -350,7 +350,7 @@ class Parser {
     
     func parseScript() throws -> EntoliScript { // parse entire document (result is expression group)
         let result = try self.parseExpressionSequence({$0.type == .endOfCode}, shouldNamedPairsStore: true) // TO DO: check this works ok
-        if DEBUG {print("TOP-LEVEL parse() completed expr: \(result.last)")}
+        if DEBUG {print("TOP-LEVEL parse() completed expr: \(String(describing: result.last))")}
         return EntoliScript(expressions: result)
     }
 }

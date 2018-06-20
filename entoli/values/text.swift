@@ -29,7 +29,7 @@ class Text: Value { // TO DO: how to annotate with numerics, units, dates, etc?
     
     func toNumeric(_ numericUnits: NumericUnits = gDefaultNumericUnits) throws -> Numeric {
         // TO DO: first check for numeric annotation (which still needs to be implemented, natch)
-        let code = self.string.characters
+        let code = self.string
         let startIndex = skipWhiteSpace(code, startIndex: code.startIndex)
         guard let (numeric, idx) = readNumericWord(code, startIndex: startIndex, numericUnits: numericUnits) else {
             throw ConstraintError(value: self, description: "Not a numeric value.")

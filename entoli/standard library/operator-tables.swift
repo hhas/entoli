@@ -120,7 +120,7 @@ struct OperatorPart<ElementType: Hashable>: CustomStringConvertible { // Element
     
     var name: String? { return self.prefixDefinition?.name.text ?? self.infixDefinition?.name.text }
     
-    var description: String {return "<OperatorPart prefixOp=\(self.prefixDefinition?.name) infixOp=\(self.infixDefinition?.name) next=\(Array(self.nextWords.keys))>"}
+    var description: String {return "<OperatorPart prefixOp=\(String(describing: self.prefixDefinition?.name)) infixOp=\(String(describing: self.infixDefinition?.name)) next=\(Array(self.nextWords.keys))>"}
     
     mutating func addDefinition(_ definition: OperatorDefinition) throws {
         switch definition.parseFunc {
@@ -170,7 +170,7 @@ class OperatorTable<ElementType: Hashable> { // Keyword/Symbol table (only real 
 class SymbolOperatorsTable: OperatorTable<Character> {
     
     func addOperator(_ name: String, definition: OperatorDefinition) {
-        self._addOperator(Array(name.characters), wordsTable: &self.definitionsByPart, definition: definition)
+        self._addOperator(Array(name), wordsTable: &self.definitionsByPart, definition: definition)
     }
 }
 
@@ -179,7 +179,7 @@ class PhraseOperatorsTable: OperatorTable<String> { // whole-word matching
     
     func addOperator(_ name: String, definition: OperatorDefinition) {
         // TO DO: what about normalizing name? (trim, lowercase, etc), or is it reasonable to expect tables to be correctly formatted before reading?
-        self._addOperator(name.characters.split{$0 == " "}.map(String.init), wordsTable: &self.definitionsByPart, definition: definition)
+        self._addOperator(name.split{$0 == " "}.map(String.init), wordsTable: &self.definitionsByPart, definition: definition)
     }
 }
 

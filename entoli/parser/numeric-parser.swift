@@ -38,7 +38,7 @@ import Darwin // pow()
 // TO DO: the following are shared by both numeric-parser and lexer; where & how best to define? (e.g. on Script[Value]?)
 
 
-typealias ScriptChars = String.CharacterView
+typealias ScriptChars = String
 typealias ScriptIndex = ScriptChars.Index
 typealias ScriptRange = Range<ScriptIndex> // position of this token within the original source code (note: this may be different size to Token.value due to white space and operator name normalization)
 
@@ -47,15 +47,15 @@ typealias ScriptRange = Range<ScriptIndex> // position of this token within the 
 //**********************************************************************
 
 
-let gNumericDigits           = Set("01234567890".characters)
-let gNumericSigns            = Set("+-".characters) // TO DO: should n-dashes also be accepted? (fuzzy matching)
+let gNumericDigits           = Set("01234567890")
+let gNumericSigns            = Set("+-") // TO DO: should n-dashes also be accepted? (fuzzy matching)
 let gDecimalSeparator        = Character(".") // currently this must be a member of `punctuation` (see above) for scanner to work correctly (ideally this'd be localizable, along with thousands separator, allowing [e.g.] `$1,000,000.00`, `€1.000.000,00`, etc)
-let gExponentSeparator       = Set("Ee".characters)
-let gCodePointPrefix         = Set("Uu".characters)
-let gCodePointSeparator      = Set("+".characters)
-let gHexadecimalPrefix       = Set("Xx".characters)
+let gExponentSeparator       = Set("Ee")
+let gCodePointPrefix         = Set("Uu")
+let gCodePointSeparator      = Set("+")
+let gHexadecimalPrefix       = Set("Xx")
 let gAllHexPrefixes          = gHexadecimalPrefix.union(gCodePointPrefix)
-let gHexadecimalDigits       = Set("01234567890AaBbCcDdEeFf".characters)
+let gHexadecimalDigits       = Set("01234567890AaBbCcDdEeFf")
 
 let gHexadecimalMap: [Character:UInt8] = ["0":0, "1":1, "2":2, "3":3, "4":4,
                                           "5":5, "6":6, "7":7, "8":8, "9":9,
@@ -154,7 +154,7 @@ func readUTF8EncodedTextLiteral(_ code: ScriptChars, startIndex: ScriptIndex) ->
         case .emptyInput:
             isChar = false
         case .error:
-            return (.invalid(String(code[startIndex..<idx]), .invalidCodePoint), idx)
+            return (.invalid(code[startIndex..<idx], .invalidCodePoint), idx)
         }
     }
     return (.utf8EncodedString(String(result)), idx)
@@ -171,7 +171,7 @@ func readHexadecimalNumber(_ code: ScriptChars, startIndex: ScriptIndex, isNegat
     if typeCodeIndex == codeLength || !gAllHexPrefixes.contains(code[typeCodeIndex]) { return nil } // check for second char in prefix
     var idx = code.index(after: typeCodeIndex)
     if idx == code.endIndex || !gHexadecimalDigits.contains(code[idx]) { return (Scalar.integer(0), typeCodeIndex) } // check prefix is followed by a hex digit otherwise it's just a `0` with an `X`/`x` suffix
-    var chars = String.CharacterView()
+    var chars = ""
     while idx < code.endIndex && gHexadecimalDigits.contains(code[idx]) {
         chars.append(code[idx])
         idx = code.index(after: idx)
@@ -234,7 +234,7 @@ func readDecimalNumber(_ code: ScriptChars, startIndex: ScriptIndex, allowExpone
                 case .overflow:              hasOverflow = true
                 }
             }
-            scalar = hasOverflow ? .overflow(String(code[startIndex..<endIndex]), Double.self)  : .floatingPoint(result)
+            scalar = hasOverflow ? .overflow(code[startIndex..<endIndex], Double.self)  : .floatingPoint(result)
         }
     }
     return (scalar, idx)
@@ -276,7 +276,7 @@ func readNumericWord(_ code: ScriptChars, startIndex: ScriptIndex, numericUnits:
     
     // Q. can we use postfix symbol operator parser to read suffix? (hopefully: it has all the logic to make longest character match)
     if idx < code.endIndex && !Lexer.reservedCharacters.contains(code[idx]) {
-        print("TO DO: parse numeric units: «\(String(code[startIndex...idx]))...»")
+        print("TO DO: parse numeric units: «\(code[startIndex...idx])...»")
         while idx < code.endIndex && !Lexer.reservedCharacters.contains(code[idx]) { // TO DO: temporary until unit parsing is done
             idx = code.index(after:idx)
         }
@@ -284,7 +284,7 @@ func readNumericWord(_ code: ScriptChars, startIndex: ScriptIndex, numericUnits:
     
     let numeric: Numeric
     switch scalar {
-    case .overflow(_, let t):   numeric = .invalid(String(code[startIndex..<idx]), .overflow(t))
+    case .overflow(_, let t):   numeric = .invalid(code[startIndex..<idx], .overflow(t))
     default:                    numeric = .number(scalar)
     }
     return (numeric, idx)
@@ -293,7 +293,7 @@ func readNumericWord(_ code: ScriptChars, startIndex: ScriptIndex, numericUnits:
 
 // utility func
 
-let gAnyWhiteSpace = " \t\n\r".characters
+let gAnyWhiteSpace = " \t\n\r"
 
 func skipWhiteSpace(_ code: ScriptChars, startIndex idx: ScriptIndex) -> ScriptIndex { // scans chars, starting at startIndex, until it finds first non-whitespace char (or code.endIndex) and returns its index
     var idx = idx
