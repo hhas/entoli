@@ -63,6 +63,7 @@ source = "When alarm rings: say “It's a beautiful morning!”, get up, make br
 //
 
 
+
 let LEXER_TEST = 0
 
 if LEXER_TEST != 0 { // print each token in source

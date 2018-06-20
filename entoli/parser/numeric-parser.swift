@@ -154,7 +154,7 @@ func readUTF8EncodedTextLiteral(_ code: ScriptChars, startIndex: ScriptIndex) ->
         case .emptyInput:
             isChar = false
         case .error:
-            return (.invalid(code[startIndex..<idx], .invalidCodePoint), idx)
+            return (.invalid(String(code[startIndex..<idx]), .invalidCodePoint), idx)
         }
     }
     return (.utf8EncodedString(String(result)), idx)
@@ -205,13 +205,13 @@ func readDecimalNumber(_ code: ScriptChars, startIndex: ScriptIndex, allowExpone
             repeat { // it's a decimal number, so scan to end of contiguous digits (fractional part)
                 idx = code.index(after: idx)
             } while idx < codeLength && gNumericDigits.contains(code[idx])
-            scalar = try! Scalar(double: code[firstDigitIndex..<idx], isNegative: isNegative)
+            scalar = try! Scalar(double: String(code[firstDigitIndex..<idx]), isNegative: isNegative)
         } else { // no digit after period (i.e. the period is an expression separator, not decimal separator), so it's a suffix-less integer
             idx = code.index(before: idx)
-            return (try! Scalar(int: code[firstDigitIndex..<idx], isNegative: isNegative), idx) // ...and return it, as we're done
+            return (try! Scalar(int: String(code[firstDigitIndex..<idx]), isNegative: isNegative), idx) // ...and return it, as we're done
         }
     } else {
-        scalar = try! Scalar(int: code[firstDigitIndex..<idx], isNegative: isNegative)
+        scalar = try! Scalar(int: String(code[firstDigitIndex..<idx]), isNegative: isNegative)
     } // else it's an integer/double with an exponent
 
     if idx < codeLength && allowExponent && gExponentSeparator.contains(code[idx]) { // check for possible exponent (if allowed)
@@ -234,7 +234,7 @@ func readDecimalNumber(_ code: ScriptChars, startIndex: ScriptIndex, allowExpone
                 case .overflow:              hasOverflow = true
                 }
             }
-            scalar = hasOverflow ? .overflow(code[startIndex..<endIndex], Double.self)  : .floatingPoint(result)
+            scalar = hasOverflow ? .overflow(String(code[startIndex..<endIndex]), Double.self)  : .floatingPoint(result)
         }
     }
     return (scalar, idx)
@@ -284,7 +284,7 @@ func readNumericWord(_ code: ScriptChars, startIndex: ScriptIndex, numericUnits:
     
     let numeric: Numeric
     switch scalar {
-    case .overflow(_, let t):   numeric = .invalid(code[startIndex..<idx], .overflow(t))
+    case .overflow(_, let t):   numeric = .invalid(String(code[startIndex..<idx]), .overflow(t))
     default:                    numeric = .number(scalar)
     }
     return (numeric, idx)
