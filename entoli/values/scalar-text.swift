@@ -196,13 +196,13 @@ typealias ScalarComparisonFunction = (Scalar, Scalar) throws -> Bool
 
 
 func +(lhs: Scalar, rhs: Scalar) throws -> Scalar {
-    return try scalarArithmeticOperation(lhs, rhs, intOperator: Int.addWithOverflow, doubleOperator: +)
+    return try scalarArithmeticOperation(lhs, rhs, intOperator: {(l:Int,r:Int) in l.addingReportingOverflow(r)}, doubleOperator: +)
 }
 func -(lhs: Scalar, rhs: Scalar) throws -> Scalar {
-    return try scalarArithmeticOperation(lhs, rhs, intOperator: Int.subtractWithOverflow, doubleOperator: -)
+    return try scalarArithmeticOperation(lhs, rhs, intOperator: {(l:Int,r:Int) in l.subtractingReportingOverflow(r)}, doubleOperator: -)
 }
 func *(lhs: Scalar, rhs: Scalar) throws -> Scalar {
-    return try scalarArithmeticOperation(lhs, rhs, intOperator: Int.multiplyWithOverflow, doubleOperator: *)
+    return try scalarArithmeticOperation(lhs, rhs, intOperator: {(l:Int,r:Int) in l.multipliedReportingOverflow(by: r)}, doubleOperator: *)
 }
 func /(lhs: Scalar, rhs: Scalar) throws -> Scalar {
     return try scalarArithmeticOperation(lhs, rhs, intOperator: nil, doubleOperator: /)
