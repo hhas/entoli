@@ -44,10 +44,10 @@ class List: Value { // TO DO: how best to constrain as array/dictionary/set? (pa
         return try self._expandAsList_(env, itemType: gAnyValueConstraint)
     }
     
-    // TO DO: passing itemType as separate param is kinda smelly; would be better to have ListConstraintProtocol; alternatively, might be best to get rid of returnType: entirely and let Constraint._coerce_ tag the returned Value, and Value.evaluate() rethrow with full error details
+    // TO DO: passing itemType as separate param is kinda smelly; would be better to have ListConstraintProtocol; alternatively, might be best to get rid of returnType: entirely and let Constraint.coerce tag the returned Value, and Value.evaluate() rethrow with full error details
     // TO DO: get rid of this and provide toArray() method instead? this'd leave calling Constraint to coerce each item, avoiding need to pass itemType (or returnType)
     override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
-        where ItemType: Constraint, ItemType: SwiftCast {
+        where ItemType: Constraint, ItemType: SwiftConstraint {
             return try self.items.map{try $0.evaluate(env, returnType: itemType)} // TO DO: FIX: this seems to be invoking Value base class methods, not Text methods
     }
     

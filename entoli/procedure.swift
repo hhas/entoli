@@ -20,7 +20,7 @@
 // TO DO: unpacking records should support use cases where first (e.g. 'target') arg is optional and the second is not, e.g. `forward 100`, where forward is defined as `forward {moving: optional turtle, by: length} -> turtle`; thus, `forward 10, turn 90, forward 20.` would operate on current default turtle, whereas `{name:"Bob", color:red}; forward 10; turn 90; forward 20.` would operate on a newly created turtle named "Bob" (the code editor being smart enough to recommend semi-colons [pipes] if the user didn't already include them herself).
 
 
-func evalRecordField<ReturnType: SwiftCast>(in fields: inout [Value], fieldStructure: (name: String, type: ReturnType), commandScope: Scope) throws -> ReturnType.SwiftType {
+func evalRecordField<ReturnType: SwiftConstraint>(in fields: inout [Value], fieldStructure: (name: String, type: ReturnType), commandScope: Scope) throws -> ReturnType.SwiftType {
 //    print("evalRecordField: `\(fieldStructure.name.keyString)` as \(fieldStructure.type), SwiftType=\(ReturnType.SwiftType.self)")
     let fieldValue: Value
     if fields.count > 0 {
@@ -41,7 +41,7 @@ func evalRecordField<ReturnType: SwiftCast>(in fields: inout [Value], fieldStruc
     }
  //   print("\nExpanding `\(fieldStructure.name)` field to \(fieldStructure.type): `\(fieldValue)`\n")
     do {
-        if fieldStructure.type is DoNotEvaluate { return fieldValue as! ReturnType.SwiftType } // TO DO: HACKY; also, what about ThunkConstraint and other deferreds? (e.g. Thunk needs to defer evaluation too; however, its _coerce_ method still needs to be called now so it can wrap the expr in a Thunk and return that.) The problem here is that the coercion needs to be in charge; right now it's ignored until it's used to coerce the last expr's result. Will need to check what Value.evaluate() methods are currently implemented.
+        if fieldStructure.type is DoNotEvaluate { return fieldValue as! ReturnType.SwiftType } // TO DO: HACKY; also, what about ThunkConstraint and other deferreds? (e.g. Thunk needs to defer evaluation too; however, its coerce method still needs to be called now so it can wrap the expr in a Thunk and return that.) The problem here is that the coercion needs to be in charge; right now it's ignored until it's used to coerce the last expr's result. Will need to check what Value.evaluate() methods are currently implemented.
         return try fieldValue.evaluate(commandScope, returnType: fieldStructure.type)
     } catch {
         throw MismatchedField(description: "Failed to coerce \(Name(fieldStructure.name)) field from \(type(of:fieldValue)) to \(fieldStructure.type): \(error)") // note: caller will need to catch and rethrow with additional error info (including both records) // TO DO: show value's constraint tag
@@ -70,7 +70,7 @@ class Procedure: CustomStringConvertible {
     
     // note: command and commandScope are intimately related, and might be worth binding the two together as a lightweight (Command,Scope) tuple; procedureScope is the scope within which the Procedure was stored
     
-    func call<ReturnType: SwiftCast>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType { // Q. what is commandScope exactly? (A. it's just args' lexical scope, supplied so sig's typespecs can coerce/eval those args)
+    func call<ReturnType: SwiftConstraint>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType { // Q. what is commandScope exactly? (A. it's just args' lexical scope, supplied so sig's typespecs can coerce/eval those args)
         // 1. get command.data (Record)
         // 2. apply that record to signature.data (Record) to create canonical args (dict? array? Record? what about labels? could all depend on primitive vs native Proc implementation), or throw BadCommand error if they can't be lined up (note: Constraints throw coercion error; mismatched fields would need to throw something else, e.g. BadName; these get caught and rethrown as BadCommand, though the real prize would be to allow these errors to be handled - either by `catching` clause or by user herself - without unspooling call stack)
         fatalNotYetImplemented(self, #function)
@@ -106,9 +106,9 @@ class PrimitiveProcedure: Procedure {
     
     // TO DO: need to review this, make sure scopes are used correctly
     // command scope allows proc to lazily evaluate its operands in their original scope; procedureScope allows proc to refer to slots within its own lexical scope
-    override func call<ReturnType>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType: SwiftCast, ReturnType: Constraint, ReturnType.SwiftType: Value {
+    override func call<ReturnType>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType: SwiftConstraint, ReturnType: Constraint, ReturnType.SwiftType: Value {
         let tmpValue = try self.function(command.argument.fields, commandScope, procedureScope)
-        return try tmpValue.evaluate(procedureScope, returnType: returnType) // TO DO: problem: how to intersect proc's returnType with with caller's requested returnType? (there is an implicit constraint here in that returnType's SwiftCast.SwiftType should always be Value)
+        return try tmpValue.evaluate(procedureScope, returnType: returnType) // TO DO: problem: how to intersect proc's returnType with with caller's requested returnType? (there is an implicit constraint here in that returnType's SwiftConstraint.SwiftType should always be Value)
     }
     
 
@@ -129,12 +129,12 @@ class NativeProcedure: Procedure {
     
     // TO DO: need to think about `yield` (the latter should be a feature of Closure [subclass?], which needs to capture proc's own body subscope instead of its lexical scope, and also provide some kind of `isEmpty` flag that is set once proc returns instead of yields; note that `return` command can probably implement optional `resumable` arg, avoiding need for a separate, less familiar, 'yield' command)
     
-    override func call<ReturnType>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType: Constraint, ReturnType: SwiftCast, ReturnType.SwiftType: Value {
+    override func call<ReturnType>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType: Constraint, ReturnType: SwiftConstraint, ReturnType.SwiftType: Value {
         let subEnv = procedureScope.makeSubScope()
         var arguments = command.argument.fields // TO DO: if command takes previous result as its first arg and/or has postfixed `do` block as its last arg, these will need to be passed too
         for (i, parameter) in self.signature.input.enumerated() {
             print("getting parameter \(i+1): \(parameter)")
-            let value = try evalRecordField(in: &arguments, fieldStructure: (parameter.name, parameter.type.intersect(gAnyValueConstraint, env: commandScope)), commandScope: commandScope) // TO DO: FIX; parameter.type is Constraint, but evalRecordField needs something that conforms to SwiftCast (which, conversely, parameter.type can't be cast to because it's generic); for now we cheat it by doing a redundant intersect whose only real , but this is hardly ideal; one option might be to define a 'native coercion' wrapper for primitive coercions that hooks their expand/coerce methods to their wrap methods, but even that will probably complain
+            let value = try evalRecordField(in: &arguments, fieldStructure: (parameter.name, parameter.type.intersect(gAnyValueConstraint, env: commandScope)), commandScope: commandScope) // TO DO: FIX; parameter.type is Constraint, but evalRecordField needs something that conforms to SwiftConstraint (which, conversely, parameter.type can't be cast to because it's generic); for now we cheat it by doing a redundant intersect whose only real , but this is hardly ideal; one option might be to define a 'native coercion' wrapper for primitive coercions that hooks their expand/coerce methods to their wrap methods, but even that will probably complain
             try subEnv.store(parameter.name, value: value)
         }
         if arguments.count > 0 { throw BadArgument(description: "Unrecognized extra argument(s): \(arguments)") }

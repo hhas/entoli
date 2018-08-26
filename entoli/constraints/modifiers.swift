@@ -10,11 +10,11 @@
 // no-op
 
 
-class DoNotEvaluate: Constraint, SwiftCast, NativeConstraint { // no-op; unlike AnyValueConstraint, which expands a value to its own choice of type, this immediately returns value without any evaluation; e.g. for use in primitive procedures that want to do their own thing
+class DoNotEvaluate: Constraint, SwiftConstraint, NativeConstraint { // no-op; unlike AnyValueConstraint, which expands a value to its own choice of type, this immediately returns value without any evaluation; e.g. for use in primitive procedures that want to do their own thing
     
     typealias SwiftType = Value
     
-    override var defersExpansion: Bool { return true }
+    var defersExpansion: Bool { return true }
     
     let type: Constraint
     
@@ -22,7 +22,7 @@ class DoNotEvaluate: Constraint, SwiftCast, NativeConstraint { // no-op; unlike 
         self.type = type
     }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func coerce(_ value: Value, env: Scope) throws -> Value {
         return value
     }
 }
@@ -35,7 +35,7 @@ typealias ExpressionConstraint = DoNotEvaluate // TO DO: need to decide namings
 // thunk
 
 
-class ThunkConstraint: Constraint, SwiftCast, NativeConstraint { // aka `lazy`
+class ThunkConstraint: Constraint, SwiftConstraint, NativeConstraint { // aka `lazy`
     
     typealias SwiftType = Thunk
     
@@ -45,11 +45,11 @@ class ThunkConstraint: Constraint, SwiftCast, NativeConstraint { // aka `lazy`
         self.type = type
     }
     
-    override var defersExpansion: Bool { return true }
+    var defersExpansion: Bool { return true }
     
     override func defaultValue(_ env: Scope) throws -> Value { return try self.type.defaultValue(env) }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> Value {
+    func coerce(_ value: Value, env: Scope) throws -> Value {
         return Thunk(value: value, env: env, type: self.type) // TO DO: context?
     }
     
@@ -60,8 +60,8 @@ class ThunkConstraint: Constraint, SwiftCast, NativeConstraint { // aka `lazy`
 // optional values
 
 
-class MayBeNothing<ReturnType>: Constraint, SwiftCast, NativeConstraint
-        where ReturnType: Constraint, ReturnType: SwiftCast, ReturnType.SwiftType: Value {
+class MayBeNothing<ReturnType>: Constraint, SwiftConstraint, NativeConstraint
+        where ReturnType: Constraint, ReturnType: SwiftConstraint, ReturnType.SwiftType: Value {
     
     typealias SwiftType = Value
     
@@ -71,9 +71,9 @@ class MayBeNothing<ReturnType>: Constraint, SwiftCast, NativeConstraint
         self.type = type
     }
     
-    override var defersExpansion: Bool { return self.type.defersExpansion }
+    var defersExpansion: Bool { return self.type.defersExpansion }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func coerce(_ value: Value, env: Scope) throws -> Value {
         do {
             return try value.evaluate(env, returnType: self.type)
         } catch ExpansionError.nullValue {
@@ -83,7 +83,7 @@ class MayBeNothing<ReturnType>: Constraint, SwiftCast, NativeConstraint
 }
 
 
-class MayBeNil<ReturnType>: Constraint, SwiftCast where ReturnType: Constraint, ReturnType: SwiftCast {
+class MayBeNil<ReturnType>: Constraint, SwiftConstraint where ReturnType: Constraint, ReturnType: SwiftConstraint {
     
     typealias SwiftType = Optional<ReturnType.SwiftType>
     
@@ -93,9 +93,9 @@ class MayBeNil<ReturnType>: Constraint, SwiftCast where ReturnType: Constraint, 
         self.type = type
     }
     
-    override var defersExpansion: Bool { return self.type.defersExpansion }
+    var defersExpansion: Bool { return self.type.defersExpansion }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType {
         do {
             return Optional.some(try value.evaluate(env, returnType: self.type))
         } catch ExpansionError.nullValue {
@@ -103,9 +103,9 @@ class MayBeNil<ReturnType>: Constraint, SwiftCast where ReturnType: Constraint, 
         }
     }
     
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value {
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value {
         switch rawValue {
-        case .some(let v): return try self.type.wrap(v, env: env)
+        case .some(let v): return try self.type.pack(v, env: env)
         case .none:               return gNullValue
         }
     }
@@ -116,7 +116,7 @@ class MayBeNil<ReturnType>: Constraint, SwiftCast where ReturnType: Constraint, 
 
 // TO DO: this should use NativeConstraint where ReturnType.SwiftType:Value
 
-class DefaultValue<ReturnType>: Constraint, SwiftCast where ReturnType: Constraint, ReturnType: SwiftCast {
+class DefaultValue<ReturnType>: Constraint, SwiftConstraint where ReturnType: Constraint, ReturnType: SwiftConstraint {
     
     typealias SwiftType = ReturnType.SwiftType
     
@@ -128,9 +128,9 @@ class DefaultValue<ReturnType>: Constraint, SwiftCast where ReturnType: Constrai
         self.value = value
     }
     
-    override var defersExpansion: Bool { return self.type.defersExpansion }
+    var defersExpansion: Bool { return self.type.defersExpansion }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType {
         var expandedValue: SwiftType
         do {
             expandedValue = try value.evaluate(env, returnType: self.type)
@@ -154,21 +154,21 @@ class DefaultValue<ReturnType>: Constraint, SwiftCast where ReturnType: Constrai
         return expandedValue
     }
     
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value {
-        return try self.type.wrap(rawValue, env: env)
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value {
+        return try self.type.pack(rawValue, env: env)
     }
 }
 
 
 // TO DO: ditto
-class Precis<ReturnType>: Constraint, SwiftCast where ReturnType: Constraint, ReturnType: SwiftCast { // provides a custom description of Constraint object for documentation purposes
+class Precis<ReturnType>: Constraint, SwiftConstraint where ReturnType: Constraint, ReturnType: SwiftConstraint { // provides a custom description of Constraint object for documentation purposes
     
     typealias SwiftType = ReturnType.SwiftType
     
     let type: ReturnType
     let _description: String
     
-    override var defersExpansion: Bool { return self.type.defersExpansion }
+    var defersExpansion: Bool { return self.type.defersExpansion }
     
     override var description: String { return self._description }
     
@@ -177,12 +177,12 @@ class Precis<ReturnType>: Constraint, SwiftCast where ReturnType: Constraint, Re
         self._description = description
     }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType {
         return try value.evaluate(env, returnType: self.type)
     }
     
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value {
-        return try self.type.wrap(rawValue, env: env)
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value {
+        return try self.type.pack(rawValue, env: env)
     }
 }
 

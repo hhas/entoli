@@ -49,8 +49,8 @@ class Pair: Value { // TO DO: use generic Pair<KeyT,ValueT> rather than subclass
     
     // TO DO: would it be possible/practical to parameterize on returnType? (this'd require all _expand... methods to be generics, but assuming it'd work could likely provide a much tidier API since everything could be done using that)
     override func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType) throws -> Pair
-        where KeyType: Constraint, KeyType: SwiftCast, KeyType.SwiftType: Value,
-        ValueType: Constraint, ValueType: SwiftCast, ValueType.SwiftType: Value {
+        where KeyType: Constraint, KeyType: SwiftConstraint, KeyType.SwiftType: Value,
+        ValueType: Constraint, ValueType: SwiftConstraint, ValueType.SwiftType: Value {
             return try Pair(self.key.evaluate(env, returnType: keyType), self.value.evaluate(env, returnType: valueType))
     }
     
@@ -59,7 +59,7 @@ class Pair: Value { // TO DO: use generic Pair<KeyT,ValueT> rather than subclass
     }
     
     override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-        where ReturnType: Constraint, ReturnType: SwiftCast {
+        where ReturnType: Constraint, ReturnType: SwiftConstraint {
             // TO DO: how should this work? (or is it coercion's job to state whether key should be treated as a literal name, or a command, or whatever?)
             fatalNotYetImplemented(self, #function)
     }
@@ -131,7 +131,7 @@ class Record: Value { // roughly analogous to struct, though with different shar
     }
     
     override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
-        where ItemType: Constraint, ItemType: SwiftCast, ItemType.SwiftType: Value { // TO DO: as with List._expandAsRecord_(), this may be a bit janky
+        where ItemType: Constraint, ItemType: SwiftConstraint, ItemType.SwiftType: Value { // TO DO: as with List._expandAsRecord_(), this may be a bit janky
             return try self.fields.map{try $0.evaluate(env, returnType: itemType)}
     }
     

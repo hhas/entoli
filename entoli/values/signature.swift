@@ -15,7 +15,7 @@ typealias ReturnType = Constraint
 // 
 
 
-class ProxyConstraint: Constraint, SwiftCast { // wrapper for a coercion constructor Command that has yet to be evaluated; allows a signature to be constructed without an environment being available to construct the specified Constraint instance at the time; subsequently using or evaluating the ProxyConstraint wrapper will evaluate the constructor command to give the actual Constraint to be used
+class ProxyConstraint: Constraint, SwiftConstraint { // wrapper for a coercion constructor Command that has yet to be evaluated; allows a signature to be constructed without an environment being available to construct the specified Constraint instance at the time; subsequently using or evaluating the ProxyConstraint wrapper will evaluate the constructor command to give the actual Constraint to be used
     
     typealias SwiftType = Value
     
@@ -38,7 +38,7 @@ class ProxyConstraint: Constraint, SwiftCast { // wrapper for a coercion constru
 
     // when used as a Constraint, the command is evaluated to obtain the Constraint object which is then used as its result
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: problematic as force()'s result isn't SwiftCast
+    func coerce(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: problematic as force()'s result isn't SwiftConstraint
         fatalNotYetImplemented(self, #function)
         //return try value.evaluate(env, returnType: self.force(env))
     }
@@ -61,7 +61,7 @@ class FieldSignature: Pair {
     let name: Name
     let type: Constraint
     
-    init(_ key: Name, _ value: Constraint) { // problem: really needs to be SwiftCast, with SwiftType: Value; however, we can't make class generic as arrays of field sigs are always mixed; TO DO: use NativeConstraint instead? (this will require all coercions to implement `nativeConstraint` var)
+    init(_ key: Name, _ value: Constraint) { // problem: really needs to be SwiftConstraint, with SwiftType: Value; however, we can't make class generic as arrays of field sigs are always mixed; TO DO: use NativeConstraint instead? (this will require all coercions to implement `nativeConstraint` var)
         self.name = key
         self.type = value
         super.init(key, value) // TO DO: kludgy

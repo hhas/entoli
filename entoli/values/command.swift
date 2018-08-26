@@ -10,7 +10,7 @@ import Foundation
 //**********************************************************************
 // name
 
-// TO DO: ideally generic procs shouldn't have to include `Constraint` requirement, only `SwiftCast`/`NativeConstraint` protocol: if a constraint needs to be stored in a property, convert it to a `NativeConstraint` first (storing it as a `Constraint` is semi-useless anyway, as it severely limits what can be done with it, and is effectively useless for tagging Values as it'll need to be converted to a native constraint before it can be used - assuming it can be easily boxed, that conversion can still be deferred at cost of an extra object alloc that can be ameliorated anyway thru caching...or just go straight to native constraint, which costs the same, where available, and treat any coercions that don't have native equivalents as opaque and have an OpaqueValue for representing them, which should do the same thing; the only issue being unpacking them again which is a pig when they're a generic type as those aren't amenable to casts where exact type isn't known)
+// TO DO: ideally generic procs shouldn't have to include `Constraint` requirement, only `SwiftConstraint`/`NativeConstraint` protocol: if a constraint needs to be stored in a property, convert it to a `NativeConstraint` first (storing it as a `Constraint` is semi-useless anyway, as it severely limits what can be done with it, and is effectively useless for tagging Values as it'll need to be converted to a native constraint before it can be used - assuming it can be easily boxed, that conversion can still be deferred at cost of an extra object alloc that can be ameliorated anyway thru caching...or just go straight to native constraint, which costs the same, where available, and treat any coercions that don't have native equivalents as opaque and have an OpaqueValue for representing them, which should do the same thing; the only issue being unpacking them again which is a pig when they're a generic type as those aren't amenable to casts where exact type isn't known)
 
 
 // TO DO: LiteralName? this'd allow us to distinguish a Name that MAY BE evaled as an arg-less command, when in an applicable context (e.g. exprseq), vs a Name that MUST always eval as a name (e.g. record field name). Note that most of the fuzziness centers around LHS of Pair values. Might even be worth putting the onus on Pair.
@@ -108,7 +108,7 @@ class Command: Value {
     override func _expandAsConstraint_(_ env: Scope) throws -> Constraint { return try self.evaluate(env, returnType: gTypeConstraint) } // hmmm…
     
     override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-        where ReturnType: Constraint, ReturnType: SwiftCast {
+        where ReturnType: Constraint, ReturnType: SwiftConstraint {
             // TO DO: this isn't quite right, e.g. if returnType is `gCommandConstraint`, it should return self; if returnType is `ThunkConstraint`, should the entire command be deferred, including proc lookup, or should the proc be looked up now and stored as a closure that is invoked when the thunk is forced? etc.
             return try env.callProcedure(self, commandScope: env, returnType: returnType)
     }

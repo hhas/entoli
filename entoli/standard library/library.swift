@@ -22,7 +22,7 @@
 
 // one thing to remember is that primitive funcs should be pure Swift logic - no glue code - so that compiler can emit Swift code just by chaining primitive funcs together when there is sufficient entoli type info to eliminate intermediate Value boxing and unboxing (Q. what about inlining and/or ability to output source code directly?)
 
-// TO DO: how/where to merge proc's returnType with caller's required type (Q. how? making this a generic func screws up class wrapper; making return type Any might avoid the problem); might be best if Constraint.union() always returns a NativeSwiftCast, and have that return an opaque value that is easily unwrapped, e.g. if caller wants Array<Int> and func's return type is ListType(itemType:IntegerType()), we don't want to wrap and unwrap every single item
+// TO DO: how/where to merge proc's returnType with caller's required type (Q. how? making this a generic func screws up class wrapper; making return type Any might avoid the problem); might be best if Constraint.union() always returns a NativeSwiftConstraint, and have that return an opaque value that is easily unwrapped, e.g. if caller wants Array<Int> and func's return type is ListType(itemType:IntegerType()), we don't want to wrap and unwrap every single item
 
 // note: one issue with library-defined operators is that scripts won't parse/format correctly unless those libraries are present (or at least their operator definitions, which should exist as part of the documentation; suggesting the problem might be ameliorated by library repository making that documentation available even when [e.g. commercial] libraries aren't; another option, of course, is to reduce scripts to command-only format for exchange, although that isn't good for readability; yet another option is to copy custom operator definitions to script's header for reference, thereby at least localizing the ugliness)
 
@@ -52,14 +52,14 @@ extension PrimitiveProcedure { // convenience constructors for standard math ope
     }
     
     convenience init<ReturnType>(name: String, function: @escaping ((Scalar, Scalar) throws -> ReturnType.SwiftType), returnType: ReturnType)
-                                                                                        where ReturnType: Constraint, ReturnType: SwiftCast {
+                                                                                        where ReturnType: Constraint, ReturnType: SwiftConstraint {
         let signature = ProcedureSignature(name: name, input: PrimitiveProcedure.scalarInfixParameterType, output: returnType)
         func wrapperFunction(_ arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
             var arguments = arguments
             let arg1 = try evalRecordField(in: &arguments, fieldStructure: (gLeftOperandKeyString, gScalarConstraint), commandScope: commandScope)
             let arg2 = try evalRecordField(in: &arguments, fieldStructure: (gRightOperandKeyString, gScalarConstraint), commandScope: commandScope)
             if arguments.count > 0 { throw BadArgument(description: "Too many arguments(s): \(arguments)") }
-            return try returnType.wrap(try function(arg1, arg2), env: procedureScope)
+            return try returnType.pack(try function(arg1, arg2), env: procedureScope)
         }
         self.init(signature: signature, procScope: .none, function: wrapperFunction)
     }
@@ -151,7 +151,7 @@ private func storeValue_proc(_ arguments: [Value], commandScope: Scope, procedur
         throw ProcedureError(name: storeValue_name, arguments: arguments,
                              commandScope: commandScope, procedureScope: procedureScope, originalError: error)
     }
-    return gNullValue // generated line (note: if the primitive func returns a result, it'll be wrapped as a Value here using `storeValue_output.wrap()`; if not, the gNullValue constant is returned)
+    return gNullValue // generated line (note: if the primitive func returns a result, it'll be wrapped as a Value here using `storeValue_output.pack()`; if not, the gNullValue constant is returned)
 }
 
 private let storeValue_signature = ProcedureSignature(name: storeValue_name,

@@ -31,25 +31,25 @@ class TextConstraintBase: Constraint { // implements logic common to both native
 //
 
 
-class TextConstraint: TextConstraintBase, SwiftCast, NativeConstraint {
+class TextConstraint: TextConstraintBase, SwiftConstraint, NativeConstraint {
     
     typealias SwiftType = Text
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func coerce(_ value: Value, env: Scope) throws -> Value {
         return try super._coerce(value, env: env)
     }
 }
 
 
-class StringConstraint: TextConstraintBase, SwiftCast {
+class StringConstraint: TextConstraintBase, SwiftConstraint {
     
     typealias SwiftType = String
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType {
         return try super._coerce(value, env: env).string
     }
     
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value {
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value {
         if self.nonEmpty && rawValue == "" {
             throw ConstraintError(value: Text(rawValue), constraint: self, description: "Empty text is not allowed.")
         }
@@ -78,7 +78,7 @@ class StringConstraint: TextConstraintBase, SwiftCast {
  
  // note: will need two inits - one that takes Ints, one that takes Doubles; one possibility might be to put range check on Scalar, and just pass min and max as Scalars too (that means less wrapping/unwrapping when constructing this coercion via command)
  
- func _coerce_(value: Value, env: Scope) throws -> Value {
+ func coerce(value: Value, env: Scope) throws -> Value {
  // TO DO: eval
  }
  
@@ -93,7 +93,7 @@ class StringConstraint: TextConstraintBase, SwiftCast {
  */
 
 
-class ScalarConstraint: Constraint, SwiftCast {
+class ScalarConstraint: Constraint, SwiftConstraint {
     
     typealias SwiftType = Scalar
     
@@ -116,13 +116,13 @@ class ScalarConstraint: Constraint, SwiftCast {
     
     override func defaultValue(_ env: Scope) throws -> Value { return Text("0") }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType {
         let rawValue: SwiftType = try value._expandAsText_(env).toScalar()
         if try !self.rangeConstraint(rawValue) { throw ConstraintError(value: value, constraint: self, description: "Out of range.") }
         return rawValue
     }
     
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value {
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value {
         if try !self.rangeConstraint(rawValue) { throw ConstraintError(value: Text(String(describing: rawValue)), constraint: self, description: "Out of range.") }
         let text = Text(rawValue.literalRepresentation())
         text.annotations.append(rawValue)
@@ -134,7 +134,7 @@ class ScalarConstraint: Constraint, SwiftCast {
 // Swift primitives
 
 
-class IntConstraint: Constraint, SwiftCast {
+class IntConstraint: Constraint, SwiftConstraint {
     
     typealias SwiftType = Int
     
@@ -155,13 +155,13 @@ class IntConstraint: Constraint, SwiftCast {
     
     override func defaultValue(_ env: Scope) throws -> Value { return Text("0") }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType {
         let rawValue: SwiftType = try value._expandAsText_(env).toScalar().toInt()
         if !self.rangeConstraint(rawValue) { throw ConstraintError(value: value, constraint: self, description: "Out of range.") }
         return rawValue
     }
     
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value {
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value {
         let scalar = Scalar(rawValue)
         let text = Text(scalar.literalRepresentation()) // TO DO: add convenience constructor to Text that takes Scalar and annotates automatically
         text.annotations.append(scalar)
@@ -171,7 +171,7 @@ class IntConstraint: Constraint, SwiftCast {
 }
 
 
-class DoubleConstraint: Constraint, SwiftCast {
+class DoubleConstraint: Constraint, SwiftConstraint {
     
     typealias SwiftType = Double
     
@@ -192,13 +192,13 @@ class DoubleConstraint: Constraint, SwiftCast {
     
     override func defaultValue(_ env: Scope) throws -> Value { return Text("0.0") }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType {
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType {
         let rawValue = try value._expandAsText_(env).toScalar().toDouble()
         if !self.rangeConstraint(rawValue) || rawValue == Double.infinity { throw ConstraintError(value: value, constraint: self, description: "Out of range.") }
         return rawValue
     }
     
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value {
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value {
         let scalar = Scalar(rawValue)
         let text = Text(scalar.literalRepresentation())
         text.annotations.append(scalar)

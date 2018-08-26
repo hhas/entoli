@@ -12,7 +12,7 @@ import Foundation
 
 // TO DO: what about implementing `evaluate()->Value` funcs as dynamic alternative to the static `evaluate<ReturnType>()->ReturnType.SwiftType`?
 
-// TO DO: what about implementing NativeConstraint protocol that can be used as parameter type instead of `Constraint` (which can't coerce) and `SwiftCast` (which requires generics)
+// TO DO: what about implementing NativeConstraint protocol that can be used as parameter type instead of `Constraint` (which can't coerce) and `SwiftConstraint` (which requires generics)
 
 
 // TO DO: if/when Swift supports `override` in extensions, move cast and evaluation methods to extensions
@@ -76,12 +76,12 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
     }
     // TO DO: need _expandAsTuplePair_, and implement _expandAsPair_ based on that
     func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType) throws -> Pair
-                                            where KeyType: Constraint, KeyType: SwiftCast, KeyType.SwiftType: Value,
-                                                ValueType: Constraint, ValueType: SwiftCast, ValueType.SwiftType: Value {
+                                            where KeyType: Constraint, KeyType: SwiftConstraint, KeyType.SwiftType: Value,
+                                                ValueType: Constraint, ValueType: SwiftConstraint, ValueType.SwiftType: Value {
         throw ExpansionError.unsupportedType
     }
     func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
-                                    where ItemType: Constraint, ItemType: SwiftCast {
+                                    where ItemType: Constraint, ItemType: SwiftConstraint {
         return [try self.evaluate(env, returnType: itemType)]
     }
     func _expandAsList_(_ env: Scope, itemType: NativeConstraint) throws -> List {
@@ -105,15 +105,15 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
     // Value.evaluate() is the standard entry point for evaluating any given value // TO DO: rename `evaluate(as returnType: ReturnType, in env: Scope)`?
     // TO DO: evaluate methods should check if value already contains cached representation for the given returnType
     // TO DO: evaluate methods should trap coercion sub-errors and rethrow as permanent ConstraintError (Q. should they also rethrow chained ConstraintErrors to provide full trace to failed item, e.g. in lists and records?)
-    func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: SwiftCast {
-        return try returnType._coerce_(self, env: env)
+    func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: SwiftConstraint {
+        return try returnType.unpack(self, env: env)
     }
     func evaluate(_ env: Scope, returnType: NativeConstraint) throws -> Value {
         
         print("TO DO: can't currently evaluate \(self) as \(returnType). Need to rework NativeConstraint for Swift4.")
         
         throw ExpansionError.unsupportedType // TO DO: fix NativeConstraint support and re-enable
-        // return try returnType._coerce_(self, env: env)
+        // return try returnType.coerce(self, env: env)
     }
 }
 
@@ -183,7 +183,7 @@ class ExpressionBlock: Value { // TO DO: can/should these be omitted where not n
     // TO DO: another possibility is to define _evaluateAsProcedureCall_ (_callAsProcedure_? _call_?) on all Values, which this method can then call, providing the necessary clue about how to deal with pairs and other non-commands; unlike _expandAsCommand_ (which is really only useful for coercing Name to Command, and throwing error if it's anything else... although strictly speaking an expression group should maybe also coerce to Command, as it's just a collection of the things and should be more or less transparent from runtime's POV, c.f. kiwi's composite commands)
     
     override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-                                        where ReturnType: Constraint, ReturnType: SwiftCast {
+                                        where ReturnType: Constraint, ReturnType: SwiftConstraint {
         // TO DO: how should returnType.defersExpansion be handled? should it apply to entire expression, or just to final result? (bear in mind that some coercions, e.g. `as expression`, need to do non-standard processing of values; it may be that `as` operator should check RH operand's Constraint.defersExpansion itself before doing anything with LH operand); for now, probably just do the simplest thing that gets stuff working
         var result: Value = gNullValue
         for expression in self.expressions {
@@ -195,7 +195,7 @@ class ExpressionBlock: Value { // TO DO: can/should these be omitted where not n
             }
             print("RESULT: \(result)")
         }
-        return try returnType._coerce_(result, env: env) // TO DO: returnType needs to be provided to last expression
+        return try returnType.unpack(result, env: env) // TO DO: returnType needs to be provided to last expression
     }
 }
 

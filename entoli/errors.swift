@@ -112,7 +112,7 @@ struct ConstraintError: Error {
 }
 
 
-enum ExpansionError: Error { // transient errors raised by Value._expandAsTYPE_() methods; should be caught and rethrown as permanent ConstraintError by Value.evaluate() if not handled in meantime (e.g. `DefaultValue._coerce_()` will catch `.nullValue` and return a default value instead)
+enum ExpansionError: Error { // transient errors raised by Value._expandAsTYPE_() methods; should be caught and rethrown as permanent ConstraintError by Value.evaluate() if not handled in meantime (e.g. `DefaultValue.coerce()` will catch `.nullValue` and return a default value instead)
     case nullValue // `Null` value always throws this on expansion; may be intercepted by DefaultValue/MayBeNothing/MayBeNil<T>
     case unsupportedType // can't coerce to the specified type (e.g. lossy coercions such as List->Text are always disallowed)
     case failedConstraint(String) // value coerced to the required type but failed an additional constraint requirement (e.g. List contained more than ListConstraint.max items) // TO DO: how best to pass error details? as string, or as a more complex introspectable object?

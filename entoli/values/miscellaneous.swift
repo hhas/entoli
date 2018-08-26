@@ -30,12 +30,12 @@ class NullValue: Value { // TO DO: need to think about how 'constant' names work
     
     // TO DO: simplify sig by grouping key and value types into tuple
     override func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType) throws -> Pair
-        where KeyType: Constraint, KeyType: SwiftCast, KeyType.SwiftType: Value,
-        ValueType: Constraint, ValueType: SwiftCast, ValueType.SwiftType: Value {
+        where KeyType: Constraint, KeyType: SwiftConstraint, KeyType.SwiftType: Value,
+        ValueType: Constraint, ValueType: SwiftConstraint, ValueType.SwiftType: Value {
             throw ExpansionError.nullValue
     }
     override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
-        where ItemType: Constraint, ItemType: SwiftCast {
+        where ItemType: Constraint, ItemType: SwiftConstraint {
             throw ExpansionError.nullValue
     }
     override func _expandAsRecord_(_ env: Scope) throws -> Record { throw ExpansionError.nullValue }
@@ -66,11 +66,11 @@ class Thunk: Value { // TO DO: memoize? (kinda depends on difference between `as
     }
     
     override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-        where ReturnType: Constraint, ReturnType: SwiftCast {
+        where ReturnType: Constraint, ReturnType: SwiftConstraint {
             if returnType.defersExpansion {
-                return try returnType._coerce_(self, env: self.env)
+                return try returnType.unpack(self, env: self.env)
             } else {
-                return try self.type.intersect(returnType, env: self.env)._coerce_(self.value, env: env)
+                return try self.type.intersect(returnType, env: self.env).unpack(self.value, env: env)
             }
     }
 }

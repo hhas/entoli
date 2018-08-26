@@ -31,7 +31,7 @@ enum Slot {
     // TO DO: how to represent an overloaded proc? should it be possible to define overloads in sub-frames without masking those in parents? simplest option would be to require all overloads defined in same frame, and store as UnboundProcedure(OverloadedProcedure), which provides a transparent dispatch wrapper around them all
     
     func call<ReturnType>(_ command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-                            where ReturnType: Constraint, ReturnType: SwiftCast {
+                            where ReturnType: Constraint, ReturnType: SwiftConstraint {
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         switch self {
         case .storedValue(let value):
@@ -39,7 +39,7 @@ enum Slot {
                 throw BadArgument(description: "The following \(command.name) command contained an argument where nothing was expected:\n\n\t\(command).\n\n(Tip: procedures such as \(command.name) that return stored values never take arguments.)")// TO DO: need to nail down jargon: a command can have only zero or one arguments
             }
             print("GET \(command) -> \(value)")
-            return try value.evaluate(procedureScope, returnType: returnType) //._coerce_(value, env: procedureScope)
+            return try value.evaluate(procedureScope, returnType: returnType) //.coerce(value, env: procedureScope)
         case .unboundProcedure(let procedure):
             return try procedure.call(command, returnType: returnType, commandScope: commandScope, procedureScope: procedureScope)
         case .encapsulatedProcedure(let closure):
@@ -141,7 +141,7 @@ class Scope: CustomStringConvertible {
     
     
     func callProcedure<ReturnType>(_ command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-                                    where ReturnType: Constraint, ReturnType: SwiftCast {
+                                    where ReturnType: Constraint, ReturnType: SwiftConstraint {
         let (slot, procedureScope) = try self.procedure(command.name)
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         return try slot.call(command, commandScope: commandScope, procedureScope: procedureScope, returnType: returnType)

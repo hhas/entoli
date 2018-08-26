@@ -8,7 +8,7 @@
 //**********************************************************************
 
 
-class ArrayConstraint<ItemConstraint>: Constraint, SwiftCast where ItemConstraint: Constraint, ItemConstraint: SwiftCast {
+class ArrayConstraint<ItemConstraint>: Constraint, SwiftConstraint where ItemConstraint: Constraint, ItemConstraint: SwiftConstraint {
     
     typealias SwiftType = [ItemConstraint.SwiftType]
     
@@ -24,9 +24,9 @@ class ArrayConstraint<ItemConstraint>: Constraint, SwiftCast where ItemConstrain
     
     override func defaultValue(_ env: Scope) throws -> Value { return List() }
     
-    // func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType] where ItemType: Constraint, ItemType: SwiftCast
+    // func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType] where ItemType: Constraint, ItemType: SwiftConstraint
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: implement
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: implement
         fatalNotYetImplemented(self, #function)
         // TO DO: use `toArray()->[Value]` instead, then expand items here?
         /*
@@ -43,22 +43,22 @@ class ArrayConstraint<ItemConstraint>: Constraint, SwiftCast where ItemConstrain
 
 extension ArrayConstraint { // deep-wrap rawValue array when it contains non-Value elements (this is recursive so may take some time on large collections of Swift values) // TO DO: might be worth shallow-wrapping large data structures and only wrap individual items if/when they are actually used
     
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value {
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value {
         // TO DO: need to catch and rethrow temporary errors (e.g. NullConstraintError) as permanent coercion errors; ditto elsewhere
-        return List(items: try rawValue.map{try self.itemType.wrap($0, env: env)}) //, itemType: self.itemType) // TO DO: need NativeConstraint for itemType parameter // TO DO: should annotated type always be converted to fully native Constraint? or can/should that be left till first time it's actually used?
+        return List(items: try rawValue.map{try self.itemType.pack($0, env: env)}) //, itemType: self.itemType) // TO DO: need NativeConstraint for itemType parameter // TO DO: should annotated type always be converted to fully native Constraint? or can/should that be left till first time it's actually used?
     }
 }
 
 extension ArrayConstraint where ItemConstraint.SwiftType: Value { // shallow-wrap rawValue array when it contains Value elements
     
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value {
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value {
         return List(items: rawValue) //, itemType: self.itemType) // TO DO: need NativeConstraint for itemType parameter
     }
     
 }
 
 
-class ListConstraint: Constraint, SwiftCast, NativeConstraint {
+class ListConstraint: Constraint, SwiftConstraint, NativeConstraint {
     
     typealias SwiftType = List
     
@@ -74,9 +74,9 @@ class ListConstraint: Constraint, SwiftCast, NativeConstraint {
     
     override func defaultValue(_ env: Scope) throws -> Value { return List() }
     
-    // func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType] where ItemType: Constraint, ItemType: SwiftCast
+    // func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType] where ItemType: Constraint, ItemType: SwiftConstraint
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: implement
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: implement
         return try value._expandAsList_(env, itemType: self.itemType)
     }
     
@@ -90,8 +90,8 @@ class ListConstraint: Constraint, SwiftCast, NativeConstraint {
 //
 
 
-class TuplePairConstraint<KeyConstraint, ValueConstraint>: Constraint, SwiftCast
-        where KeyConstraint: Constraint, KeyConstraint: SwiftCast, ValueConstraint: Constraint, ValueConstraint: SwiftCast {
+class TuplePairConstraint<KeyConstraint, ValueConstraint>: Constraint, SwiftConstraint
+        where KeyConstraint: Constraint, KeyConstraint: SwiftConstraint, ValueConstraint: Constraint, ValueConstraint: SwiftConstraint {
     
     typealias SwiftType = (KeyConstraint.SwiftType, ValueConstraint.SwiftType)
     
@@ -103,27 +103,30 @@ class TuplePairConstraint<KeyConstraint, ValueConstraint>: Constraint, SwiftCast
         self.right = right
     }
     
-    func _coerce_(_ value: Value, env: Scope) throws -> SwiftType { // returns a 2-item tuple
+    func unpack(_ value: Value, env: Scope) throws -> SwiftType { // returns a 2-item tuple
         // try value.asPair()
         fatalNotYetImplemented(self, #function) // TO DO: implement
     }
     
-    
-    func wrap(_ rawValue: SwiftType, env: Scope) throws -> Value { // TO DO: is this right?
-        return try Pair(self.left.wrap(rawValue.0, env: env), self.right.wrap(rawValue.1, env: env))
+    func pack(_ rawValue: SwiftType, env: Scope) throws -> Value { // TO DO: is this right?
+        return try Pair(self.left.pack(rawValue.0, env: env), self.right.pack(rawValue.1, env: env))
     }
     
 }
 
 
 class PairConstraint<KeyConstraint, ValueConstraint>: TuplePairConstraint<KeyConstraint, ValueConstraint>, NativeConstraint
-        where KeyConstraint: Constraint, KeyConstraint: SwiftCast, KeyConstraint.SwiftType: Value,
-ValueConstraint: Constraint, ValueConstraint: SwiftCast, ValueConstraint.SwiftType: Value {
+        where KeyConstraint: Constraint, KeyConstraint: SwiftConstraint, KeyConstraint.SwiftType: Value,
+ValueConstraint: Constraint, ValueConstraint: SwiftConstraint, ValueConstraint.SwiftType: Value {
     
     typealias SwiftType = Pair
     
-    func _coerce_(_ value: Value, env: Scope) throws -> Pair {
-        return try self.wrap(super._coerce_(value, env: env), env: env) as! Pair
+    func unpack(_ value: Value, env: Scope) throws -> Pair {
+        return try self.pack(super.unpack(value, env: env), env: env) as! Pair
+    }
+    
+    func coerce(_ value: Value, env: Scope) throws -> Value {
+        return try self.unpack(value, env: env)
     }
 }
 

@@ -3,9 +3,9 @@
 
 // given a value and required result type -> EVALUATE -> result of type Constraint.SwiftType
 //
-//    Scope.evaluate() -> Constraint._coerce_() -> Value._expandAs...()_ // for simple values
+//    Scope.evaluate() -> Constraint.coerce() -> Value._expandAs...()_ // for simple values
 //
-//    Scope.evaluate() -> ThunkConstraint._coerce_() -> Thunk(); Thunk.evaluate() -> Constraint.intersect() -> Constraint._coerce_() -> Value._expandAs...()_ // for thunks
+//    Scope.evaluate() -> ThunkConstraint.coerce() -> Thunk(); Thunk.evaluate() -> Constraint.intersect() -> Constraint.coerce() -> Value._expandAs...()_ // for thunks
 //
 
 
