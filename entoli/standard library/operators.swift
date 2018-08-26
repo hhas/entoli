@@ -209,7 +209,7 @@ func parseProcedureDefinition(_ parser: Parser, operatorName: String, precedence
     } else {
         returnType = gAnythingConstraint
     }
-    if [.pairSeparator, .clauseSeparator].contains(nextToken.type) { parser.lexer.advance() } // skip colon after signature (technically speaking, `to SIG:EXPR` is a prefix operator that takes a pair as argument, but we want to forgive imperfect user input so `to SIG,EXPR` and `to SIG EXPR` are parsed as well)
+    if [.pairSeparator, .clauseSeparator].contains(nextToken.type) { parser.lexer.advance() } // skip colon after signature (technically speaking, `to SIG:EXPR` is a prefix operator that takes a pair as argument, but we want to forgive imperfect user input so `to SIG,EXPR` and `to SIG EXPR` are parsed as well) // TO DO: generalize this so that any prefix operator can specify 'pair' parameter? or make it strict and let editor auto-assist user in constructing correct syntax? (whatever we do, we want to avoid inconsistent special cases)
     // 4. read group expression; need to decide what structures are appropriate for this, e.g. single line of comma-separated exprs with period terminator (which will require lexer/parser mods), multi-line `do...done` block. bear in mind too that we currently don't have a clearly defined way to express return type; e.g. might define operator as `to SIG: EXPR [returning TYPE]`, though need to consider how well that'd work with single-line exprs (which'd want to put a period after TYPE, not before `returning`)
     let procBody = try parser.parseExpression()
     

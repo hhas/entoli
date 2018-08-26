@@ -35,7 +35,7 @@
 
 // When storing contraint values in instance variables, need to use Constraint/NativeConstraint
 
-class Constraint: Value { // may be stored in instance variables (e.g. thunks)
+class Constraint: Value { // may be stored in instance variables (e.g. in thunks) so must support defaultValue and intersect()
     //var _cachedNativeConstraint: NativeConstraint?
     
     func defaultValue(_ env: Scope) throws -> Value {
@@ -47,6 +47,8 @@ class Constraint: Value { // may be stored in instance variables (e.g. thunks)
         print("WARNING: Constraint.intersect not implemented for \(self)")
         return returnType
     }
+    
+    // TO DO: also declare coerce() stub here? (in principle, all SwiftConstraints should have native equivalents so should be able to implement native coerce() which NativeConstraint subclass)
 }
 
 
@@ -95,7 +97,7 @@ extension SwiftConstraint where SwiftType: Value {
     //var nativeConstraint: NativeConstraint { return self as! NativeConstraint }
     
     func unpack(_ value: Value, env: Scope) throws -> SwiftType {
-        return value as! SwiftType // TO DO: this is not correct: expression objects should be evaluated
+        return value as! SwiftType // TO DO: this is not correct: expression objects should be evaluated; call self.coerce() instead?
     }
     
     func pack(_ rawValue: SwiftType, env: Scope) throws -> Value { // Value->Value constraints don't need to implement custom pack() methods
