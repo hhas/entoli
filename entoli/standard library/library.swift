@@ -77,7 +77,7 @@ extension PrimitiveProcedure { // convenience constructors for standard math ope
 
 let storeValue_name   = "store"
 let storeValue_input  = (value: ("value", gAnyValueConstraint), // TO DO: still a question over how to specify constraint on slot; one option would be for `value`'s type to be `ConstrainedValue`, which would take a `VALUE as TYPE` expression and dissect that (caveat: if there's no operators installed then it'd need to take `as{VALUE,TYPE}`)
-                          name: ("named", gKeyStringConstraint)) // TO DO: rename "in"? e.g. `store {value: 2, in: x}`
+                          name: ("named", gKeyStringConstraint))
 let storeValue_output = gNoResult // (since the primitive func doesn't return a result, its generated wrapper will return `nothing` which should be passed through as-is; gNoResult simply provides a human-readable description that will appear in documentation)
 let storeValue_env    = PrimitiveProcedure.ProcScope.commandScope
 

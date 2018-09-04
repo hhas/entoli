@@ -178,9 +178,18 @@ if EVAL_TEST2 != 0 {
         
         // note: unlike kiwi, entoli [currently?] doesn't allow procs to inject slots into a thunk; e.g. a regexp proc that takes either text or expr as replacement value can't inject `matches` into the latter
         
-   //     let script = "To banana mustard tango {funky monkey} 1 + funky monkey {}. Banana mustard tango 3." // this works, though currently requires the extra `{}` which it shouldn't; see below (it should also accept a colon before the procedure body, which it doesn't yet)
+        let script = "To banana mustard tango {funky monkey}: 1 + funky monkey. Banana mustard tango 3."
    
-        let script = "to add {x} 1 + x {}. add 3." // this works, but shouldn't require the extra {} after 'x'.
+        //let script = "To add one {x}: x + 1. Add one {x: 3}." // this now works
+        
+        // one possible way to remap names is to use an additional pair (in this case, the type would really need to be mandatory to avoid ambiguity)
+        //let script = "To add one {to: x: number}: x + 1. Add one {to: 3}."
+        
+        // TO DO: implement constraint constructors
+        // let script = "To add one {x: default {number}}: x + 1. Add one {x: 3}."
+        
+        // following is problematic as 'to' is an operator name (it only works in quoted form as the underlying procedure has a different name)
+        //let script = "To add one {to: number}: 'to' + 1. Add one {to: 3}."
         
    //     let script = "To add {x} 1 + x. Add 3." // this fails because 'x' is a Name, which can't coerce to scalar (i.e. the name needs to coerce to a command, which will then expand to the scalar value that was stored as 'x', i.e. "3")
   //      let script = "to add {x} x + 1. add 3." // this parses correctly now (`+` in this context is obviously intended as an infix operator with `x` as its LH operand; previously it was being treated as prefix operator to `1`, causing it to parse as `x{+1}`)

@@ -5,7 +5,7 @@
 //
 
 
-// TO DO: rename convenience constants from `gTYPEConstraint` to `asTYPE`; e.g. `asAnyValue`, `asText`, `asString`, etc? (need to decide naming convention for standard and special constraint classes, and their convenience constants; e.g. `cAnyValue`, `cText`, etc. would still be preferable to `gAnyValueConstraint`, `gTextConstraint`)
+// TO DO: rename convenience constants from `gSomeName` to `someName`; e.g. `textConstraint`, `stringConstraint`, etc; ditto for other gCONSTANT definitions
 
 
 

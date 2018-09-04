@@ -137,7 +137,7 @@ class Record: Value { // roughly analogous to struct, though with different shar
     
     override func _expandAsRecord_(_ env: Scope) throws -> Record { // TO DO: define RecordConstraintProtocol for use here? // TO DO: this method is wrong: need to pass field types
         // note: when called in `to NAME {...} ...` operator's argument record, returnType: is ParameterTypeConstraint
-        return Record(try self.fields.map{try $0.evaluate(env, returnType: gAnyValueConstraint)}) // TO DO: HACK; returnType should be some sort of PairConstraint; with the exact type specified by returnType
+        return Record(try self.fields.map{try $0.evaluate(env, returnType: PairConstraint(left: gNameConstraint, right: gAnyValueConstraint))}) // TO DO: HACK; returnType should be some sort of PairConstraint; with the exact type specified by returnType
     }
     
     override func _expandAsConstraint_(_ env: Scope) throws -> Constraint { // note: returnType is ignored as it should always be gTypeConstraint

@@ -45,13 +45,22 @@ class Name: Value {
     
     // expansion
     
-    override func _expandAsAny_(_ env: Scope) throws -> Value { return self }
-//  override func _expandAsAny_(_ env: Scope) throws -> Value { return try self.toCommand() } // (EXPERIMENTAL; currently doesn't work either) TO DO: returning Name here is problematic when the name appears in an expression context where it should be treated as an arg-less command. OTOH expanding Name as a Command here currently breaks parameter record parsing (it likely also breaks stuff elsewhere), though that's probably a defect in the RecordSignature constraint or similar, which should be asking for known arg types in the first place. One possibility would for `Value` to provide separate `call()` and `expand()` methods, the first of which to be called in command contexts (e.g. expression sequence, list pair), the other in value contexts (e.g. record pair, `store` pair). // CAUTION: this is likely subtly wrong: entoli should respect any valid program, even one directly constructed as data rather than parsed from code; thus is a Name:Value Pair appears in a List it should remain as-is - as an item in an ordered/unique list, not a key-value pair in a key-value list. IOW, the parser should track context.
+    // TO DO: this is kludgy; names should return self for _expandAsName_, but evaluate as an arg-less Command for anything else. (One conundrum: what if user wants an arg-less command to return a name?)
+//
+    // TO DO: certain expansions need the returnType constraint to be passed, even though it's redundant on most
+    
+    override func _expandAsAny_(_ env: Scope) throws -> Value {
+        return try self.toCommand().evaluate(env, returnType: gAnyValueConstraint) // TO DO: constraint should be passed to here
+    }
+    
+    override func _expandAsText_(_ env: Scope) throws -> Text {
+        return try self.toCommand().evaluate(env, returnType: gTextConstraint)
+    }
     
     override func _expandAsName_(_ env: Scope) throws -> Name { return self }
     override func _expandAsCommand_(_ env: Scope) throws -> Command { return try self.toCommand() } // note: this doesn't capture env; will that be a problem? // TO DO: see TODO below
     override func _expandAsConstraint_(_ env: Scope) throws -> Constraint { // TO DO: is this okay, or is there any info that should be passed?
-        return try self.toCommand().evaluate(env, returnType: gTypeConstraint)
+        return try self.toCommand()._expandAsConstraint_(env)
     }
 }
 
@@ -103,9 +112,11 @@ class Command: Value {
     
     // expansion // TO DO: what, if anything, needs to be done? (e.g. thunk)
     
-    override func _expandAsAny_(_ env: Scope) throws -> Value { return self }
+    override func _expandAsAny_(_ env: Scope) throws -> Value { return self } // TO DO: evaluate
     override func _expandAsCommand_(_ env: Scope) throws -> Command { return self }
-    override func _expandAsConstraint_(_ env: Scope) throws -> Constraint { return try self.evaluate(env, returnType: gTypeConstraint) } // hmmm…
+    override func _expandAsConstraint_(_ env: Scope) throws -> Constraint {
+        return try self.evaluate(env, returnType: gTypeConstraint) // TO DO: evaluate in restricted scope that disallows side-effects (Q. should constraint be responsible for creating restricted scope, or do it here?) // TO DO: this isn't right; _expand is already called by TypeConstraint passed to evaluate<>() below
+    }
     
     override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
         where ReturnType: Constraint, ReturnType: SwiftConstraint {

@@ -38,8 +38,8 @@
 // note: matching ops defined as both prefix and infix/postfix (e.g. `-`, which is both prefix 'negation' and infix 'subtraction' operators) depends on proc overloading, which in turn relies on receiving a record arg with unambiguous keys (and explicitly named keys are as unambiguous as it gets)
 // (note that overloading the `-` symbol would normally be considered a misuse of overloading in that its behaviors are not simply variations on the same theme but quite different, e.g. negation vs subtraction, but as this overloading is defined by arithmetic itself we have to accept in this case)
 
-let gLeftOperandKeyString  = "left"
-let gRightOperandKeyString = "right"
+let gLeftOperandKeyString  = "left operand"
+let gRightOperandKeyString = "right operand"
 
 let gLeftOperandName = Name(gLeftOperandKeyString)
 let gRightOperandName = Name(gRightOperandKeyString)

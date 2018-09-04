@@ -75,9 +75,9 @@ class Parser {
                 return Record(result) // double-check this leaves us at correct position
             case .endOfCode:
                 throw EndOfCodeError(description: "[1a] End of code.")
-            case .quotedName, .unquotedName: // item is of form `'NAME':...` or `NAME:...` 
+            case .quotedName, .unquotedName: // record item is a pair (`NAME: ...`)
                 // (note: multiple names/aliases c.f. Swift funcs are not supported as that would create confusion when pairs are used as `store` shortcuts in command eval scopes as that's analogous to Swift's multiple assignment, and having different binding rules for different contexts will confuse users)
-                isNamedPair = self.lexer.lookahead(by: 1).type == .pairSeparator // literal pairs in records MUST have literal name as LH operand (note: this looks ahead 2, since currentToken is `{` and next token is QuotedName)
+                isNamedPair = self.lexer.lookahead(by: 1).type == .pairSeparator // literal pairs in records MUST have literal name as LH operand
             default:
                 isNamedPair = false
             }

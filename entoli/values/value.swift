@@ -68,17 +68,20 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
     func _expandAsAny_(_ env: Scope) throws -> Value { // subclasses must override, e.g. to call their corresponding _expandAsTYPE_()
         fatalNotYetImplemented(self, #function)
     }
+    
+    // TO DO: all these methods should bounce off a [generic?] catch-all method
+    
     func _expandAsText_(_ env: Scope) throws -> Text {
-        throw ExpansionError.unsupportedType
+        throw ExpansionError.unsupportedType(self, #function)
     }
     func _expandAsName_(_ env: Scope) throws -> Name {
-        throw ExpansionError.unsupportedType
+        throw ExpansionError.unsupportedType(self, #function)
     }
     // TO DO: need _expandAsTuplePair_, and implement _expandAsPair_ based on that
     func _expandAsPair_<KeyType, ValueType>(_ env: Scope, keyType: KeyType, valueType: ValueType) throws -> Pair
                                             where KeyType: Constraint, KeyType: SwiftConstraint, KeyType.SwiftType: Value,
                                                 ValueType: Constraint, ValueType: SwiftConstraint, ValueType.SwiftType: Value {
-        throw ExpansionError.unsupportedType
+        throw ExpansionError.unsupportedType(self, #function)
     }
     func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
                                     where ItemType: Constraint, ItemType: SwiftConstraint {
@@ -95,11 +98,11 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
         return Record(self) // TO DO: self should be expanded with first field type
     }
     func _expandAsCommand_(_ env: Scope) throws -> Command { // names and commands can coerce to commands (note: while named pairs are cast to 'store' commands in certain evaluation scopes, this is parser's job, not runtime's, so Pair does not implement _expandAsCommand_)
-        throw ExpansionError.unsupportedType
+        throw ExpansionError.unsupportedType(self, #function)
     }
     
     func _expandAsConstraint_(_ env: Scope) throws -> Constraint {
-        throw ExpansionError.unsupportedType
+        throw ExpansionError.unsupportedType(self, #function)
     }
     
     // Value.evaluate() is the standard entry point for evaluating any given value // TO DO: rename `evaluate(as returnType: ReturnType, in env: Scope)`?
