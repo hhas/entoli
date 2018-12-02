@@ -326,7 +326,7 @@ class Lexer {
                 isFirstChar = false
                 wordChars.append(char)
             } while self.cursor < self.codeLength && !Lexer.reservedCharacters.contains(self.code[self.cursor])
-            if DEBUG {print("ended char scan loop on \(self.cursor): `\(self.currentChar)`")}
+            if DEBUG {print("ended char scan loop on \(self.cursor): `\(String(describing: self.currentChar))`")}
             // note: while in-word symbols are matched first (as chars are being read), if the entire word makes a full phrase match then that takes precedence
             let word = wordChars
             let wordEndIndex = self.cursor // caution: non-inclusive; use `..<` (not `...`) to construct ScriptRange
@@ -371,7 +371,7 @@ class Lexer {
             // move cursor back to end of operator
             let n = self.cursor
             self.cursor = operatorTokens.last!.range.upperBound
-            if DEBUG {print("...MOVED CURSOR FROM \(n) BACK TO: \(self.cursor), `\(self.currentChar)`")}
+            if DEBUG {print("...MOVED CURSOR FROM \(n) BACK TO: \(self.cursor), `\(String(describing: self.currentChar))`")}
             return
         }
         

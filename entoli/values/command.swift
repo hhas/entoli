@@ -118,8 +118,7 @@ class Command: Value {
         return try self.evaluate(env, returnType: gTypeConstraint) // TO DO: evaluate in restricted scope that disallows side-effects (Q. should constraint be responsible for creating restricted scope, or do it here?) // TO DO: this isn't right; _expand is already called by TypeConstraint passed to evaluate<>() below
     }
     
-    override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-        where ReturnType: Constraint, ReturnType: SwiftConstraint {
+    override func evaluate<ReturnType: BridgingConstraint>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
             // TO DO: this isn't quite right, e.g. if returnType is `gCommandConstraint`, it should return self; if returnType is `ThunkConstraint`, should the entire command be deferred, including proc lookup, or should the proc be looked up now and stored as a closure that is invoked when the thunk is forced? etc.
             return try env.callProcedure(self, commandScope: env, returnType: returnType)
     }

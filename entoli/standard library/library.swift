@@ -51,8 +51,7 @@ extension PrimitiveProcedure { // convenience constructors for standard math ope
         self.init(name: name, function: scalarComparisonOperator, returnType: gBoolConstraint)
     }
     
-    convenience init<ReturnType>(name: String, function: @escaping ((Scalar, Scalar) throws -> ReturnType.SwiftType), returnType: ReturnType)
-                                                                                        where ReturnType: Constraint, ReturnType: SwiftConstraint {
+    convenience init<ReturnType: BridgingConstraint>(name: String, function: @escaping ((Scalar, Scalar) throws -> ReturnType.SwiftType), returnType: ReturnType) {
         let signature = ProcedureSignature(name: name, input: PrimitiveProcedure.scalarInfixParameterType, output: returnType)
         func wrapperFunction(_ arguments: [Value], commandScope: Scope, procedureScope: Scope) throws -> Value {
             var arguments = arguments

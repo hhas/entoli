@@ -8,7 +8,7 @@
 //**********************************************************************
 
 
-class ArrayConstraint<ItemConstraint>: Constraint, SwiftConstraint where ItemConstraint: Constraint, ItemConstraint: SwiftConstraint {
+class ArrayConstraint<ItemConstraint: BridgingConstraint>: BridgingConstraint {
     
     typealias SwiftType = [ItemConstraint.SwiftType]
     
@@ -24,7 +24,7 @@ class ArrayConstraint<ItemConstraint>: Constraint, SwiftConstraint where ItemCon
     
     override func defaultValue(_ env: Scope) throws -> Value { return List() }
     
-    // func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType] where ItemType: Constraint, ItemType: SwiftConstraint
+    // func _expandAsArray_<ItemType: BridgingConstraint>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
     
     func unpack(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: implement
         fatalNotYetImplemented(self, #function)
@@ -58,7 +58,7 @@ extension ArrayConstraint where ItemConstraint.SwiftType: Value { // shallow-wra
 }
 
 
-class ListConstraint: Constraint, SwiftConstraint, NativeConstraint {
+class ListConstraint: BridgingConstraint, NativeConstraint {
     
     typealias SwiftType = List
     
@@ -74,7 +74,7 @@ class ListConstraint: Constraint, SwiftConstraint, NativeConstraint {
     
     override func defaultValue(_ env: Scope) throws -> Value { return List() }
     
-    // func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType] where ItemType: Constraint, ItemType: SwiftConstraint
+    // func _expandAsArray_<ItemType: BridgingConstraint>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
     
     func unpack(_ value: Value, env: Scope) throws -> SwiftType { // TO DO: implement
         return try value._expandAsList_(env, itemType: self.itemType)
@@ -90,8 +90,7 @@ class ListConstraint: Constraint, SwiftConstraint, NativeConstraint {
 //
 
 
-class TuplePairConstraint<KeyConstraint, ValueConstraint>: Constraint, SwiftConstraint
-        where KeyConstraint: Constraint, KeyConstraint: SwiftConstraint, ValueConstraint: Constraint, ValueConstraint: SwiftConstraint {
+class TuplePairConstraint<KeyConstraint: BridgingConstraint, ValueConstraint: BridgingConstraint>: BridgingConstraint {
     
     typealias SwiftType = (KeyConstraint.SwiftType, ValueConstraint.SwiftType)
     
@@ -115,9 +114,7 @@ class TuplePairConstraint<KeyConstraint, ValueConstraint>: Constraint, SwiftCons
 }
 
 
-class PairConstraint<KeyConstraint, ValueConstraint>: TuplePairConstraint<KeyConstraint, ValueConstraint>, NativeConstraint
-        where KeyConstraint: Constraint, KeyConstraint: SwiftConstraint, KeyConstraint.SwiftType: Value,
-ValueConstraint: Constraint, ValueConstraint: SwiftConstraint, ValueConstraint.SwiftType: Value {
+class PairConstraint<KeyConstraint: BridgingConstraint, ValueConstraint: BridgingConstraint>: TuplePairConstraint<KeyConstraint, ValueConstraint>, NativeConstraint where KeyConstraint.SwiftType: Value, ValueConstraint.SwiftType: Value {
     
     typealias SwiftType = Pair
     

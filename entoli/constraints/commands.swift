@@ -8,7 +8,7 @@
 
 
 //
-class NameConstraint: Constraint, SwiftConstraint, NativeConstraint {
+class NameConstraint: BridgingConstraint, NativeConstraint {
     
     typealias SwiftType = Name
     
@@ -18,7 +18,7 @@ class NameConstraint: Constraint, SwiftConstraint, NativeConstraint {
 }
 
 
-class KeyStringConstraint: Constraint, SwiftConstraint { // TO DO: use `KeyConstraint`? (the implication being that 'Key' = Name as normalized String); if so, change `keyString` to `key` in other APIs (where the 'String' part is already redundant); one caveat is that Pair already uses `key:Value,value:Value`, where `key` is either a Name (record field) or any Value (in a key-value list item) - could rename that to `label:Value,value:Value`, or even neutral `left:Value,right:Value` (note: for obvious reasons we want to be careful about using the same jargon to mean different things in native vs primitive APIs, and 'key' is already used in 'key-value list')
+class KeyStringConstraint: BridgingConstraint { // TO DO: use `KeyConstraint`? (the implication being that 'Key' = Name as normalized String); if so, change `keyString` to `key` in other APIs (where the 'String' part is already redundant); one caveat is that Pair already uses `key:Value,value:Value`, where `key` is either a Name (record field) or any Value (in a key-value list item) - could rename that to `label:Value,value:Value`, or even neutral `left:Value,right:Value` (note: for obvious reasons we want to be careful about using the same jargon to mean different things in native vs primitive APIs, and 'key' is already used in 'key-value list')
     
     typealias SwiftType = String
     
@@ -32,7 +32,7 @@ class KeyStringConstraint: Constraint, SwiftConstraint { // TO DO: use `KeyConst
 }
 
 
-class CommandConstraint: Constraint, SwiftConstraint, NativeConstraint {
+class CommandConstraint: BridgingConstraint, NativeConstraint {
     
     typealias SwiftType = Command
     
@@ -48,7 +48,7 @@ class CommandConstraint: Constraint, SwiftConstraint, NativeConstraint {
 //
 
 
-class TypeConstraint: Constraint, SwiftConstraint, NativeConstraint { // coerce value to a Constraint instance
+class TypeConstraint: BridgingConstraint, NativeConstraint { // coerce value to a Constraint instance
     
     typealias SwiftType = Constraint
     
@@ -63,7 +63,7 @@ class TypeConstraint: Constraint, SwiftConstraint, NativeConstraint { // coerce 
 
 
 
-class ParameterTypeConstraint: Constraint, SwiftConstraint, NativeConstraint {
+class ParameterTypeConstraint: BridgingConstraint, NativeConstraint {
     
     typealias SwiftType = ParameterType // RecordSignature
     

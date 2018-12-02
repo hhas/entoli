@@ -93,7 +93,7 @@ class StringConstraint: TextConstraintBase, SwiftConstraint {
  */
 
 
-class ScalarConstraint: Constraint, SwiftConstraint {
+class ScalarConstraint: BridgingConstraint {
     
     typealias SwiftType = Scalar
     
@@ -134,7 +134,7 @@ class ScalarConstraint: Constraint, SwiftConstraint {
 // Swift primitives
 
 
-class IntConstraint: Constraint, SwiftConstraint {
+class IntConstraint: BridgingConstraint {
     
     typealias SwiftType = Int
     
@@ -171,7 +171,7 @@ class IntConstraint: Constraint, SwiftConstraint {
 }
 
 
-class DoubleConstraint: Constraint, SwiftConstraint {
+class DoubleConstraint: BridgingConstraint {
     
     typealias SwiftType = Double
     

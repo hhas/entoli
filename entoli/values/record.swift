@@ -58,8 +58,7 @@ class Pair: Value { // TO DO: use generic Pair<KeyT,ValueT> rather than subclass
         return try self._expandAsPair_(env, keyType: gAnyValueConstraint, valueType: gAnyValueConstraint) // TO DO: what if key is Name? pretty sure it needs left as-is, otherwise applying two expands to a pair will change its key; FIX
     }
     
-    override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-        where ReturnType: Constraint, ReturnType: SwiftConstraint {
+    override func evaluate<ReturnType: BridgingConstraint>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
             // TO DO: how should this work? (or is it coercion's job to state whether key should be treated as a literal name, or a command, or whatever?)
             fatalNotYetImplemented(self, #function)
     }
@@ -130,8 +129,8 @@ class Record: Value { // roughly analogous to struct, though with different shar
         return try self._expandAsRecord_(env)
     }
     
-    override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
-        where ItemType: Constraint, ItemType: SwiftConstraint, ItemType.SwiftType: Value { // TO DO: as with List._expandAsRecord_(), this may be a bit janky
+    override func _expandAsArray_<ItemType: BridgingConstraint>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
+        where ItemType.SwiftType: Value { // TO DO: as with List._expandAsRecord_(), this may be a bit janky
             return try self.fields.map{try $0.evaluate(env, returnType: itemType)}
     }
     

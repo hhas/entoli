@@ -30,8 +30,7 @@ enum Slot {
     case encapsulatedProcedure(Closure) // closure value containing both a procedure the scope in which it was originally defined (note: primitive procedures that don't interact with their lexical scope could just use an empty Scope to reduce likelihood of refcycles, though not sure how helpful that'd be in practice given that most closures contain non-trivial - i.e. native - logic, or are only used as proc arguments and not retained beyond completion of that proc)
     // TO DO: how to represent an overloaded proc? should it be possible to define overloads in sub-frames without masking those in parents? simplest option would be to require all overloads defined in same frame, and store as UnboundProcedure(OverloadedProcedure), which provides a transparent dispatch wrapper around them all
     
-    func call<ReturnType>(_ command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-                            where ReturnType: Constraint, ReturnType: SwiftConstraint {
+    func call<ReturnType: BridgingConstraint>(_ command: Command, commandScope: Scope, procedureScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         switch self {
         case .storedValue(let value):
@@ -140,8 +139,7 @@ class Scope: CustomStringConvertible {
     // TO DO: `closure(name:Name)throws->Closure` for use by `as procedure` coercion? note that this'd need to take the value from a .storedValue slot and wrap it in a Swift closure which can then be wrapped in a .unboundProcedure(PrimitiveProcedure), or else Closure class needs modified to hold enum of .value(Value) or .closure(Procedure,Scope); TBH, would probably be best for Closure just to copy the entire Slot (unless it's already a Slot.encapsulatedProcedure(Closure), of course, in which case it just needs to return that Closure as-is) - that'll also future-proof Closure against future updates to Slot (such as overloaded procs, which might be implemented as a Proc subclass or as a Slot.overloadedSlot(Dictionary<ProcSig,Slot>))
     
     
-    func callProcedure<ReturnType>(_ command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-                                    where ReturnType: Constraint, ReturnType: SwiftConstraint {
+    func callProcedure<ReturnType: BridgingConstraint>(_ command: Command, commandScope: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         let (slot, procedureScope) = try self.procedure(command.name)
         // check if slot is a pseudo-closure that simply returns a stored value (the default for user-stored values), a procedure implicitly bound to scope in which it was found (the default for procedures), or a full closure that includes its own lexical scope (used when a procedure defined in one scope is assigned to another)
         return try slot.call(command, commandScope: commandScope, procedureScope: procedureScope, returnType: returnType)

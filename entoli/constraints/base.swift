@@ -32,6 +32,11 @@
 // Primitive constraint classes are used in primitive libraries to bridge entoli Values to and from Swift values. To allow interface introspection, these should override `Constraint.nativeConstraint` to return the corresponding NativeCoercion.
 
 
+typealias BridgingConstraint = Constraint & SwiftConstraint
+
+typealias NativeConstraint = EntoliConstraint
+
+
 
 // When storing contraint values in instance variables, need to use Constraint/NativeConstraint
 
@@ -43,7 +48,7 @@ class Constraint: Value { // may be stored in instance variables (e.g. in thunks
         throw ImplementationError(description: "\(self) constraint does not provide a standard default value, and no other default was specified.") // note: the `default` type command (commonly used to define optional parameters to native procedures) should ensure that a valid default always exists or error if not, so the only time this error should occur is if a primitive procedure's signature has forgotten to supply one (i.e. developer error)
     }
     
-    func intersect<ReturnType>(_ returnType: ReturnType, env: Scope) -> ReturnType where ReturnType: Constraint, ReturnType: SwiftConstraint { // note: the ReturnType is needed as caller wants to call coerce
+    func intersect<ReturnType: BridgingConstraint>(_ returnType: ReturnType, env: Scope) -> ReturnType { // note: the ReturnType is needed as caller wants to call coerce
         print("WARNING: Constraint.intersect not implemented for \(self)")
         return returnType
     }
@@ -68,7 +73,7 @@ protocol SwiftConstraint {
     
     
     
-    func intersect<ReturnType>(_ returnType: ReturnType, env: Scope) -> ReturnType where ReturnType: Constraint, ReturnType: SwiftConstraint // TO DO: what other set operations (`union`, `contains`, `==`, `is[Strict]SubsetOf`, `is[Strict]SupersetOf`) should be supported? note that `contains()` is needed to check that a Value meets Constraint's constraints without coercing it first (i.e. sum types need to check for an exact match first before trying to find a coerced match), and is further complicated by fact that collections may provide a partial exact match (e.g. a list of numbers partially matches a list of text in that both have the same container type, so should be given preferential treatment when trying coerced matches)
+    func intersect<ReturnType: BridgingConstraint>(_ returnType: ReturnType, env: Scope) -> ReturnType // TO DO: what other set operations (`union`, `contains`, `==`, `is[Strict]SubsetOf`, `is[Strict]SupersetOf`) should be supported? note that `contains()` is needed to check that a Value meets Constraint's constraints without coercing it first (i.e. sum types need to check for an exact match first before trying to find a coerced match), and is further complicated by fact that collections may provide a partial exact match (e.g. a list of numbers partially matches a list of text in that both have the same container type, so should be given preferential treatment when trying coerced matches)
     
     // TO DO: `func toCommand() throws -> Command` should return Constraint value's constructor command, e.g. `TextConstraint.toCommand()` -> `text {...}`
     
@@ -123,7 +128,7 @@ extension SwiftConstraint {
 */
 
 
-protocol NativeConstraint {
+protocol EntoliConstraint {
     
     // whereas SwiftConstraint-only constraints are only used in primitive libraries' statically defined API signatures (providing automatic entoli<->Swift type bridging), native (Value<->Value) Constraint instances are used both there and throughout entoli's runtime too, thus we need to pass native Constraint instances freely as method arguments/results, which in turn demands a non-generic protocol describing the operations it supports
     

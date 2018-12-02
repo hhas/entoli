@@ -5,6 +5,10 @@
 //
 //
 
+
+// TO DO: should probably distinguish groups that must contain single expression only (e.g. `(1+2)*3`) from expression blocks that can contain zero or more expressions (i.e. code blocks); currently all `(…)` groups are represented as `ExpressionBlock` (including those where grouping is implicit, e.g. `A,B,C.`) but multi-expression groups don't work well in math expressions (which are the primary motive for using `(` and `)` for grouping, as-per traditional algebra syntax); e.g. `(xxxx,3)*3` is currently legal but undesirable code (note that keeping `(…)` exclusively for denoting grouping allows `{…}` to be kept exclusively for denoting records [i.e. entoli's core punctuation can't afford to be context-sensitive a-la C as rigid punctuation dictates how rest of code will be parsed])
+
+
 // expand vs perform; all objects should implement both; the difference is that `perform` acts as command evaluator whereas `expand` is value evaluator (Q. how should a command behave? it's a first-class object, so could expand to itself, as opposed to call proc); another option is to pass flag to evaluate indicating whether to .expand, .perform, or .preferred... Q. is there any value [sic] in `expand`, given that entoli != kiwi, so doesn't have expandable tags - so what's left? Name -> Name or Command; any others?
 
 
@@ -83,8 +87,7 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
                                                 ValueType: Constraint, ValueType: SwiftConstraint, ValueType.SwiftType: Value {
         throw ExpansionError.unsupportedType(self, #function)
     }
-    func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
-                                    where ItemType: Constraint, ItemType: SwiftConstraint {
+    func _expandAsArray_<ItemType: BridgingConstraint>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType] {
         return [try self.evaluate(env, returnType: itemType)]
     }
     func _expandAsList_(_ env: Scope, itemType: NativeConstraint) throws -> List {
@@ -108,7 +111,7 @@ class Value: CustomStringConvertible, CustomDebugStringConvertible { // TO DO: s
     // Value.evaluate() is the standard entry point for evaluating any given value // TO DO: rename `evaluate(as returnType: ReturnType, in env: Scope)`?
     // TO DO: evaluate methods should check if value already contains cached representation for the given returnType
     // TO DO: evaluate methods should trap coercion sub-errors and rethrow as permanent ConstraintError (Q. should they also rethrow chained ConstraintErrors to provide full trace to failed item, e.g. in lists and records?)
-    func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType where ReturnType: SwiftConstraint {
+    func evaluate<ReturnType: SwiftConstraint>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         return try returnType.unpack(self, env: env)
     }
     func evaluate(_ env: Scope, returnType: NativeConstraint) throws -> Value {
@@ -181,8 +184,7 @@ class ExpressionBlock: Value { // TO DO: can/should these be omitted where not n
     
     // TO DO: another possibility is to define _evaluateAsProcedureCall_ (_callAsProcedure_? _call_?) on all Values, which this method can then call, providing the necessary clue about how to deal with pairs and other non-commands; unlike _expandAsCommand_ (which is really only useful for coercing Name to Command, and throwing error if it's anything else... although strictly speaking an expression group should maybe also coerce to Command, as it's just a collection of the things and should be more or less transparent from runtime's POV, c.f. kiwi's composite commands)
     
-    override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-                                        where ReturnType: Constraint, ReturnType: SwiftConstraint {
+    override func evaluate<ReturnType: BridgingConstraint>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
         // TO DO: how should returnType.defersExpansion be handled? should it apply to entire expression, or just to final result? (bear in mind that some coercions, e.g. `as expression`, need to do non-standard processing of values; it may be that `as` operator should check RH operand's Constraint.defersExpansion itself before doing anything with LH operand); for now, probably just do the simplest thing that gets stuff working
         var result: Value = gNullValue
         for expression in self.expressions {

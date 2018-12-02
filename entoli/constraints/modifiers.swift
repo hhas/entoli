@@ -10,7 +10,7 @@
 // no-op
 
 
-class DoNotEvaluate: Constraint, SwiftConstraint, NativeConstraint { // no-op; unlike AnyValueConstraint, which expands a value to its own choice of type, this immediately returns value without any evaluation; e.g. for use in primitive procedures that want to do their own thing
+class DoNotEvaluate: BridgingConstraint, NativeConstraint { // no-op; unlike AnyValueConstraint, which expands a value to its own choice of type, this immediately returns value without any evaluation; e.g. for use in primitive procedures that want to do their own thing
     
     typealias SwiftType = Value
     
@@ -35,7 +35,7 @@ typealias ExpressionConstraint = DoNotEvaluate // TO DO: need to decide namings
 // thunk
 
 
-class ThunkConstraint: Constraint, SwiftConstraint, NativeConstraint { // aka `lazy`
+class ThunkConstraint: BridgingConstraint, NativeConstraint { // aka `lazy`
     
     typealias SwiftType = Thunk
     
@@ -60,8 +60,7 @@ class ThunkConstraint: Constraint, SwiftConstraint, NativeConstraint { // aka `l
 // optional values
 
 
-class MayBeNothing<ReturnType>: Constraint, SwiftConstraint, NativeConstraint
-        where ReturnType: Constraint, ReturnType: SwiftConstraint, ReturnType.SwiftType: Value {
+class MayBeNothing<ReturnType: BridgingConstraint>: BridgingConstraint, NativeConstraint where ReturnType.SwiftType: Value {
     
     typealias SwiftType = Value
     
@@ -83,7 +82,7 @@ class MayBeNothing<ReturnType>: Constraint, SwiftConstraint, NativeConstraint
 }
 
 
-class MayBeNil<ReturnType>: Constraint, SwiftConstraint where ReturnType: Constraint, ReturnType: SwiftConstraint {
+class MayBeNil<ReturnType: BridgingConstraint>: BridgingConstraint {
     
     typealias SwiftType = Optional<ReturnType.SwiftType>
     
@@ -116,7 +115,7 @@ class MayBeNil<ReturnType>: Constraint, SwiftConstraint where ReturnType: Constr
 
 // TO DO: this should use NativeConstraint where ReturnType.SwiftType:Value
 
-class DefaultValue<ReturnType>: Constraint, SwiftConstraint where ReturnType: Constraint, ReturnType: SwiftConstraint {
+class DefaultValue<ReturnType: BridgingConstraint>: BridgingConstraint {
     
     typealias SwiftType = ReturnType.SwiftType
     
@@ -161,7 +160,7 @@ class DefaultValue<ReturnType>: Constraint, SwiftConstraint where ReturnType: Co
 
 
 // TO DO: ditto
-class Precis<ReturnType>: Constraint, SwiftConstraint where ReturnType: Constraint, ReturnType: SwiftConstraint { // provides a custom description of Constraint object for documentation purposes
+class Precis<ReturnType: BridgingConstraint>: BridgingConstraint { // provides a custom description of Constraint object for documentation purposes
     
     typealias SwiftType = ReturnType.SwiftType
     

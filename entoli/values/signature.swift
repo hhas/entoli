@@ -15,7 +15,7 @@ typealias ReturnType = Constraint
 // 
 
 
-class ProxyConstraint: Constraint, SwiftConstraint { // wrapper for a coercion constructor Command that has yet to be evaluated; allows a signature to be constructed without an environment being available to construct the specified Constraint instance at the time; subsequently using or evaluating the ProxyConstraint wrapper will evaluate the constructor command to give the actual Constraint to be used
+class ProxyConstraint: BridgingConstraint { // wrapper for a coercion constructor Command that has yet to be evaluated; allows a signature to be constructed without an environment being available to construct the specified Constraint instance at the time; subsequently using or evaluating the ProxyConstraint wrapper will evaluate the constructor command to give the actual Constraint to be used
     
     typealias SwiftType = Value
     

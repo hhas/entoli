@@ -34,8 +34,7 @@ class NullValue: Value { // TO DO: need to think about how 'constant' names work
         ValueType: Constraint, ValueType: SwiftConstraint, ValueType.SwiftType: Value {
             throw ExpansionError.nullValue
     }
-    override func _expandAsArray_<ItemType>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType]
-        where ItemType: Constraint, ItemType: SwiftConstraint {
+    override func _expandAsArray_<ItemType: BridgingConstraint>(_ env: Scope, itemType: ItemType) throws -> [ItemType.SwiftType] {
             throw ExpansionError.nullValue
     }
     override func _expandAsRecord_(_ env: Scope) throws -> Record { throw ExpansionError.nullValue }
@@ -65,8 +64,7 @@ class Thunk: Value { // TO DO: memoize? (kinda depends on difference between `as
         return "Thunk(\(self.value), \(self.type))" // TO DO: this needs to escape any `"` chars within self.string by doubling them
     }
     
-    override func evaluate<ReturnType>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType
-        where ReturnType: Constraint, ReturnType: SwiftConstraint {
+    override func evaluate<ReturnType: BridgingConstraint>(_ env: Scope, returnType: ReturnType) throws -> ReturnType.SwiftType {
             if returnType.defersExpansion {
                 return try returnType.unpack(self, env: self.env)
             } else {

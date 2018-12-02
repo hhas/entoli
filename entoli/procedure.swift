@@ -106,7 +106,7 @@ class PrimitiveProcedure: Procedure {
     
     // TO DO: need to review this, make sure scopes are used correctly
     // command scope allows proc to lazily evaluate its operands in their original scope; procedureScope allows proc to refer to slots within its own lexical scope
-    override func call<ReturnType>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType: SwiftConstraint, ReturnType: Constraint, ReturnType.SwiftType: Value {
+    override func call<ReturnType: BridgingConstraint>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType.SwiftType: Value {
         let tmpValue = try self.function(command.argument.fields, commandScope, procedureScope)
         return try tmpValue.evaluate(procedureScope, returnType: returnType) // TO DO: problem: how to intersect proc's returnType with with caller's requested returnType? (there is an implicit constraint here in that returnType's SwiftConstraint.SwiftType should always be Value)
     }
@@ -129,7 +129,7 @@ class NativeProcedure: Procedure {
     
     // TO DO: need to think about `yield` (the latter should be a feature of Closure [subclass?], which needs to capture proc's own body subscope instead of its lexical scope, and also provide some kind of `isEmpty` flag that is set once proc returns instead of yields; note that `return` command can probably implement optional `resumable` arg, avoiding need for a separate, less familiar, 'yield' command)
     
-    override func call<ReturnType>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType: Constraint, ReturnType: SwiftConstraint, ReturnType.SwiftType: Value {
+    override func call<ReturnType: BridgingConstraint>(_ command: Command, returnType: ReturnType, commandScope: Scope, procedureScope: Scope) throws -> ReturnType.SwiftType where ReturnType.SwiftType: Value {
         let subEnv = procedureScope.makeSubScope()
         var arguments = command.argument.fields // TO DO: if command takes previous result as its first arg and/or has postfixed `do` block as its last arg, these will need to be passed too
         for (i, parameter) in self.signature.input.enumerated() {

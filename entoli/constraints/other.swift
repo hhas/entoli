@@ -9,7 +9,7 @@
 // anything
 
 
-class AnyValueConstraint: Constraint, SwiftConstraint, NativeConstraint { // by default, allows anything *except* gNullValue // TO DO: what name? also, how best to implement primitive equivalent? (ideally would be a generic that takes task-specific enum type defined by client code, but can't see how that would work; alternative is just to return Any)
+class AnyValueConstraint: BridgingConstraint, NativeConstraint { // by default, allows anything *except* gNullValue // TO DO: what name? also, how best to implement primitive equivalent? (ideally would be a generic that takes task-specific enum type defined by client code, but can't see how that would work; alternative is just to return Any)
     
     typealias SwiftType = Value // TO DO
     
@@ -36,7 +36,7 @@ let gAnythingConstraint = MayBeNothing(type: gAnyValueConstraint) // any value i
 
 // note: using `nothing` as false is unsatisfactory, as it can't distinguish false from omitted (i.e. use default value, which could be either false or true); so it's either use empty vs non-empty values, or use dedicated true/false constants, or use Icon-style value vs `failed`
 
-class BoolConstraint: Constraint, SwiftConstraint {
+class BoolConstraint: BridgingConstraint {
     
     typealias SwiftType = Bool
     
